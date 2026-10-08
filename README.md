@@ -1,104 +1,114 @@
 # TaskWall
 
-Tablica zadań na pulpicie Windows: tydzień, dwa tygodnie, miesiąc albo rok, zegar z kalendarzem i matowe szkło z rozmytej tapety, w stylu [Todowall](https://github.com/Dragonify73/Todowall).
-Kod jest napisany od zera. Względem pierwowzoru dochodzą: dwa konta (Praca / Prywatne) z synchronizacją przez folder w chmurze, backlog z importem z Notion, alarmy, spotkania i święta z Kalendarza Google, oznaczenia dni HO/BŚU, zadania cykliczne, checklisty, wyszukiwarka, estymacje, kategorie, archiwum i cofanie.
-Wcześniej program nazywał się DeskWall: instalator TaskWall sam usuwa starą wersję i przenosi jej ustawienia, a foldery z danymi zostają tam, gdzie były.
+A task board that lives on the Windows desktop: day, week, two weeks, month or year, a clock with a calendar and frosted glass made from your blurred wallpaper – in the spirit of [Todowall](https://github.com/Dragonify73/Todowall), written from scratch.
 
-## Instalacja
+On top of that: two accounts (Work / Private) synced through a cloud folder, a backlog fed from Notion (automatic sync or CSV import), alarms and meetings with reminders, Google Calendar meetings and holidays, day marks (e.g. home office), repeating tasks and marks, checklists, smart add, search, estimates, categories, archive, undo, CSV export. The UI is in Polish or English.
 
-`dist\TaskWall-Setup.exe` instaluje program dla bieżącego użytkownika, bez uprawnień administratora:
+*Polska wersja: [README.pl.md](README.pl.md).* Formerly called DeskWall – the TaskWall installer removes the old version and moves its settings over; data folders stay where they are.
 
-- program trafia do `%LOCALAPPDATA%\Programs\TaskWall`,
-- skrót pojawia się w menu Start, a wpis w *Ustawienia → Aplikacje* (stamtąd też odinstalujesz),
-- instalator nie wymaga zainstalowanego .NET.
+## Install
 
-Odinstalowanie: *Aplikacje i funkcje → TaskWall → Odinstaluj*, Ustawienia → Instalacja albo `TaskWall.exe --uninstall`. Dane w folderach w chmurze zostają nietknięte.
+Download `TaskWall-Setup.exe` from [Releases](https://github.com/Falcrum/TaskWall/releases) and run it. It installs for the current user, no admin rights and no .NET needed:
 
-## Budowanie
+- the program goes to `%LOCALAPPDATA%\Programs\TaskWall`,
+- a Start-menu shortcut and an entry in *Settings → Apps* are added (uninstall from there, from TaskWall's Settings → Info, or with `TaskWall.exe --uninstall`).
+
+The uninstaller asks separately whether to delete this computer's settings and whether to delete all saved data.
+
+## Build
 
 ```powershell
-.\build.ps1           # dist\TaskWall.exe (wymaga .NET 9 Desktop Runtime) + dist\TaskWall-Setup.exe
-.\build.ps1 -NoSetup  # tylko dist\TaskWall.exe
+.\build.ps1           # dist\TaskWall.exe (needs the .NET 9 Desktop Runtime) + dist\TaskWall-Setup.exe (self-contained)
+.\build.ps1 -NoSetup  # dist\TaskWall.exe only
 ```
 
-Aplikacja nie ma okna na pasku zadań. Steruje się nią ikoną w zasobniku (lewy przycisk otwiera kartę „Dziś”, prawy menu), przyciskami na górnym pasku tablicy albo prawym przyciskiem na pasku tablicy lub zegarze.
+TaskWall has no taskbar button. Use the tray icon (left click: the *Today* card, right click: menu), the buttons in the board's top bar, or right-click the top bar / clock for settings.
 
-## Obsługa
+## Using it
 
-| Akcja | Jak |
+| What | How |
 |---|---|
-| Konta | PRACA / PRYWATNE na środku górnego paska albo Ctrl+1 / Ctrl+2. Każde konto ma własny folder, kalendarze, kategorie, archiwum i alarmy |
-| Widoki | DZIEŃ · 1 TYDZIEŃ · 2 TYGODNIE · MIESIĄC · ROK (zapamiętywany). ‹ › przesuwa o dzień, tydzień, miesiąc albo rok |
-| Dodaj zadanie | „+ dodaj zadanie” pod dniem. Enter dodaje i otwiera kolejne pole, Esc zamyka. Kliknięcie kategorii pod polem wstawia np. `[ART]` |
-| Sprytne dodawanie | `jutro`, `pt`, `w pt`, `za 3 dni`, `14.10` na początku albo na końcu, `2h` / `30 min` (estymacja), `#art` (kategoria). Podgląd pokazuje, co zostało rozpoznane |
-| Szybko z dowolnego miejsca | **Ctrl+Shift+Spacja**: tablica wyskakuje z polem na dziś. Lewy klik na ikonie w zasobniku: karta „Dziś” z zadaniami, spotkaniami i alarmami |
-| Alarm | ikona zegara na górnym pasku, prawy przycisk na dniu → Dodaj alarm (w ten dzień), „+ ALARM” w karcie Dziś albo menu zasobnika. Godzina: `15:30`, `9`, `za 20 min`. Powtarzanie: codziennie, w dni robocze, co tydzień, co 2 tygodnie, co miesiąc |
-| Spotkanie | kliknij kategorię Meeting pod polem nowego zadania albo wpisz `[Meeting] 14-15:30 Sprint` (też `#meeting o 10 30 min`). Okno: tytuł, od–do, przypomnienie, powtarzanie. Godziny spotkań liczą się do sumy dnia |
-| Zrobione | kliknij kółko. Kolor obwódki to priorytet z Notion |
-| Edytuj | kliknij tekst (dla zadań z Notion: prawy przycisk → Edytuj tekst) |
-| Checklista | prawy przycisk → Dodaj punkt checklisty. Chip „☑ 2/5” rozwija listę |
-| Przenieś | przeciągnij na dzień, w inne miejsce listy, na BACKLOG albo ARCHIWUM. **Ctrl** tworzy kopię |
-| Przeciągnij z zewnątrz | link z przeglądarki lub Notion (staje się zadaniem z linkiem), zaznaczony tekst (każda linia to zadanie), plik CSV/ZIP z Notion (import) |
-| Estymacja | prawy przycisk → Estymacja. W rogu dnia jest licznik zrobionych, pod nim suma godzin (powyżej 8h na pomarańczowo) |
-| Oznaczenia dni | prawy przycisk na dniu. Lista per konto w Ustawienia → Konta (na Pracy HO i BŚU, na Prywatnym własne, np. Urlop). „Powtarzaj oznaczenie…”: np. HO w każdy piątek albo urlop od–do |
-| Kategorie | lista z kolorami w Ustawienia → Konta. Prawy przycisk → Kategoria |
-| Powtarzanie zadań | prawy przycisk → Powtarzaj: szybkie wzorce albo „Powtarzaj…”: co N dni/tygodni/miesięcy/lat, wybrane dni tygodnia, okres od–do. ✕ na wystąpieniu pomija tylko ten dzień |
-| Archiwum | ✕ po najechaniu, środkowy przycisk, „WYCZYŚĆ ZROBIONE” albo przeciągnięcie na ARCHIWUM. W panelu: ↺ przywróć, 🗑 usuń całkowicie |
-| Szukaj | Ctrl+F: zadania, serie, spotkania i archiwum (bez względu na polskie znaki) |
-| Cofnij | Ctrl+Z |
-| Zaległe | „⟲ ZALEGŁE: n → DZIŚ” (albo automatycznie, w ustawieniach) |
-| Eksport | EKSPORT na górnym pasku zapisuje widoczny okres (dzień, tydzień, miesiąc, rok) do CSV: dni z oznaczeniami, liczba zadań, zrobione, godziny, spotkania, podsumowanie kategorii i lista zadań |
-| Ukryj tablicę | ikona — w prawym górnym rogu albo menu zasobnika. Wraca z menu zasobnika albo skrótem Ctrl+Shift+Spacja |
-| Język | Ustawienia → Ogólne → Polski / English (po ponownym uruchomieniu). Sprytne dodawanie rozumie też `tomorrow`, `fri`, `in 3 days`, `at 10` |
+| Accounts | WORK / PRIVATE in the middle of the top bar, or Ctrl+1 / Ctrl+2. Each account has its own folder, calendars, Notion link, categories, day marks, archive and alarms |
+| Views | DAY · 1 WEEK · 2 WEEKS · MONTH · YEAR (remembered). ‹ › moves by a day, week, month or year |
+| Add a task | "+ add task" under a day. Enter adds and opens the next field, Esc closes. Clicking a category under the field inserts e.g. `[ART]` |
+| Smart add | dates at the start or end: `tomorrow`, `fri`, `on fri`, `in 3 days`, `next week`, `14.10` (Polish: `jutro`, `pt`, `za 3 dni`); `2h` / `30 min` = estimate; `#art` = category. A preview shows what was recognised |
+| From anywhere | **Ctrl+Shift+Space** brings the board up with a box for today. Left-click the tray icon for the *Today* card with tasks, meetings and alarms |
+| Alarm | clock icon in the top bar, right-click a day → Add alarm (on that day), "+ ALARM" in the Today card, or the tray menu. Time: `15:30`, `9`, `in 20 min`. Repeat: daily, workdays, weekly, every 2 weeks, monthly |
+| Meeting | click the Meeting category under a new task, or type `[Meeting] 14-15:30 Sprint` (also `#meeting at 10 30 min`). The window has title, from–to, reminder and repeat. Meeting hours count towards the day's total |
+| Done | click the circle. The ring colour is the Notion priority |
+| Edit | click the text (Notion tasks: right click → Edit text) |
+| Checklist | right click → Add checklist. The "☑ 2/5" chip expands it |
+| Move | drag to a day, within a list, onto BACKLOG or ARCHIVE. **Ctrl** makes a copy |
+| Drag in | a link from the browser or Notion (becomes a linked task; "(9+)" and "\| Notion" are stripped, `[VFX]` is recognised), selected text (one task per line), a Notion CSV/ZIP (import) |
+| Estimate | right click → Estimate. The day's corner shows done/total, the hours below it (orange above 8 h) |
+| Day marks | right-click a day. Per-account list in Settings → Accounts (e.g. HO/BŚU at work, your own on Private). "Repeat mark…": e.g. home office every Friday or a holiday from–to |
+| Repeating tasks | right click → Repeat: quick patterns or "Repeat…": every N days/weeks/months/years, chosen weekdays, a period from–to. ✕ on an occurrence skips just that day |
+| Clear | CLEAR in the top bar moves finished tasks of the visible period and the backlog to the archive |
+| Archive | ✕ on hover, middle click, CLEAR, or drop on ARCHIVE. In the panel: ↺ restore, 🗑 delete for good |
+| Search | Ctrl+F: tasks, series, meetings and archive (accent-insensitive) |
+| Undo | Ctrl+Z |
+| Overdue | "⟲ OVERDUE: n → TODAY" (or automatically, in settings) |
+| Export | ⋯ → Export the visible period to CSV: days with marks, task counts, done, hours, meetings, category summary and the task list |
+| Hide the board | the — icon in the top-right corner or the tray menu. It comes back from the tray menu or with Ctrl+Shift+Space |
+| Language | Settings → General → Polski / English (after a restart) |
+| Clear data | Settings → Accounts → Clear data: all tasks, meetings, alarms or day marks of an account (with confirmation) |
 
-## Alarmy
+## Alarms and meetings
 
-Alarm to przypomnienie o konkretnej godzinie, osobne od zadań. Widać go w dniu (pomarańczowy wiersz z godziną) i w karcie Dziś. O czasie w prawym dolnym rogu pojawia się powiadomienie z dźwiękiem: OK albo drzemka +5 min, +15 min, +1 h. Powiadomienie nie zabiera klawiatury, a dźwięk cichnie po minucie (można go wyłączyć w Ustawienia → Ogólne).
+An alarm is a reminder at a given time, separate from tasks; a meeting has a from–to time and an optional reminder. Both show up in the day and in the Today card. When it's time, a notification with a sound appears in the bottom-right corner: OK or snooze +5 min, +15 min, +1 h. It doesn't steal the keyboard and the sound stops after a minute (it can be turned off in Settings → General).
 
-Alarmy synchronizują się razem z kontem, więc dzwonią na każdym komputerze z TaskWall. Dzwonią alarmy obu kont, niezależnie od tego, które jest otwarte. Alarm przegapiony przez uśpienie albo wyłączony komputer odezwie się po powrocie, jeśli spóźnienie nie przekracza 12 godzin.
+They sync with the account, so they ring on every computer running TaskWall – for both accounts, whichever one is open. One missed because the PC was asleep or off rings when it's back, if it's less than 12 hours late.
 
-## Konta i synchronizacja
+## Accounts and sync
 
-Ustawienia → Konta: nazwa, folder danych (przyciski „Google Drive” i „OneDrive”), kalendarze Google i kategorie, osobno dla każdego konta. Na każdym komputerze ustaw **ten sam** folder. Google Drive wymaga programu *Google Drive for desktop*.
+Settings → Accounts: name, data folder ("Google Drive" / "OneDrive" shortcuts), Google calendars, Notion, categories and day marks – separately for each account. Use **the same** folder on every computer. Google Drive needs *Google Drive for desktop*.
 
-- Każde zadanie, alarm i oznaczenie dnia ma znacznik czasu. Przy konflikcie wygrywa nowsza wersja **pojedynczego elementu**, a nie całego pliku. Usunięcia nie wracają.
-- Kopie konfliktowe tworzone przez klienta chmury są scalane i przenoszone do `backup\`.
-- Raz dziennie powstaje kopia w `backup\RRRR-MM-DD.json`. Trzymanych jest 14 ostatnich.
-- Gdy folder w chmurze jest chwilowo niedostępny, dane zapisują się lokalnie i są scalane, gdy wróci.
+- Every task, alarm and day mark carries a timestamp. On a conflict the newer version of **that item** wins, not the whole file. Deletions don't come back.
+- Conflict copies made by the cloud client are merged and moved to `backup\`.
+- A daily copy is kept in `backup\YYYY-MM-DD.json` (last 14).
+- If the cloud folder is temporarily unavailable, data is saved locally and merged back when it returns.
 
-Ustawienia są per komputer (`%APPDATA%\TaskWall\settings.json`). Tajne adresy kalendarzy zostają tylko tam.
+Settings are per computer (`%APPDATA%\TaskWall\settings.json`). Secret calendar addresses and the Notion token stay there only.
 
-## Kalendarz Google
+## Google Calendar
 
-Ustawienia → Konta → Kalendarze. Własny kalendarz dodajesz przez **tajny adres w formacie iCal** (Kalendarz Google → Ustawienia → kalendarz → Integracja kalendarza). Spotkania są tylko do odczytu (prawy przycisk → „Dodaj jako zadanie [Meeting]”), a ich godziny wliczają się do sumy dnia. Dni ustawowo wolne TaskWall liczy sam.
+Settings → Accounts → Google calendars. Add your calendar with its **secret address in iCal format** (Google Calendar → Settings → the calendar → Integrate calendar). Meetings are read-only (right click → "Add as a [Meeting] task") and their hours count towards the day. Polish public holidays are computed locally.
 
-## Notion: automatyczna synchronizacja
+## Notion: automatic sync
 
-Ustawienia → Konta → Notion. Działa na **osobistym tokenie** (Personal access token), który działa jak Twoje konto: nie trzeba admina ani udostępniania stron integracji.
+Settings → Accounts → Notion. It uses a **personal access token**, which acts as your own account: no workspace admin, no integration to share pages with. It only reads – nothing is ever changed in Notion.
 
-1. W Notion utwórz token: [notion.so/developers/tokens](https://www.notion.so/developers/tokens) → New token (czy członek workspace'u może go utworzyć, zależy od planu i ustawień firmy).
-2. Wklej link do bazy (••• przy widoku → Copy link to view) i token.
-3. „Synchronizuj teraz”, potem automatycznie co 5–60 min.
+1. Create a token at [notion.so/developers/tokens](https://www.notion.so/developers/tokens) → New token (whether members may create one depends on the workspace plan and settings).
+2. Paste the **link to a filtered view** of the database (click the view name above the table → *Copy link to view*) and the token.
+3. "Sync now", then automatically every 5–60 min.
 
-Synchronizacja tylko czyta: nowe strony trafiają do backlogu z linkiem, znane dostają aktualny tytuł, status, priorytet i estymację, a strony zakończone w Notion mogą odhaczać zadanie. Opcje: tylko przypisane do mnie, które statusy wczytywać. Token jest zaszyfrowany dla Twojego konta Windows (DPAPI) i zostaje tylko na tym komputerze. Na drugim komputerze wklej ten sam token (Notion pokazuje go tylko raz, więc zachowaj go w menedżerze haseł) albo utwórz drugi – każdy da się osobno unieważnić.
+With a view link TaskWall loads only the pages matching **that view's filters and sorting** (e.g. "assigned to me, status To do / In progress") – Notion evaluates "Me" as the token's user. A safety limit (default 500 pages) refuses a sync that would flood the backlog with a whole team database. New pages go to the backlog with a link; known ones get the current title, status, priority and estimate; pages finished in Notion can tick their task off.
 
-## Import z Notion (CSV)
+The token is encrypted for your Windows account (DPAPI) and stays on this computer. On a second computer paste the same token (Notion shows it only once – keep it in a password manager) or create another one; each can be revoked separately.
 
-1. W Notion: `•••` przy widoku bazy → **Export** → *Markdown & CSV*.
-2. W TaskWall: **Import z Notion** w backlogu (albo przeciągnij plik na tablicę), wybierz `.csv` albo cały `.zip`.
-3. Zaznacz, co wczytać. Kolumny (nazwa, status, priorytet, estymacja, link) są wykrywane same.
+## Notion import (CSV)
 
-**Linki do stron:** CSV z Notion nie zawiera adresów stron. Dodaj w bazie właściwość typu **Formula**:
+1. In Notion: `•••` on the database view → **Export** → *Markdown & CSV*.
+2. In TaskWall: **Import from Notion** in the backlog (or drop the file on the board), pick the `.csv` or the whole `.zip`.
+3. Choose what to load. Columns (name, status, priority, estimate, link) are detected automatically.
+
+**Page links:** Notion's CSV has no page addresses. Add a **Formula** property to the database:
 ```
 "https://www.notion.so/" + replaceAll(id(), "-", "")
 ```
-Albo eksportuj z opcją *Include subpages* i wczytaj cały ZIP.
+or export with *Include subpages* and load the whole ZIP.
 
-## Dla dewelopera
+## For developers
 
-Przełączniki są w `src/Dev.cs`:
+Switches are in `src/Dev.cs`:
 
-- `--data <folder>`: osobne dane i ustawienia testowe (`.dev\settings.dev.json`), działa obok zainstalowanej kopii, nie rusza autostartu
-- `--topmost --shot <dir> [--shot-delay s] --exit`: zrzuty okien
-- `--open year|month|drawer|archive|calendar|settings|today|add|private|alarm|ring|ring-soon|search=…|import=…`
-- `--selftest <plik>`: testy warstwy danych (48)
+- `--data <folder>`: separate test data and settings (`.dev\settings.dev.json`); runs next to the installed copy and never touches autostart
+- `--topmost --shot <dir> [--shot-delay s] --exit`: window screenshots
+- `--open day|month|year|drawer|archive|calendar|settings|today|add|private|alarm|meeting|repeat-mark|ring|ring-soon|search=…|import=…`
+- `--selftest <file>`: data-layer tests (64)
+
+UI texts are Polish keys wrapped in `L.T(...)` / `L.F(...)`; English lives in `src/Lang/En.*.cs`.
+
+## License
+
+[GPL-3.0](LICENSE)
