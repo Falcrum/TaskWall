@@ -2,6 +2,7 @@
 
 Tablica zadań na pulpicie Windows: tydzień, dwa tygodnie, miesiąc albo rok, zegar z kalendarzem i matowe szkło z rozmytej tapety, w stylu [Todowall](https://github.com/Dragonify73/Todowall).
 Kod jest napisany od zera. Względem pierwowzoru dochodzą: dwa konta (Praca / Prywatne) z synchronizacją przez folder w chmurze, backlog z importem z Notion, alarmy, spotkania i święta z Kalendarza Google, oznaczenia dni HO/BŚU, zadania cykliczne, checklisty, wyszukiwarka, estymacje, kategorie, archiwum i cofanie.
+Wcześniej program nazywał się DeskWall: instalator TaskWall sam usuwa starą wersję i przenosi jej ustawienia, a foldery z danymi zostają tam, gdzie były.
 
 ## Instalacja
 
@@ -79,7 +80,7 @@ Ustawienia → Konta → Notion. Działa na **osobistym tokenie** (Personal acce
 2. Wklej link do bazy (••• przy widoku → Copy link to view) i token.
 3. „Synchronizuj teraz”, potem automatycznie co 5–60 min.
 
-Synchronizacja tylko czyta: nowe strony trafiają do backlogu z linkiem, znane dostają aktualny tytuł, status, priorytet i estymację, a strony zakończone w Notion mogą odhaczać zadanie. Opcje: tylko przypisane do mnie, które statusy wczytywać. Token jest zaszyfrowany dla Twojego konta Windows (DPAPI) i zostaje tylko na tym komputerze.
+Synchronizacja tylko czyta: nowe strony trafiają do backlogu z linkiem, znane dostają aktualny tytuł, status, priorytet i estymację, a strony zakończone w Notion mogą odhaczać zadanie. Opcje: tylko przypisane do mnie, które statusy wczytywać. Token jest zaszyfrowany dla Twojego konta Windows (DPAPI) i zostaje tylko na tym komputerze. Na drugim komputerze wklej ten sam token (Notion pokazuje go tylko raz, więc zachowaj go w menedżerze haseł) albo utwórz drugi – każdy da się osobno unieważnić.
 
 ## Import z Notion (CSV)
 
