@@ -27,24 +27,28 @@ Aplikacja nie ma okna na pasku zadań. Steruje się nią ikoną w zasobniku (lew
 | Akcja | Jak |
 |---|---|
 | Konta | PRACA / PRYWATNE na środku górnego paska albo Ctrl+1 / Ctrl+2. Każde konto ma własny folder, kalendarze, kategorie, archiwum i alarmy |
-| Widoki | 1 TYDZIEŃ · 2 TYGODNIE · MIESIĄC · ROK (zapamiętywany) |
+| Widoki | DZIEŃ · 1 TYDZIEŃ · 2 TYGODNIE · MIESIĄC · ROK (zapamiętywany). ‹ › przesuwa o dzień, tydzień, miesiąc albo rok |
 | Dodaj zadanie | „+ dodaj zadanie” pod dniem. Enter dodaje i otwiera kolejne pole, Esc zamyka. Kliknięcie kategorii pod polem wstawia np. `[ART]` |
 | Sprytne dodawanie | `jutro`, `pt`, `w pt`, `za 3 dni`, `14.10` na początku albo na końcu, `2h` / `30 min` (estymacja), `#art` (kategoria). Podgląd pokazuje, co zostało rozpoznane |
 | Szybko z dowolnego miejsca | **Ctrl+Shift+Spacja**: tablica wyskakuje z polem na dziś. Lewy klik na ikonie w zasobniku: karta „Dziś” z zadaniami, spotkaniami i alarmami |
-| Alarm | ikona zegara na górnym pasku, prawy przycisk na dniu → Dodaj alarm, „+ ALARM” w karcie Dziś albo menu zasobnika. Godzina: `15:30`, `9`, `za 20 min`. Jednorazowo, codziennie, w dni robocze, co tydzień |
+| Alarm | ikona zegara na górnym pasku, prawy przycisk na dniu → Dodaj alarm (w ten dzień), „+ ALARM” w karcie Dziś albo menu zasobnika. Godzina: `15:30`, `9`, `za 20 min`. Powtarzanie: codziennie, w dni robocze, co tydzień, co 2 tygodnie, co miesiąc |
+| Spotkanie | kliknij kategorię Meeting pod polem nowego zadania albo wpisz `[Meeting] 14-15:30 Sprint` (też `#meeting o 10 30 min`). Okno: tytuł, od–do, przypomnienie, powtarzanie. Godziny spotkań liczą się do sumy dnia |
 | Zrobione | kliknij kółko. Kolor obwódki to priorytet z Notion |
 | Edytuj | kliknij tekst (dla zadań z Notion: prawy przycisk → Edytuj tekst) |
 | Checklista | prawy przycisk → Dodaj punkt checklisty. Chip „☑ 2/5” rozwija listę |
 | Przenieś | przeciągnij na dzień, w inne miejsce listy, na BACKLOG albo ARCHIWUM. **Ctrl** tworzy kopię |
 | Przeciągnij z zewnątrz | link z przeglądarki lub Notion (staje się zadaniem z linkiem), zaznaczony tekst (każda linia to zadanie), plik CSV/ZIP z Notion (import) |
 | Estymacja | prawy przycisk → Estymacja. W rogu dnia jest licznik zrobionych, pod nim suma godzin (powyżej 8h na pomarańczowo) |
-| HO / BŚU | prawy przycisk na pustym miejscu dnia. Liczniki na górnym pasku i przy miesiącach w widoku roku, „EKSPORT CSV” zapisuje zestawienie |
+| Oznaczenia dni | prawy przycisk na dniu. Lista per konto w Ustawienia → Konta (na Pracy HO i BŚU, na Prywatnym własne, np. Urlop). „Powtarzaj oznaczenie…”: np. HO w każdy piątek albo urlop od–do |
 | Kategorie | lista z kolorami w Ustawienia → Konta. Prawy przycisk → Kategoria |
-| Zadania cykliczne | prawy przycisk → Powtarzaj. ✕ na wystąpieniu pomija tylko ten dzień |
+| Powtarzanie zadań | prawy przycisk → Powtarzaj: szybkie wzorce albo „Powtarzaj…”: co N dni/tygodni/miesięcy/lat, wybrane dni tygodnia, okres od–do. ✕ na wystąpieniu pomija tylko ten dzień |
 | Archiwum | ✕ po najechaniu, środkowy przycisk, „WYCZYŚĆ ZROBIONE” albo przeciągnięcie na ARCHIWUM. W panelu: ↺ przywróć, 🗑 usuń całkowicie |
 | Szukaj | Ctrl+F: zadania, serie, spotkania i archiwum (bez względu na polskie znaki) |
 | Cofnij | Ctrl+Z |
 | Zaległe | „⟲ ZALEGŁE: n → DZIŚ” (albo automatycznie, w ustawieniach) |
+| Eksport | EKSPORT na górnym pasku zapisuje widoczny okres (dzień, tydzień, miesiąc, rok) do CSV: dni z oznaczeniami, liczba zadań, zrobione, godziny, spotkania, podsumowanie kategorii i lista zadań |
+| Ukryj tablicę | ikona — w prawym górnym rogu albo menu zasobnika. Wraca z menu zasobnika albo skrótem Ctrl+Shift+Spacja |
+| Język | Ustawienia → Ogólne → Polski / English (po ponownym uruchomieniu). Sprytne dodawanie rozumie też `tomorrow`, `fri`, `in 3 days`, `at 10` |
 
 ## Alarmy
 
@@ -67,7 +71,17 @@ Ustawienia są per komputer (`%APPDATA%\DeskWall\settings.json`). Tajne adresy k
 
 Ustawienia → Konta → Kalendarze. Własny kalendarz dodajesz przez **tajny adres w formacie iCal** (Kalendarz Google → Ustawienia → kalendarz → Integracja kalendarza). Spotkania są tylko do odczytu (prawy przycisk → „Dodaj jako zadanie [Meeting]”), a ich godziny wliczają się do sumy dnia. Dni ustawowo wolne DeskWall liczy sam.
 
-## Import z Notion
+## Notion: automatyczna synchronizacja
+
+Ustawienia → Konta → Notion. Działa na **osobistym tokenie** (Personal access token), który działa jak Twoje konto: nie trzeba admina ani udostępniania stron integracji.
+
+1. W Notion utwórz token: [notion.so/developers/tokens](https://www.notion.so/developers/tokens) → New token (czy członek workspace'u może go utworzyć, zależy od planu i ustawień firmy).
+2. Wklej link do bazy (••• przy widoku → Copy link to view) i token.
+3. „Synchronizuj teraz”, potem automatycznie co 5–60 min.
+
+Synchronizacja tylko czyta: nowe strony trafiają do backlogu z linkiem, znane dostają aktualny tytuł, status, priorytet i estymację, a strony zakończone w Notion mogą odhaczać zadanie. Opcje: tylko przypisane do mnie, które statusy wczytywać. Token jest zaszyfrowany dla Twojego konta Windows (DPAPI) i zostaje tylko na tym komputerze.
+
+## Import z Notion (CSV)
 
 1. W Notion: `•••` przy widoku bazy → **Export** → *Markdown & CSV*.
 2. W DeskWall: **Import z Notion** w backlogu (albo przeciągnij plik na tablicę), wybierz `.csv` albo cały `.zip`.
