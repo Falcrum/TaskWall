@@ -4,7 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 
-namespace DeskWall;
+namespace TaskWall;
 
 /// <summary>
 /// "jutro Review enviro #art 2h" → day = tomorrow, text = "[ART] Review enviro", estimate = 2 h.

@@ -8,7 +8,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 
-namespace DeskWall;
+namespace TaskWall;
 
 /// <summary>
 /// Settings as an accordion (one section open at a time, no long scrolling).
@@ -26,7 +26,7 @@ public sealed class SettingsWindow : DarkWindow
 
     public SettingsWindow()
     {
-        Title = L.T("DeskWall – ustawienia");
+        Title = L.T("TaskWall – ustawienia");
         Width = 640;
         Height = 780;
         MinWidth = 520;
@@ -274,7 +274,7 @@ public sealed class SettingsWindow : DarkWindow
         row.Children.Add(box);
         panel.Children.Add(row);
         var quick = new WrapPanel { Margin = new Thickness(-7, 4, 0, 0) };
-        string sub = layer == "private" ? "DeskWall Prywatne" : "DeskWall";
+        string sub = layer == "private" ? "TaskWall Prywatne" : "TaskWall";
         void Quick(string label, string? root, string missingTip)
         {
             var b = Btn(label, "LinkButton", (_, _) => { if (root != null) UseFolder(layer, Path.Combine(root, sub), box); });
@@ -283,7 +283,7 @@ public sealed class SettingsWindow : DarkWindow
             b.Margin = new Thickness(0, 0, 4, 0);
             quick.Children.Add(b);
         }
-        Quick("Google Drive", SettingsStore.GoogleDriveRoot(), L.T("Zainstaluj „Google Drive for desktop” – pojawi się „Mój dysk”, który DeskWall wykryje sam."));
+        Quick("Google Drive", SettingsStore.GoogleDriveRoot(), L.T("Zainstaluj „Google Drive for desktop” – pojawi się „Mój dysk”, który TaskWall wykryje sam."));
         Quick("OneDrive", SettingsStore.OneDriveRoot(), L.T("OneDrive nie jest skonfigurowany na tym komputerze."));
         panel.Children.Add(quick);
         return panel;
@@ -300,7 +300,7 @@ public sealed class SettingsWindow : DarkWindow
         catch (Exception ex)
         {
             Log.Error("switch folder", ex);
-            MessageBox.Show(this, L.T("Nie udało się użyć tego folderu:\n") + ex.Message, "DeskWall", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, L.T("Nie udało się użyć tego folderu:\n") + ex.Message, "TaskWall", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
@@ -696,7 +696,7 @@ public sealed class SettingsWindow : DarkWindow
         var p = new StackPanel();
         var installed = Installer.IsInstalled;
         p.Children.Add(Label(installed
-            ? L.F("DeskWall jest zainstalowany w {0}. Odinstalujesz go stąd albo w Ustawieniach Windows → Aplikacje.", Installer.InstallDir)
+            ? L.F("TaskWall jest zainstalowany w {0}. Odinstalujesz go stąd albo w Ustawieniach Windows → Aplikacje.", Installer.InstallDir)
             : L.T("Ta kopia nie jest zainstalowana. Instalacja kopiuje program do folderu użytkownika, dodaje skrót w menu Start i wpis w „Aplikacje i funkcje” (bez uprawnień administratora)."), 11.5, "FgDim"));
         var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
         var btn = installed
@@ -705,7 +705,7 @@ public sealed class SettingsWindow : DarkWindow
         btn.Margin = new Thickness(0);
         row.Children.Add(btn);
         p.Children.Add(row);
-        var ver = Label(L.F("Wersja {0}  ·  dane zostają w folderach kont, ustawienia w %APPDATA%\\DeskWall", Installer.Version), 11, "FgFaint");
+        var ver = Label(L.F("Wersja {0}  ·  dane zostają w folderach kont, ustawienia w %APPDATA%\\TaskWall", Installer.Version), 11, "FgFaint");
         ver.Margin = new Thickness(0, 10, 0, 0);
         p.Children.Add(ver);
         return p;

@@ -7,23 +7,23 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using Microsoft.Win32;
 
-namespace DeskWall;
+namespace TaskWall;
 
 /// <summary>
 /// Per-user installer built into the exe (no admin rights, no extra tools):
-///   DeskWall-Setup.exe (or --install)  → copies itself to %LOCALAPPDATA%\Programs\DeskWall, Start-menu shortcut,
+///   TaskWall-Setup.exe (or --install)  → copies itself to %LOCALAPPDATA%\Programs\TaskWall, Start-menu shortcut,
 ///                                        entry in "Apps &amp; features", optional autostart, starts the installed copy.
 ///   --uninstall (from "Apps &amp; features") → removes program, shortcut, entries; settings / data only when ticked.
 /// </summary>
 static class Installer
 {
-    const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\DeskWall";
+    const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\TaskWall";
     const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
 
     public static string Version => typeof(App).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
-    public static string InstallDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "DeskWall");
-    public static string InstalledExe => Path.Combine(InstallDir, "DeskWall.exe");
-    static string ShortcutPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "DeskWall.lnk");
+    public static string InstallDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "TaskWall");
+    public static string InstalledExe => Path.Combine(InstallDir, "TaskWall.exe");
+    static string ShortcutPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "TaskWall.lnk");
 
     public static bool IsInstalled
     {
@@ -57,7 +57,7 @@ static class Installer
     /// <summary>"Zainstaluj w systemie" from the settings of a portable copy.</summary>
     public static void InstallFromRunningCopy(Window owner)
     {
-        if (MessageBox.Show(owner, L.F("Zainstalować DeskWall {0} w {1}?\nTa kopia zostanie zamknięta i uruchomi się zainstalowana.", Version, InstallDir), "DeskWall",
+        if (MessageBox.Show(owner, L.F("Zainstalować TaskWall {0} w {1}?\nTa kopia zostanie zamknięta i uruchomi się zainstalowana.", Version, InstallDir), "TaskWall",
                 MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
         try
         {
@@ -72,6 +72,7 @@ static class Installer
     {
         var source = Environment.ProcessPath ?? throw new InvalidOperationException(L.T("Nie znam ścieżki programu."));
         StopOtherInstances();
+        RemoveDeskWall();
         Directory.CreateDirectory(InstallDir);
         if (!string.Equals(source, InstalledExe, StringComparison.OrdinalIgnoreCase))
             File.Copy(source, InstalledExe, overwrite: true);
@@ -79,7 +80,7 @@ static class Installer
         CreateShortcut(ShortcutPath, InstalledExe);
         using (var k = Registry.CurrentUser.CreateSubKey(UninstallKey))
         {
-            k.SetValue("DisplayName", "DeskWall");
+            k.SetValue("DisplayName", "TaskWall");
             k.SetValue("DisplayVersion", Version);
             k.SetValue("Publisher", "Kamil Falenta");
             k.SetValue("InstallLocation", InstallDir);
@@ -93,13 +94,34 @@ static class Installer
         }
         using (var run = Registry.CurrentUser.OpenSubKey(RunKey, writable: true))
         {
-            if (autostart) run?.SetValue("DeskWall", $"\"{InstalledExe}\"");
-            else run?.DeleteValue("DeskWall", false);
+            if (autostart) run?.SetValue("TaskWall", $"\"{InstalledExe}\"");
+            else run?.DeleteValue("TaskWall", false);
         }
         // the installed copy reads this on start
         var s = SettingsStore.Load();
         s.StartWithWindows = autostart;
         SettingsStore.Save(s);
+    }
+
+    /// <summary>
+    /// The app used to be called DeskWall: its copy, shortcut, autostart and "Apps &amp; features" entry go away
+    /// (settings were already moved to %APPDATA%\TaskWall at start-up; data folders are untouched).
+    /// </summary>
+    static void RemoveDeskWall()
+    {
+        try
+        {
+            foreach (var p in Process.GetProcessesByName("DeskWall"))
+                try { p.CloseMainWindow(); if (!p.WaitForExit(1500)) p.Kill(); p.WaitForExit(3000); } catch { /* already gone */ }
+            SettingsStore.MigrateFromDeskWall(); // in case the old copy was still holding its files a moment ago
+            using (var run = Registry.CurrentUser.OpenSubKey(RunKey, writable: true)) run?.DeleteValue("DeskWall", false);
+            Registry.CurrentUser.DeleteSubKeyTree(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\DeskWall", false);
+            var lnk = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "DeskWall.lnk");
+            if (File.Exists(lnk)) File.Delete(lnk);
+            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "DeskWall");
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        }
+        catch (Exception ex) { Log.Error("remove old DeskWall", ex); }
     }
 
     static void StartInstalled() =>
@@ -120,7 +142,7 @@ static class Installer
         try
         {
             StopOtherInstances();
-            using (var run = Registry.CurrentUser.OpenSubKey(RunKey, writable: true)) run?.DeleteValue("DeskWall", false);
+            using (var run = Registry.CurrentUser.OpenSubKey(RunKey, writable: true)) run?.DeleteValue("TaskWall", false);
             Registry.CurrentUser.DeleteSubKeyTree(UninstallKey, false);
             if (File.Exists(ShortcutPath)) File.Delete(ShortcutPath);
             if (removeData) foreach (var folder in DataFolders()) DeleteData(folder);
@@ -130,7 +152,7 @@ static class Installer
             if (Directory.Exists(InstallDir))
                 Process.Start(new ProcessStartInfo("cmd.exe", $"/c timeout /t 3 /nobreak >nul & rmdir /s /q \"{InstallDir}\"")
                 { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden });
-            if (!quiet) MessageBox.Show(L.T("DeskWall został odinstalowany."), "DeskWall", MessageBoxButton.OK, MessageBoxImage.Information);
+            if (!quiet) MessageBox.Show(L.T("TaskWall został odinstalowany."), "TaskWall", MessageBoxButton.OK, MessageBoxImage.Information);
             if (owner != null) Application.Current.Shutdown();
         }
         catch (Exception ex) { Fail(owner, ex); }
@@ -145,7 +167,7 @@ static class Installer
             .Where(f => !string.IsNullOrWhiteSpace(f)).Select(f => Path.GetFullPath(f!)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
-    /// <summary>Only DeskWall's own files (board*.json, backups); the folder goes too when nothing else is left in it.</summary>
+    /// <summary>Only TaskWall's own files (board*.json, backups); the folder goes too when nothing else is left in it.</summary>
     static void DeleteData(string folder)
     {
         try
@@ -166,17 +188,17 @@ static class Installer
 
         public UninstallWindow()
         {
-            Title = L.T("DeskWall – odinstalowanie");
+            Title = L.T("TaskWall – odinstalowanie");
             Width = 560;
             SizeToContent = SizeToContent.Height;
             ResizeMode = ResizeMode.NoResize;
             Topmost = true;
             var p = new StackPanel { Margin = new Thickness(24, 20, 24, 20) };
             Content = p;
-            p.Children.Add(Label(L.T("Odinstalować DeskWall?"), 18, "Fg", FontWeights.SemiBold));
+            p.Children.Add(Label(L.T("Odinstalować TaskWall?"), 18, "Fg", FontWeights.SemiBold));
             p.Children.Add(Label(L.T("Program, skrót w menu Start, autostart i wpis w „Aplikacje i funkcje” zostaną usunięte. Zaznacz, czy usunąć też zapisane dane:"), 12, "FgDim"));
 
-            var settings = new CheckBox { Margin = new Thickness(0, 14, 0, 0), Content = new TextBlock { Text = L.T(@"Ustawienia tego komputera (%APPDATA%\DeskWall:wygląd, konta, adresy kalendarzy, token Notion, pamięć podręczna, logi)"), TextWrapping = TextWrapping.Wrap } };
+            var settings = new CheckBox { Margin = new Thickness(0, 14, 0, 0), Content = new TextBlock { Text = L.T(@"Ustawienia tego komputera (%APPDATA%\TaskWall:wygląd, konta, adresy kalendarzy, token Notion, pamięć podręczna, logi)"), TextWrapping = TextWrapping.Wrap } };
             p.Children.Add(settings);
 
             var folders = DataFolders().Where(Directory.Exists).ToArray();
@@ -200,7 +222,7 @@ static class Installer
             {
                 RemoveSettings = settings.IsChecked == true;
                 RemoveData = data.IsChecked == true;
-                if (RemoveData && MessageBox.Show(this, L.T("Na pewno usunąć wszystkie zadania i kopie zapasowe z folderów kont?\nTej operacji nie można cofnąć."), "DeskWall",
+                if (RemoveData && MessageBox.Show(this, L.T("Na pewno usunąć wszystkie zadania i kopie zapasowe z folderów kont?\nTej operacji nie można cofnąć."), "TaskWall",
                         MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
                 DialogResult = true;
             }));
@@ -210,7 +232,7 @@ static class Installer
 
     static void StopOtherInstances()
     {
-        foreach (var p in Process.GetProcessesByName("DeskWall").Where(p => p.Id != Environment.ProcessId))
+        foreach (var p in Process.GetProcessesByName("TaskWall").Where(p => p.Id != Environment.ProcessId))
         {
             try { p.CloseMainWindow(); if (!p.WaitForExit(1500)) p.Kill(); p.WaitForExit(3000); }
             catch { /* already gone */ }
@@ -229,7 +251,7 @@ static class Installer
             sc.TargetPath = target;
             sc.WorkingDirectory = Path.GetDirectoryName(target);
             sc.IconLocation = target + ",0";
-            sc.Description = L.T("DeskWall – tablica zadań na pulpicie");
+            sc.Description = L.T("TaskWall – tablica zadań na pulpicie");
             sc.Save();
             System.Runtime.InteropServices.Marshal.FinalReleaseComObject(sc);
         }
@@ -239,22 +261,22 @@ static class Installer
     static void Fail(Window? owner, Exception ex)
     {
         Log.Error("installer", ex);
-        if (owner != null) MessageBox.Show(owner, L.T("Nie udało się: ") + ex.Message, "DeskWall", MessageBoxButton.OK, MessageBoxImage.Warning);
-        else MessageBox.Show(L.T("Nie udało się: ") + ex.Message, "DeskWall", MessageBoxButton.OK, MessageBoxImage.Warning);
+        if (owner != null) MessageBox.Show(owner, L.T("Nie udało się: ") + ex.Message, "TaskWall", MessageBoxButton.OK, MessageBoxImage.Warning);
+        else MessageBox.Show(L.T("Nie udało się: ") + ex.Message, "TaskWall", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
-    /// <summary>The small dark setup dialog shown by DeskWall-Setup.exe.</summary>
+    /// <summary>The small dark setup dialog shown by TaskWall-Setup.exe.</summary>
     sealed class SetupWindow : DarkWindow
     {
         public SetupWindow()
         {
-            Title = L.T("DeskWall – instalacja");
+            Title = L.T("TaskWall – instalacja");
             Width = 520;
             SizeToContent = SizeToContent.Height;
             ResizeMode = ResizeMode.NoResize;
             var p = new StackPanel { Margin = new Thickness(24, 20, 24, 20) };
             Content = p;
-            p.Children.Add(Label($"DeskWall {Version}", 20, "Fg", FontWeights.SemiBold));
+            p.Children.Add(Label($"TaskWall {Version}", 20, "Fg", FontWeights.SemiBold));
             p.Children.Add(Label(L.T("Tablica zadań na pulpicie: tydzień, miesiąc i rok, backlog z Notion, kalendarz Google, synchronizacja przez chmurę."), 12, "FgDim"));
             var where = Label(L.F("Zostanie zainstalowany w {0} (tylko dla Ciebie, bez uprawnień administratora), ze skrótem w menu Start i wpisem w „Aplikacje i funkcje”.", InstallDir) +
                               (IsInstalled ? L.T("\nWykryto wcześniejszą instalację – zostanie zaktualizowana, ustawienia i dane zostają.") : ""), 11.5, "FgFaint");

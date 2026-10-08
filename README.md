@@ -1,23 +1,23 @@
-# DeskWall
+# TaskWall
 
 Tablica zadań na pulpicie Windows: tydzień, dwa tygodnie, miesiąc albo rok, zegar z kalendarzem i matowe szkło z rozmytej tapety, w stylu [Todowall](https://github.com/Dragonify73/Todowall).
 Kod jest napisany od zera. Względem pierwowzoru dochodzą: dwa konta (Praca / Prywatne) z synchronizacją przez folder w chmurze, backlog z importem z Notion, alarmy, spotkania i święta z Kalendarza Google, oznaczenia dni HO/BŚU, zadania cykliczne, checklisty, wyszukiwarka, estymacje, kategorie, archiwum i cofanie.
 
 ## Instalacja
 
-`dist\DeskWall-Setup.exe` instaluje program dla bieżącego użytkownika, bez uprawnień administratora:
+`dist\TaskWall-Setup.exe` instaluje program dla bieżącego użytkownika, bez uprawnień administratora:
 
-- program trafia do `%LOCALAPPDATA%\Programs\DeskWall`,
+- program trafia do `%LOCALAPPDATA%\Programs\TaskWall`,
 - skrót pojawia się w menu Start, a wpis w *Ustawienia → Aplikacje* (stamtąd też odinstalujesz),
 - instalator nie wymaga zainstalowanego .NET.
 
-Odinstalowanie: *Aplikacje i funkcje → DeskWall → Odinstaluj*, Ustawienia → Instalacja albo `DeskWall.exe --uninstall`. Dane w folderach w chmurze zostają nietknięte.
+Odinstalowanie: *Aplikacje i funkcje → TaskWall → Odinstaluj*, Ustawienia → Instalacja albo `TaskWall.exe --uninstall`. Dane w folderach w chmurze zostają nietknięte.
 
 ## Budowanie
 
 ```powershell
-.\build.ps1           # dist\DeskWall.exe (wymaga .NET 9 Desktop Runtime) + dist\DeskWall-Setup.exe
-.\build.ps1 -NoSetup  # tylko dist\DeskWall.exe
+.\build.ps1           # dist\TaskWall.exe (wymaga .NET 9 Desktop Runtime) + dist\TaskWall-Setup.exe
+.\build.ps1 -NoSetup  # tylko dist\TaskWall.exe
 ```
 
 Aplikacja nie ma okna na pasku zadań. Steruje się nią ikoną w zasobniku (lewy przycisk otwiera kartę „Dziś”, prawy menu), przyciskami na górnym pasku tablicy albo prawym przyciskiem na pasku tablicy lub zegarze.
@@ -54,7 +54,7 @@ Aplikacja nie ma okna na pasku zadań. Steruje się nią ikoną w zasobniku (lew
 
 Alarm to przypomnienie o konkretnej godzinie, osobne od zadań. Widać go w dniu (pomarańczowy wiersz z godziną) i w karcie Dziś. O czasie w prawym dolnym rogu pojawia się powiadomienie z dźwiękiem: OK albo drzemka +5 min, +15 min, +1 h. Powiadomienie nie zabiera klawiatury, a dźwięk cichnie po minucie (można go wyłączyć w Ustawienia → Ogólne).
 
-Alarmy synchronizują się razem z kontem, więc dzwonią na każdym komputerze z DeskWall. Dzwonią alarmy obu kont, niezależnie od tego, które jest otwarte. Alarm przegapiony przez uśpienie albo wyłączony komputer odezwie się po powrocie, jeśli spóźnienie nie przekracza 12 godzin.
+Alarmy synchronizują się razem z kontem, więc dzwonią na każdym komputerze z TaskWall. Dzwonią alarmy obu kont, niezależnie od tego, które jest otwarte. Alarm przegapiony przez uśpienie albo wyłączony komputer odezwie się po powrocie, jeśli spóźnienie nie przekracza 12 godzin.
 
 ## Konta i synchronizacja
 
@@ -65,11 +65,11 @@ Ustawienia → Konta: nazwa, folder danych (przyciski „Google Drive” i „On
 - Raz dziennie powstaje kopia w `backup\RRRR-MM-DD.json`. Trzymanych jest 14 ostatnich.
 - Gdy folder w chmurze jest chwilowo niedostępny, dane zapisują się lokalnie i są scalane, gdy wróci.
 
-Ustawienia są per komputer (`%APPDATA%\DeskWall\settings.json`). Tajne adresy kalendarzy zostają tylko tam.
+Ustawienia są per komputer (`%APPDATA%\TaskWall\settings.json`). Tajne adresy kalendarzy zostają tylko tam.
 
 ## Kalendarz Google
 
-Ustawienia → Konta → Kalendarze. Własny kalendarz dodajesz przez **tajny adres w formacie iCal** (Kalendarz Google → Ustawienia → kalendarz → Integracja kalendarza). Spotkania są tylko do odczytu (prawy przycisk → „Dodaj jako zadanie [Meeting]”), a ich godziny wliczają się do sumy dnia. Dni ustawowo wolne DeskWall liczy sam.
+Ustawienia → Konta → Kalendarze. Własny kalendarz dodajesz przez **tajny adres w formacie iCal** (Kalendarz Google → Ustawienia → kalendarz → Integracja kalendarza). Spotkania są tylko do odczytu (prawy przycisk → „Dodaj jako zadanie [Meeting]”), a ich godziny wliczają się do sumy dnia. Dni ustawowo wolne TaskWall liczy sam.
 
 ## Notion: automatyczna synchronizacja
 
@@ -84,7 +84,7 @@ Synchronizacja tylko czyta: nowe strony trafiają do backlogu z linkiem, znane d
 ## Import z Notion (CSV)
 
 1. W Notion: `•••` przy widoku bazy → **Export** → *Markdown & CSV*.
-2. W DeskWall: **Import z Notion** w backlogu (albo przeciągnij plik na tablicę), wybierz `.csv` albo cały `.zip`.
+2. W TaskWall: **Import z Notion** w backlogu (albo przeciągnij plik na tablicę), wybierz `.csv` albo cały `.zip`.
 3. Zaznacz, co wczytać. Kolumny (nazwa, status, priorytet, estymacja, link) są wykrywane same.
 
 **Linki do stron:** CSV z Notion nie zawiera adresów stron. Dodaj w bazie właściwość typu **Formula**:

@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace DeskWall;
+namespace TaskWall;
 
 public sealed class CsvTable
 {

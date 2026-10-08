@@ -6,7 +6,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 
-namespace DeskWall;
+namespace TaskWall;
 
 /// <summary>
 /// Small "today" card shown by a left click on the tray icon: today's meetings and tasks (tick them off),

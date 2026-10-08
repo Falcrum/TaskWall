@@ -9,7 +9,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 
-namespace DeskWall;
+namespace TaskWall;
 
 /// <summary>Normal (non-desktop) dark window used for dialogs.</summary>
 public class DarkWindow : Window

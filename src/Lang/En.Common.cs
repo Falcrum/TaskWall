@@ -1,4 +1,4 @@
-namespace DeskWall;
+namespace TaskWall;
 
 static partial class L
 {

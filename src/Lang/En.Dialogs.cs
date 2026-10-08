@@ -1,4 +1,4 @@
-namespace DeskWall;
+namespace TaskWall;
 
 static partial class L
 {
@@ -82,7 +82,7 @@ static partial class L
         ("Na dziś nic nie ma.", "Nothing for today."),
         ("dodaj na dziś…  (jutro, 2h, #art)", "add for today…  (tomorrow, 2h, #art)"),
         // app: start-up, balloons, Notion import
-        ("DeskWall nie mógł się uruchomić:", "DeskWall could not start:"),
+        ("TaskWall nie mógł się uruchomić:", "TaskWall could not start:"),
         ("Szczegóły:", "Details:"),
         ("Tablica ukryta. Pokażesz ją z menu ikony w zasobniku albo skrótem {0}.", "Board hidden. Bring it back from the tray icon menu or with {0}."),
         ("Folder „{0}” jest niedostępny ({1}). Zapisuję lokalnie i przeniosę dane, gdy się pojawi.", "Folder “{0}” is unavailable ({1}). Saving locally; the data will be moved back when it reappears."),
@@ -106,6 +106,6 @@ static partial class L
         ("Odśwież tapetę", "Refresh wallpaper"),
         ("Odśwież kalendarze", "Refresh calendars"),
         ("Otwórz folder danych", "Open data folder"),
-        ("Zamknij DeskWall", "Quit DeskWall"),
+        ("Zamknij TaskWall", "Quit TaskWall"),
     };
 }

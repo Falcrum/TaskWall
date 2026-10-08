@@ -8,7 +8,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 
-namespace DeskWall;
+namespace TaskWall;
 
 /// <summary>
 /// Repeating series of a task or a day mark: every N days / weeks (chosen weekdays) / months / years or every

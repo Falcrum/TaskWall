@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
-namespace DeskWall;
+namespace TaskWall;
 
 /// <summary>Single task. Day == null means the task lives in the backlog.</summary>
 public sealed class TaskItem
@@ -214,7 +214,7 @@ public sealed class RecurringRule
 
 /// <summary>
 /// Reminder at a given time (not a task): shows a notification with a sound. One-off or repeating.
-/// Synced with the account's board, so it rings on every PC running DeskWall.
+/// Synced with the account's board, so it rings on every PC running TaskWall.
 /// </summary>
 public sealed class Alarm
 {

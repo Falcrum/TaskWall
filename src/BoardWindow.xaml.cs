@@ -11,7 +11,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 
-namespace DeskWall;
+namespace TaskWall;
 
 public enum ViewMode { Day, Week1, Week2, Month, Year }
 
@@ -22,7 +22,7 @@ public partial class BoardWindow : GlassWindow
     /// <summary>UI culture (Polish or English, see <see cref="L"/>).</summary>
     public static CultureInfo Pl => L.Culture;
     const string BacklogKey = "backlog";
-    const string DragFormat = "DeskWallTask";
+    const string DragFormat = "TaskWallTask";
     static readonly Color WeekendRed = Color.FromRgb(0xF2, 0x6D, 0x6D);
     static readonly Color MeetingColor = Color.FromRgb(0x8C, 0x9B, 0xFF);
     static readonly string[] TagPalette = { "#6EA0FF", "#F07AAE", "#F2A65A", "#5CCB92", "#4CC3D4", "#A08BFF", "#EE6E6E", "#D4C25E" };

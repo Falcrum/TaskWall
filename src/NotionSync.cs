@@ -9,7 +9,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace DeskWall;
+namespace TaskWall;
 
 /// <summary>
 /// Reads one Notion database with the user's personal access token (the token acts as the user: no admin, no
@@ -46,7 +46,7 @@ static class NotionSync
         {
             Marshal.Copy(data, 0, input.Data, data.Length);
             bool ok = protect
-                ? CryptProtectData(ref input, "DeskWall Notion", IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 1 /* UI_FORBIDDEN */, ref output)
+                ? CryptProtectData(ref input, "TaskWall Notion", IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 1 /* UI_FORBIDDEN */, ref output)
                 : CryptUnprotectData(ref input, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 1, ref output);
             if (!ok) return null;
             var result = new byte[output.Size];

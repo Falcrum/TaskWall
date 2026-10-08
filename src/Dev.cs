@@ -7,7 +7,7 @@ using System.Windows.Interop;
 using System.Windows.Threading;
 using System.Windows.Media.Imaging;
 
-namespace DeskWall;
+namespace TaskWall;
 
 /// <summary>
 /// Developer switches (not needed for normal use):

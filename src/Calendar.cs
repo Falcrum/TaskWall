@@ -8,7 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace DeskWall;
+namespace TaskWall;
 
 /// <summary>One meeting / holiday from an iCal feed, already in local time.</summary>
 public sealed class CalEvent

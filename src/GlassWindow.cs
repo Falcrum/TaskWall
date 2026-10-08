@@ -9,7 +9,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
-namespace DeskWall;
+namespace TaskWall;
 
 /// <summary>
 /// Borderless frosted-glass window that lives on the desktop: it stays at the bottom of the

@@ -6,7 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
 
-namespace DeskWall;
+namespace TaskWall;
 
 /// <summary>
 /// UI language. Polish text is the key: <c>L.T("Dodaj zadanie")</c> returns the English text when English is on

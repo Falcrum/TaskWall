@@ -7,7 +7,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows;
 
-namespace DeskWall;
+namespace TaskWall;
 
 /// <summary>
 /// Things dragged in from other programs: a browser / Notion link becomes a linked task (title taken from the

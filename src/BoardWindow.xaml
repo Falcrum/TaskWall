@@ -1,8 +1,8 @@
-<local:GlassWindow x:Class="DeskWall.BoardWindow"
+<local:GlassWindow x:Class="TaskWall.BoardWindow"
                    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                   xmlns:local="clr-namespace:DeskWall"
-                   Title="DeskWall"
+                   xmlns:local="clr-namespace:TaskWall"
+                   Title="TaskWall"
                    AllowDrop="True"
                    FontFamily="{StaticResource UiFont}"
                    Foreground="{StaticResource Fg}">

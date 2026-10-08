@@ -7,7 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 
-namespace DeskWall;
+namespace TaskWall;
 
 /// <summary>
 /// Places children on a grid measured in abstract "units" (one day square = 1×1) and scales the

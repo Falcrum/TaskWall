@@ -7,12 +7,12 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>false</UseWindowsForms>
-    <AssemblyName>DeskWall</AssemblyName>
-    <RootNamespace>DeskWall</RootNamespace>
+    <AssemblyName>TaskWall</AssemblyName>
+    <RootNamespace>TaskWall</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.7.0</Version>
+    <Version>0.8.0</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Product>DeskWall</Product>
+    <Product>TaskWall</Product>
     <!-- smaller memory footprint for a tray-style app -->
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <TieredPGO>false</TieredPGO>

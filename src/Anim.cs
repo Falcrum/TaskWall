@@ -3,7 +3,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 
-namespace DeskWall;
+namespace TaskWall;
 
 /// <summary>Small animation helpers; all of them become instant when animations are off.</summary>
 static class Anim

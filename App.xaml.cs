@@ -10,7 +10,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
 
-namespace DeskWall;
+namespace TaskWall;
 
 public partial class App : Application
 {
@@ -56,15 +56,16 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (Dev.Arg("--data") == null) SettingsStore.MigrateFromDeskWall();
         try { L.Set(SettingsStore.Load().Language); } catch { /* Polish */ }
-        // installer switches (DeskWall-Setup.exe, --install, --uninstall) run before anything else
+        // installer switches (TaskWall-Setup.exe, --install, --uninstall) run before anything else
         try { if (Installer.HandleCommandLine()) { Shutdown(); return; } }
         catch (Exception ex) { Log.Error("installer", ex); Shutdown(); return; }
         // started by the installer / "Zainstaluj w systemie": let the old copy exit first
         if (Dev.Arg("--wait-for") is { } pidText && int.TryParse(pidText, out var pid))
             try { System.Diagnostics.Process.GetProcessById(pid).WaitForExit(15000); } catch { /* already gone */ }
         // dev runs (--data) live next to the installed copy
-        _mutex = new Mutex(true, Dev.Arg("--data") != null ? @"Local\DeskWall.Dev" : @"Local\DeskWall.SingleInstance", out bool first);
+        _mutex = new Mutex(true, Dev.Arg("--data") != null ? @"Local\TaskWall.Dev" : @"Local\TaskWall.SingleInstance", out bool first);
         if (!first) { Shutdown(); return; }
 
         // after start-up a stray exception is logged and the app keeps running; during start-up it must not leave
@@ -74,14 +75,14 @@ public partial class App : Application
             Log.Error("unhandled", a.Exception);
             if (_started) { a.Handled = true; return; }
             a.Handled = true;
-            MessageBox.Show(L.T("DeskWall nie mógł się uruchomić:") + "\n" + a.Exception.Message + "\n\n" + L.T("Szczegóły:") + " %APPDATA%\\DeskWall\\error.log", "DeskWall", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(L.T("TaskWall nie mógł się uruchomić:") + "\n" + a.Exception.Message + "\n\n" + L.T("Szczegóły:") + " %APPDATA%\\TaskWall\\error.log", "TaskWall", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown();
         };
         try { Start(); _started = true; }
         catch (Exception ex)
         {
             Log.Error("startup", ex);
-            MessageBox.Show(L.T("DeskWall nie mógł się uruchomić:") + "\n" + ex.Message + "\n\n" + L.T("Szczegóły:") + " %APPDATA%\\DeskWall\\error.log", "DeskWall", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(L.T("TaskWall nie mógł się uruchomić:") + "\n" + ex.Message + "\n\n" + L.T("Szczegóły:") + " %APPDATA%\\TaskWall\\error.log", "TaskWall", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown();
         }
     }
@@ -183,7 +184,7 @@ public partial class App : Application
                 ScheduleTrim();
             };
             frame.BeginAnimation(UIElement.OpacityProperty, fade);
-            _tray?.Balloon("DeskWall", L.F("Tablica ukryta. Pokażesz ją z menu ikony w zasobniku albo skrótem {0}.", Settings.Hotkey));
+            _tray?.Balloon("TaskWall", L.F("Tablica ukryta. Pokażesz ją z menu ikony w zasobniku albo skrótem {0}.", Settings.Hotkey));
         }
         else
         {
@@ -244,7 +245,7 @@ public partial class App : Application
             s.Open(fallback);
             _pendingFolders[layer] = folder; // keep trying; once reachable, the fallback data is merged into it
             _folderRetry.Start();
-            Dispatcher.BeginInvoke(() => _tray?.Balloon("DeskWall", L.F("Folder „{0}” jest niedostępny ({1}). Zapisuję lokalnie i przeniosę dane, gdy się pojawi.", LayerName(layer), folder)));
+            Dispatcher.BeginInvoke(() => _tray?.Balloon("TaskWall", L.F("Folder „{0}” jest niedostępny ({1}). Zapisuję lokalnie i przeniosę dane, gdy się pojawi.", LayerName(layer), folder)));
         }
         s.ExternalChange += () => { if (ReferenceEquals(s, Store)) Board?.OnExternalChange(); };
         Stores[layer] = s;
@@ -524,12 +525,12 @@ public partial class App : Application
         catch (Exception ex)
         {
             Log.Error("notion import load", ex);
-            MessageBox.Show(L.T("Nie udało się wczytać pliku:") + "\n" + ex.Message, "DeskWall", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(L.T("Nie udało się wczytać pliku:") + "\n" + ex.Message, "TaskWall", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         if (export.Table.Rows.Count == 0)
         {
-            MessageBox.Show(L.T("Plik nie zawiera żadnych wierszy."), "DeskWall");
+            MessageBox.Show(L.T("Plik nie zawiera żadnych wierszy."), "TaskWall");
             return;
         }
 
@@ -540,7 +541,7 @@ public partial class App : Application
             if (win.ShowDialog() == true)
             {
                 Board?.RevealBacklog();
-                _tray?.Balloon("DeskWall", L.F("Zaimportowano: {0}, zaktualizowano: {1}", win.Imported, win.Updated));
+                _tray?.Balloon("TaskWall", L.F("Zaimportowano: {0}, zaktualizowano: {1}", win.Imported, win.Updated));
             }
         }
         finally { _importOpen = false; ScheduleTrim(); }
@@ -555,16 +556,16 @@ public partial class App : Application
         {
             using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
             if (key == null) return;
-            bool present = key.GetValue("DeskWall") != null;
-            if (on && Environment.ProcessPath is { } exe) key.SetValue("DeskWall", $"\"{exe}\"");
-            else if (!on && present) key.DeleteValue("DeskWall", false);
+            bool present = key.GetValue("TaskWall") != null;
+            if (on && Environment.ProcessPath is { } exe) key.SetValue("TaskWall", $"\"{exe}\"");
+            else if (!on && present) key.DeleteValue("TaskWall", false);
         }
         catch (Exception ex) { Log.Error("autostart", ex); }
     }
 
     void SetupTray()
     {
-        _tray = new TrayIcon("DeskWall");
+        _tray = new TrayIcon("TaskWall");
         _tray.Clicked += ToggleToday; // left click: today card; right click: menu
         _tray.BuildMenu = () =>
         {
@@ -583,7 +584,7 @@ public partial class App : Application
                 Add("Synchronizuj Notion teraz", async () =>
                 {
                     var r = await NotionSync.Run(Settings.Layer);
-                    _tray?.Balloon("DeskWall – Notion", r.Error ?? L.F("Nowe: {0}, zmienione: {1} (stron: {2})", r.Added, r.Updated, r.Total));
+                    _tray?.Balloon("TaskWall – Notion", r.Error ?? L.F("Nowe: {0}, zmienione: {1} (stron: {2})", r.Added, r.Updated, r.Total));
                 });
             Add("Importuj z Notion (CSV/ZIP)…", () => ImportNotion());
             Add(Settings.Layer == "private" ? "Przełącz na: Praca" : "Przełącz na: Prywatne", () => SwitchLayer(Settings.Layer == "private" ? "work" : "private"));
@@ -592,7 +593,7 @@ public partial class App : Application
             Add("Odśwież kalendarze", RefreshCalendars);
             Add("Otwórz folder danych", () => GlassWindow.OpenUrl(Store.Folder));
             menu.Items.Add(new Separator());
-            Add("Zamknij DeskWall", Shutdown);
+            Add("Zamknij TaskWall", Shutdown);
             return menu;
         };
     }

@@ -1,4 +1,4 @@
-namespace DeskWall;
+namespace TaskWall;
 
 static partial class L
 {
@@ -6,7 +6,7 @@ static partial class L
     static readonly (string Pl, string En)[] Settings =
     {
         // SettingsWindow
-        ("DeskWall – ustawienia", "DeskWall – settings"),
+        ("TaskWall – ustawienia", "TaskWall – settings"),
         ("Ogólne", "General"),
         ("język, autostart, zegar, alarmy, Notion, skrót klawiszowy", "language, autostart, clock, alarms, Notion, keyboard shortcut"),
         ("Konta", "Accounts"),
@@ -49,7 +49,7 @@ static partial class L
         ("Otwórz", "Open"),
         ("Zmień…", "Change…"),
         ("Folder konta „{0}”", "Folder of account “{0}”"),
-        ("Zainstaluj „Google Drive for desktop” – pojawi się „Mój dysk”, który DeskWall wykryje sam.", "Install “Google Drive for desktop” – a “My Drive” folder appears, which DeskWall detects on its own."),
+        ("Zainstaluj „Google Drive for desktop” – pojawi się „Mój dysk”, który TaskWall wykryje sam.", "Install “Google Drive for desktop” – a “My Drive” folder appears, which TaskWall detects on its own."),
         ("OneDrive nie jest skonfigurowany na tym komputerze.", "OneDrive is not set up on this computer."),
         ("Nie udało się użyć tego folderu:\n", "Could not use this folder:\n"),
         ("Zmień kolor", "Change colour"),
@@ -116,20 +116,20 @@ static partial class L
         ("Wyłączony", "Off"),
         ("Ten skrót jest zajęty przez inny program – wybierz inny.", "This shortcut is taken by another program – pick a different one."),
         ("Skrót: tablica na wierzch + nowe zadanie na dziś (Esc chowa)", "Shortcut: bring the board to front + new task for today (Esc hides)"),
-        ("DeskWall jest zainstalowany w {0}. Odinstalujesz go stąd albo w Ustawieniach Windows → Aplikacje.", "DeskWall is installed in {0}. You can uninstall it here or in Windows Settings → Apps."),
+        ("TaskWall jest zainstalowany w {0}. Odinstalujesz go stąd albo w Ustawieniach Windows → Aplikacje.", "TaskWall is installed in {0}. You can uninstall it here or in Windows Settings → Apps."),
         ("Ta kopia nie jest zainstalowana. Instalacja kopiuje program do folderu użytkownika, dodaje skrót w menu Start i wpis w „Aplikacje i funkcje” (bez uprawnień administratora).", "This copy is not installed. Installing copies the program to your user folder and adds a Start menu shortcut and an entry in “Apps & features” (no administrator rights needed)."),
         ("Odinstaluj…", "Uninstall…"),
         ("Zainstaluj w systemie", "Install on this computer"),
-        ("Wersja {0}  ·  dane zostają w folderach kont, ustawienia w %APPDATA%\\DeskWall", "Version {0}  ·  data stays in the account folders, settings in %APPDATA%\\DeskWall"),
+        ("Wersja {0}  ·  dane zostają w folderach kont, ustawienia w %APPDATA%\\TaskWall", "Version {0}  ·  data stays in the account folders, settings in %APPDATA%\\TaskWall"),
 
         // Installer
-        ("Zainstalować DeskWall {0} w {1}?\nTa kopia zostanie zamknięta i uruchomi się zainstalowana.", "Install DeskWall {0} in {1}?\nThis copy will close and the installed one will start."),
+        ("Zainstalować TaskWall {0} w {1}?\nTa kopia zostanie zamknięta i uruchomi się zainstalowana.", "Install TaskWall {0} in {1}?\nThis copy will close and the installed one will start."),
         ("Nie znam ścieżki programu.", "The program path is unknown."),
-        ("DeskWall został odinstalowany.", "DeskWall has been uninstalled."),
-        ("DeskWall – odinstalowanie", "DeskWall – uninstall"),
-        ("Odinstalować DeskWall?", "Uninstall DeskWall?"),
+        ("TaskWall został odinstalowany.", "TaskWall has been uninstalled."),
+        ("TaskWall – odinstalowanie", "TaskWall – uninstall"),
+        ("Odinstalować TaskWall?", "Uninstall TaskWall?"),
         ("Program, skrót w menu Start, autostart i wpis w „Aplikacje i funkcje” zostaną usunięte. Zaznacz, czy usunąć też zapisane dane:", "The program, the Start menu shortcut, autostart and the “Apps & features” entry will be removed. Choose whether to delete saved data as well:"),
-        (@"Ustawienia tego komputera (%APPDATA%\DeskWall:wygląd, konta, adresy kalendarzy, token Notion, pamięć podręczna, logi)", @"Settings of this computer (%APPDATA%\DeskWall: appearance, accounts, calendar addresses, Notion token, cache, logs)"),
+        (@"Ustawienia tego komputera (%APPDATA%\TaskWall:wygląd, konta, adresy kalendarzy, token Notion, pamięć podręczna, logi)", @"Settings of this computer (%APPDATA%\TaskWall: appearance, accounts, calendar addresses, Notion token, cache, logs)"),
         ("Wszystkie zapisane zadania, alarmy, oznaczenia i kopie zapasowe", "All saved tasks, alarms, marks and backups"),
         ("Foldery: ", "Folders: "),
         ("Brak folderów z danymi.", "No data folders."),
@@ -138,9 +138,9 @@ static partial class L
         ("Odinstaluj", "Uninstall"),
         ("Na pewno usunąć wszystkie zadania i kopie zapasowe z folderów kont?\nTej operacji nie można cofnąć.", "Really delete all tasks and backups from the account folders?\nThis cannot be undone."),
         ("Brak WScript.Shell", "WScript.Shell is not available"),
-        ("DeskWall – tablica zadań na pulpicie", "DeskWall – task board on your desktop"),
+        ("TaskWall – tablica zadań na pulpicie", "TaskWall – task board on your desktop"),
         ("Nie udało się: ", "Failed: "),
-        ("DeskWall – instalacja", "DeskWall – setup"),
+        ("TaskWall – instalacja", "TaskWall – setup"),
         ("Tablica zadań na pulpicie: tydzień, miesiąc i rok, backlog z Notion, kalendarz Google, synchronizacja przez chmurę.", "A task board on your desktop: week, month and year, backlog from Notion, Google Calendar, sync through the cloud."),
         ("Zostanie zainstalowany w {0} (tylko dla Ciebie, bez uprawnień administratora), ze skrótem w menu Start i wpisem w „Aplikacje i funkcje”.", "It will be installed in {0} (just for you, no administrator rights), with a Start menu shortcut and an entry in “Apps & features”."),
         ("\nWykryto wcześniejszą instalację – zostanie zaktualizowana, ustawienia i dane zostają.", "\nAn earlier installation was found – it will be updated; settings and data are kept."),

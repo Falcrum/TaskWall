@@ -7,7 +7,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
-namespace DeskWall;
+namespace TaskWall;
 
 /// <summary>
 /// Notification-area icon on plain Shell_NotifyIcon (no WinForms – saves ~18 MB).
@@ -56,7 +56,7 @@ sealed class TrayIcon : IDisposable
 
     public TrayIcon(string tooltip)
     {
-        _window = new HwndSource(new HwndSourceParameters("DeskWallTray") { Width = 0, Height = 0, WindowStyle = 0 });
+        _window = new HwndSource(new HwndSourceParameters("TaskWallTray") { Width = 0, Height = 0, WindowStyle = 0 });
         _window.AddHook(Proc);
         _taskbarCreated = RegisterWindowMessage("TaskbarCreated");
         _icon = MakeIcon();

@@ -8,7 +8,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Windows.Threading;
 
-namespace DeskWall;
+namespace TaskWall;
 
 static class Json
 {
@@ -22,7 +22,7 @@ static class Json
 
 static class Log
 {
-    static readonly string Dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DeskWall");
+    static readonly string Dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TaskWall");
 
     public static void Error(string what, Exception? ex = null)
     {
@@ -37,12 +37,32 @@ static class Log
 
 static class SettingsStore
 {
-    public static readonly string Dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DeskWall");
+    public static readonly string Dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TaskWall");
     /// <summary>Dev runs (--data) keep their own settings next to the test data, so they never touch the real ones.</summary>
     static string FilePath => Dev.Arg("--data") is { } dev
         ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dev.TrimEnd(Path.DirectorySeparatorChar))) ?? Dir, "settings.dev.json")
         : Path.Combine(Dir, "settings.json");
     const int CurrentVersion = 7;
+
+    /// <summary>The app used to be called DeskWall: its settings folder (settings, Notion token, calendar cache) moves over once.</summary>
+    public static void MigrateFromDeskWall()
+    {
+        try
+        {
+            var old = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DeskWall");
+            // decided by the settings file, not the folder: a log or calendar cache may already have created the folder
+            if (File.Exists(Path.Combine(Dir, "settings.json")) || !File.Exists(Path.Combine(old, "settings.json"))) return;
+            Directory.CreateDirectory(Dir);
+            foreach (var f in Directory.GetFiles(old, "*", SearchOption.AllDirectories))
+            {
+                var target = Path.Combine(Dir, Path.GetRelativePath(old, f));
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                // settings always come over; the rest only when not there yet
+                if (!File.Exists(target) || Path.GetFileName(f) == "settings.json") File.Copy(f, target, true);
+            }
+        }
+        catch (Exception ex) { Log.Error("migrate settings from DeskWall", ex); }
+    }
 
     public static AppSettings Load()
     {
@@ -142,14 +162,14 @@ static class SettingsStore
     /// <summary>Private tasks: personal OneDrive if present, otherwise a sub-folder next to the work data.</summary>
     public static string DefaultPrivateFolder(string workFolder)
     {
-        if (OneDriveRoot() is { } od) return Path.Combine(od, "DeskWall Prywatne");
+        if (OneDriveRoot() is { } od) return Path.Combine(od, "TaskWall Prywatne");
         return Path.Combine(string.IsNullOrWhiteSpace(workFolder) ? Dir : workFolder, "Prywatne");
     }
 
     public static string DefaultDataFolder()
     {
         var root = GoogleDriveRoot() ?? OneDriveRoot();
-        return root != null ? Path.Combine(root, "DeskWall") : Dir;
+        return root != null ? Path.Combine(root, "TaskWall") : Dir;
     }
 }
 

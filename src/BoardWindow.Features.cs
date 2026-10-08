@@ -9,7 +9,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 
-namespace DeskWall;
+namespace TaskWall;
 
 /// <summary>Backlog drawer, task menu (incl. recurring series), global search, overdue, keyboard, top bar.</summary>
 public partial class BoardWindow
@@ -78,7 +78,7 @@ public partial class BoardWindow
         var dlg = new Microsoft.Win32.SaveFileDialog
         {
             Title = L.T("Eksport okresu do CSV"),
-            FileName = $"DeskWall-{App.AccountName(S.Layer)}-{name}.csv",
+            FileName = $"TaskWall-{App.AccountName(S.Layer)}-{name}.csv",
             Filter = "CSV (*.csv)|*.csv",
             InitialDirectory = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"),
         };
@@ -140,7 +140,7 @@ public partial class BoardWindow
             _syncFlash.Stop();
             _syncFlash.Start();
         }
-        catch (Exception ex) { MessageBox.Show(L.T("Nie udało się zapisać pliku:") + "\n" + ex.Message, "DeskWall"); }
+        catch (Exception ex) { MessageBox.Show(L.T("Nie udało się zapisać pliku:") + "\n" + ex.Message, "TaskWall"); }
     }
 
     TaskItem? DraggedTask(DragEventArgs e) =>
@@ -173,7 +173,7 @@ public partial class BoardWindow
         var all = Store.Data.Tasks.Where(t => t.Archived).ToList();
         if (all.Count == 0) return;
         if (MessageBox.Show(L.F("Usunąć na zawsze {0} zarchiwizowanych zadań z warstwy „{1}”?\nZnikną też z widoku roku. Ctrl+Z na tablicy cofa.", all.Count, App.LayerName(S.Layer)),
-                "DeskWall", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+                "TaskWall", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
         Do(() => { foreach (var t in all) Store.Remove(t); });
     }
 

@@ -12,7 +12,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
 
-namespace DeskWall;
+namespace TaskWall;
 
 /// <summary>
 /// Rings alarms of every open account. No polling every second: the timer is set to the next alarm
