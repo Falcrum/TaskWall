@@ -1,0 +1,142 @@
+<local:GlassWindow x:Class="DeskWall.BoardWindow"
+                   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                   xmlns:local="clr-namespace:DeskWall"
+                   Title="DeskWall"
+                   AllowDrop="True"
+                   FontFamily="{StaticResource UiFont}"
+                   Foreground="{StaticResource Fg}">
+    <Grid x:Name="BodyRoot" Background="Transparent" DragOver="Root_DragOver" PreviewMouseDown="BodyRoot_PreviewMouseDown">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition x:Name="BacklogColumn" Width="0"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Board -->
+        <DockPanel x:Name="BoardArea" Margin="12,8,12,10">
+            <!-- top bar: navigation + views | account | actions (all caps, like the day names) -->
+            <Grid DockPanel.Dock="Top" Height="30" Margin="0,0,0,4" Background="Transparent" MouseRightButtonUp="Bar_RightClick">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Style="{StaticResource IconButton}" Content="&#xE76B;" Click="Prev_Click" ToolTip="Wstecz"/>
+                    <TextBlock x:Name="RangeText" VerticalAlignment="Center" Margin="6,0" FontSize="12"/>
+                    <Button Style="{StaticResource IconButton}" Content="&#xE76C;" Click="Next_Click" ToolTip="Dalej"/>
+                    <Button Style="{StaticResource BarButton}" Content="DZIŚ" Click="Today_Click" Margin="4,0,0,0"/>
+                    <Border Width="1" Height="14" Margin="8,0" Background="{StaticResource Line}"/>
+                    <Border x:Name="ViewSwitch" CornerRadius="8" Background="#10FFFFFF" Padding="2" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="OneWeekButton" Style="{StaticResource BarButton}" Content="1 TYDZIEŃ" Click="OneWeek_Click" Padding="9,2"/>
+                            <Button x:Name="WeekViewButton" Style="{StaticResource BarButton}" Content="2 TYGODNIE" Click="WeekView_Click" Padding="9,2"/>
+                            <Button x:Name="MonthViewButton" Style="{StaticResource BarButton}" Content="MIESIĄC" Click="MonthView_Click" Padding="9,2"/>
+                            <Button x:Name="YearButton" Style="{StaticResource BarButton}" Content="ROK" Click="Year_Click" Padding="9,2"/>
+                        </StackPanel>
+                    </Border>
+                    <Button x:Name="OverdueButton" Style="{StaticResource BarButton}" Click="Overdue_Click" Margin="8,0,0,0"
+                            Visibility="Collapsed" ToolTip="Przenieś niezrobione zadania z minionych dni na dziś"/>
+                    <TextBlock x:Name="MarksText" VerticalAlignment="Center" Margin="10,0,0,0" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource FgDim}"/>
+                    <TextBlock x:Name="SyncText" VerticalAlignment="Center" Margin="12,0,0,0" FontSize="11" Foreground="{StaticResource FgFaint}"/>
+                </StackPanel>
+                <Border x:Name="LayerSwitch" Grid.Column="1" CornerRadius="8" Background="#10FFFFFF" Padding="2" VerticalAlignment="Center" Margin="12,0"
+                        ToolTip="Konto (Ctrl+1 / Ctrl+2)">
+                    <StackPanel Orientation="Horizontal">
+                        <Button x:Name="WorkLayerButton" Style="{StaticResource BarButton}" Content="PRACA" Click="WorkLayer_Click" Padding="12,2"/>
+                        <Button x:Name="PrivateLayerButton" Style="{StaticResource BarButton}" Content="PRYWATNE" Click="PrivateLayer_Click" Padding="12,2"/>
+                    </StackPanel>
+                </Border>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button x:Name="SearchButton" Style="{StaticResource BarButton}" Click="Search_Click" ToolTip="Szukaj wszędzie (Ctrl+F)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE721;" FontFamily="{StaticResource IconFont}" FontSize="11" FontWeight="Normal" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock Text="SZUKAJ"/>
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="ClearDoneButton" Style="{StaticResource BarButton}" Content="WYCZYŚĆ ZROBIONE" Click="ClearDone_Click"
+                            ToolTip="Przenieś zrobione zadania z widocznego okresu i z backlogu do archiwum"/>
+                    <Button x:Name="BacklogButton" Style="{StaticResource BarButton}" Click="ToggleBacklog_Click" AllowDrop="True"/>
+                    <Button x:Name="ArchiveButton" Style="{StaticResource BarButton}" Click="ToggleArchive_Click" AllowDrop="True"
+                            ToolTip="Zarchiwizowane zadania (upuść tu zadanie, żeby je zarchiwizować)"/>
+                    <Button x:Name="AlarmButton" Style="{StaticResource IconButton}" Content="&#xE823;" Click="Alarm_Click" ToolTip="Alarmy"/>
+                    <Button x:Name="MoreButton" Style="{StaticResource IconButton}" Content="&#xE712;" Click="More_Click" ToolTip="Więcej"/>
+                    <Button Style="{StaticResource IconButton}" Content="&#xE713;" Click="Settings_Click" ToolTip="Ustawienia"/>
+                </StackPanel>
+            </Grid>
+            <Grid x:Name="ContentHost">
+                <Grid x:Name="WeeksGrid"/>
+                <Grid x:Name="YearHost" Visibility="Collapsed"/>
+            </Grid>
+        </DockPanel>
+
+        <!-- Backlog: pinned column or slide-out drawer -->
+        <Grid x:Name="BacklogPanel" Grid.Column="1">
+            <Grid.RenderTransform>
+                <TranslateTransform x:Name="DrawerShift"/>
+            </Grid.RenderTransform>
+            <Border x:Name="DrawerGlass"/>
+            <Border x:Name="BacklogSurface" BorderThickness="1,0,0,0" BorderBrush="{StaticResource Line}">
+                <DockPanel Margin="14,10,8,10">
+                    <Grid DockPanel.Dock="Top" Height="28" Margin="0,0,4,0">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button x:Name="BacklogTabButton" Style="{StaticResource LinkButton}" Click="BacklogTab_Click" Padding="8,3" AllowDrop="True">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="BACKLOG" FontWeight="Bold" FontSize="11"/>
+                                    <TextBlock x:Name="BacklogCount" Margin="7,0,0,0" Foreground="{StaticResource FgFaint}" FontSize="11"/>
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="ArchiveTabButton" Style="{StaticResource LinkButton}" Click="ArchiveTab_Click" Padding="8,3" Margin="4,0,0,0" AllowDrop="True"
+                                    ToolTip="Zarchiwizowane zadania. Przeciągnij na dzień, żeby przywrócić.">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="ARCHIWUM" FontWeight="Bold" FontSize="11"/>
+                                    <TextBlock x:Name="ArchiveCount" Margin="7,0,0,0" Foreground="{StaticResource FgFaint}" FontSize="11"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                        <Button x:Name="EmptyArchiveButton" HorizontalAlignment="Right" Style="{StaticResource LinkButton}" Click="EmptyArchive_Click"
+                                Content="Opróżnij" FontSize="12" Visibility="Collapsed" ToolTip="Usuń na zawsze całe archiwum tej warstwy"/>
+                        <Button x:Name="ImportButton" HorizontalAlignment="Right" Style="{StaticResource LinkButton}" Click="Import_Click"
+                                ToolTip="Wczytaj zadania z eksportu Notion (CSV albo ZIP)">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE8B5;" FontFamily="{StaticResource IconFont}" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock Text="Import z Notion" FontSize="12"/>
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                    <Grid DockPanel.Dock="Top" Margin="0,6,4,6">
+                        <TextBox x:Name="SearchBox" Style="{StaticResource FieldBox}" TextChanged="Search_Changed" Padding="22,3,6,3" FontSize="12"/>
+                        <TextBlock Text="&#xE721;" FontFamily="{StaticResource IconFont}" FontSize="11" Foreground="{StaticResource FgFaint}"
+                                   Margin="9,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                        <TextBlock x:Name="SearchHint" Text="Filtruj backlog…" Foreground="{StaticResource FgFaint}" FontSize="12"
+                                   Margin="27,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                    </Grid>
+                    <WrapPanel x:Name="TagChips" DockPanel.Dock="Top" Margin="0,0,4,4"/>
+                    <ScrollViewer x:Name="BacklogScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                  Background="Transparent" AllowDrop="True" Padding="0,0,4,0">
+                        <StackPanel x:Name="BacklogList"/>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Grid>
+
+        <!-- Global search (Ctrl+F) -->
+        <Border x:Name="SearchPanel" Grid.ColumnSpan="2" Panel.ZIndex="20" Visibility="Collapsed"
+                HorizontalAlignment="Right" VerticalAlignment="Top" Width="680" Margin="0,40,12,12"
+                CornerRadius="12" Background="#FF111319" BorderBrush="#40FFFFFF" BorderThickness="1">
+            <DockPanel Margin="12">
+                <Grid DockPanel.Dock="Top">
+                    <TextBox x:Name="GlobalSearch" Style="{StaticResource FieldBox}" Padding="26,5,6,5" FontSize="13" TextChanged="GlobalSearch_Changed"/>
+                    <TextBlock Text="&#xE721;" FontFamily="{StaticResource IconFont}" FontSize="12" Foreground="{StaticResource FgFaint}"
+                               Margin="10,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                    <TextBlock x:Name="GlobalSearchHint" Text="Szukaj w zadaniach, seriach, spotkaniach i archiwum…" Foreground="{StaticResource FgFaint}" FontSize="13"
+                               Margin="30,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                </Grid>
+                <TextBlock x:Name="SearchInfo" DockPanel.Dock="Top" Margin="4,8,0,4" FontSize="11" Foreground="{StaticResource FgFaint}"/>
+                <ScrollViewer x:Name="SearchScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel x:Name="SearchResults"/>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+    </Grid>
+</local:GlassWindow>
