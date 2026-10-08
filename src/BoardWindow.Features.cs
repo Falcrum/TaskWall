@@ -856,9 +856,11 @@ public partial class BoardWindow
         }
         Add(L.T("Szukaj…  (Ctrl+F)"), OpenSearch);
         Add(L.T("Cofnij  (Ctrl+Z)"), Undo, Store.CanUndo);
-        Add(L.F("Archiwum ({0})", Store.Data.Tasks.Count(t => t.Archived)), ShowArchive);
         menu.Items.Add(new Separator());
+        if (S.AccountFor(S.Layer).Notion.Configured)
+            Add(L.T("Synchronizuj Notion teraz"), async () => { var r = await NotionSync.Run(S.Layer); SyncText.Text = r.Error ?? L.F("Notion: nowe {0}, zmienione {1}", r.Added, r.Updated); _syncFlash.Stop(); _syncFlash.Start(); });
         Add(L.T("Importuj z Notion…"), () => App.Instance.ImportNotion());
+        Add(L.T("Eksportuj widoczny okres do CSV…"), () => Export_Click(this, new RoutedEventArgs()));
         Add(L.T("Odśwież kalendarze"), () => App.Instance.RefreshCalendars());
         Add(L.T("Otwórz folder danych"), () => OpenUrl(Store.Folder));
         Add(L.T("Ustawienia…"), () => App.Instance.ShowSettings());

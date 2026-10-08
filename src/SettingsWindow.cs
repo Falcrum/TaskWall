@@ -34,7 +34,7 @@ public sealed class SettingsWindow : DarkWindow
         Content = new ScrollViewer { Content = _sections, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
 
         AddSection(L.T("Ogólne"), L.T("język, autostart, zegar, alarmy, Notion, skrót klawiszowy"), BuildGeneral);
-        AddSection(L.T("Konta"), L.T("Praca i Prywatne: folder, kalendarze Google, Notion, kategorie, oznaczenia dni"), BuildAccounts, open: true);
+        AddSection(L.T("Konta"), L.T("Praca i Prywatne: folder, kalendarze Google, Notion, kategorie, oznaczenia dni"), BuildAccounts);
         AddSection(L.T("Ekran i rozmiar"), L.T("monitor, skala, szerokość i wysokość tablicy"), BuildScreen);
         AddSection(L.T("Tablica"), L.T("weekendy, widok roku, zaległe zadania, backlog"), BuildBoard);
         AddSection(L.T("Wygląd"), L.T("matowe szkło, przyciemnienie, kolor akcentu, animacje"), BuildLook);
@@ -355,29 +355,54 @@ public sealed class SettingsWindow : DarkWindow
     {
         var link = acc.Notion;
         var p = new StackPanel();
-        p.Children.Add(Label(L.T("Automatycznie wczytuje zadania z bazy Notion do backlogu tego konta – tylko odczyt, nic nie jest zmieniane w Notion. Używa Twojego osobistego tokenu (działa jak Twoje konto, bez admina): Notion → Ustawienia → Developers / „Personal access tokens” → New token. Token jest zaszyfrowany dla Twojego konta Windows i zostaje tylko na tym komputerze."), 11, "FgFaint"));
+        p.Children.Add(Label(L.T("Automatycznie wczytuje zadania z bazy Notion do backlogu tego konta – tylko odczyt, nic nie jest zmieniane w Notion. Używa Twojego osobistego tokenu (działa jak Twoje konto, bez admina). Token jest zaszyfrowany dla Twojego konta Windows i zostaje tylko na tym komputerze – na drugim komputerze wklej ten sam token (zachowaj go w menedżerze haseł) albo utwórz osobny."), 11, "FgFaint"));
         var open = Btn(L.T("Utwórz token w Notion ↗"), "LinkButton", (_, _) => GlassWindow.OpenUrl("https://www.notion.so/developers/tokens"));
         open.HorizontalAlignment = HorizontalAlignment.Left;
         open.Margin = new Thickness(-7, 4, 0, 4);
         p.Children.Add(open);
 
         var db = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = link.Database, ToolTip = L.T("Link do bazy: ••• przy widoku bazy → Copy link to view") };
+        var dbState = Label("", 11.5, "FgDim");
+        void ShowDbState()
+        {
+            var v = db.Text.Trim();
+            var id = NotionImport.ExtractId(v);
+            dbState.Text = v.Length == 0 ? L.T("Wklej link do bazy.") : id != null ? L.F("Rozpoznano bazę ✓  (id {0}…)", id[..8]) : L.T("To nie wygląda na link do bazy Notion.");
+            dbState.Foreground = v.Length > 0 && id == null ? new SolidColorBrush(Color.FromRgb(0xF2, 0xA6, 0x5A)) : Ui.Res("FgDim");
+        }
+        db.TextChanged += (_, _) => ShowDbState();
         db.LostKeyboardFocus += (_, _) => { if (db.Text.Trim() != link.Database) { link.Database = db.Text.Trim(); SettingsStore.Save(S); } };
-        p.Children.Add(Pair(L.T("Link do bazy (••• → Copy link to view)"), db));
+        ShowDbState();
+        p.Children.Add(Pair(L.T("Link do bazy"), db));
+        p.Children.Add(dbState);
+        p.Children.Add(Label(L.T("Skąd go wziąć: otwórz bazę w Notion → kliknij nazwę widoku (zakładka nad tabelą, np. „Table”) → Copy link to view. Jeśli baza zajmuje całą stronę, wystarczy też Ctrl+L (kopiuje adres strony)."), 11, "FgFaint"));
+        var howTo = Btn(L.T("Jak skopiować link do widoku (pomoc Notion) ↗"), "LinkButton", (_, _) => GlassWindow.OpenUrl("https://www.notion.com/help/views-filters-and-sorts"));
+        howTo.HorizontalAlignment = HorizontalAlignment.Left;
+        howTo.Margin = new Thickness(-7, 2, 0, 8);
+        p.Children.Add(howTo);
 
+        // the token is never shown: a saved one appears as ******** (typing / pasting replaces it)
+        const string Mask = "************************";
         var tokenRow = new DockPanel();
-        var token = new PasswordBox { Height = 34, Padding = new Thickness(8, 6, 8, 6), Background = Ui.Res("Field"), Foreground = Ui.Res("Fg"), BorderBrush = Ui.Res("FieldBorder"), CaretBrush = Ui.Res("Fg") };
+        var token = new PasswordBox { Height = 34, Padding = new Thickness(8, 6, 8, 6), Background = Ui.Res("Field"), Foreground = Ui.Res("Fg"), BorderBrush = Ui.Res("FieldBorder"), CaretBrush = Ui.Res("Fg"), PasswordChar = '*' };
         var tokenState = Label("", 11.5, "FgDim");
-        void ShowTokenState() => tokenState.Text = link.TokenProtected != null ? L.T("Token zapisany (ukryty). Wklej nowy, żeby go zmienić.") : L.T("Brak tokenu.");
+        bool filling = false;
+        void ShowTokenState()
+        {
+            tokenState.Text = link.TokenProtected != null ? L.T("Token zapisany i zaszyfrowany. Wklej nowy, żeby go zmienić.") : L.T("Brak tokenu.");
+            filling = true;
+            token.Password = link.TokenProtected != null ? Mask : "";
+            filling = false;
+        }
         var clear = Btn(L.T("Usuń token"), "LinkButton", (_, _) => { link.TokenProtected = null; SettingsStore.Save(S); ShowTokenState(); });
         DockPanel.SetDock(clear, Dock.Right);
         tokenRow.Children.Add(clear);
         tokenRow.Children.Add(token);
+        token.GotKeyboardFocus += (_, _) => { if (token.Password == Mask) token.SelectAll(); };
         token.PasswordChanged += (_, _) =>
         {
-            if (token.Password.Trim().Length < 20) return;
+            if (filling || token.Password == Mask || token.Password.Trim().Length < 20) return;
             link.TokenProtected = NotionSync.Protect(token.Password);
-            token.Clear();
             SettingsStore.Save(S);
             ShowTokenState();
         };
