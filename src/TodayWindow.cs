@@ -71,7 +71,7 @@ public sealed class TodayWindow : Window
         var account = new Button { Style = (Style)Application.Current.Resources["BarButton"], Content = App.AccountName(App.Settings.Layer).ToUpper(BoardWindow.Pl), ToolTip = "Przełącz konto" };
         account.Click += (_, _) => { App.Instance.SwitchLayer(App.Settings.Layer == "private" ? "work" : "private"); Fill(); };
         var board = new Button { Style = (Style)Application.Current.Resources["BarButton"], Content = "TABLICA", ToolTip = "Pokaż tablicę na wierzchu" };
-        board.Click += (_, _) => { Close(); GlassWindow.Peek(true); App.Board?.Activate(); };
+        board.Click += (_, _) => { Close(); App.Instance.SetBoardHidden(false); GlassWindow.Peek(true); App.Board?.Activate(); };
         var alarm = new Button { Style = (Style)Application.Current.Resources["BarButton"], Content = "+ ALARM", ToolTip = "Nowy alarm o konkretnej godzinie" };
         alarm.Click += (_, _) => { Close(); AlarmWindow.Edit(Store); };
         DockPanel.SetDock(board, Dock.Right);
@@ -86,19 +86,21 @@ public sealed class TodayWindow : Window
         head.Children.Add(title);
         _body.Children.Add(head);
 
-        // alarms
+        // alarms and own meetings
         var amber = new SolidColorBrush(Color.FromRgb(0xF2, 0xB1, 0x4C));
+        var violet = new SolidColorBrush(Color.FromRgb(0x8C, 0x9B, 0xFF));
         foreach (var a in Store.Alarms.Where(a => a.Occurs(today)).OrderBy(a => a.Time))
         {
-            var t = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 1, 0, 1), Cursor = Cursors.Hand, Opacity = a.At(today) <= DateTime.Now ? 0.45 : 1, ToolTip = "Kliknij, żeby zmienić" };
-            t.Inlines.Add(new Run("  ") { FontFamily = Ui.Font("IconFont"), FontSize = 10, Foreground = amber });
-            t.Inlines.Add(new Run(a.Time + "  ") { FontWeight = FontWeights.SemiBold, Foreground = amber });
-            t.Inlines.Add(new Run(a.Text.Length > 0 ? a.Text : "Alarm"));
+            var col = a.IsMeeting ? violet : amber;
+            bool over = (a.IsMeeting ? a.EndAt(today) : a.At(today)) <= DateTime.Now;
+            var t = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 1, 0, 1), Cursor = Cursors.Hand, Opacity = over ? 0.45 : 1, ToolTip = "Kliknij, żeby zmienić" };
+            t.Inlines.Add(new Run(a.IsMeeting ? "  " : "  ") { FontFamily = Ui.Font("IconFont"), FontSize = 10, Foreground = col });
+            t.Inlines.Add(new Run((a.IsMeeting ? $"{a.Time}–{a.EndAt(today):HH:mm}" : a.Time) + "  ") { FontWeight = FontWeights.SemiBold, Foreground = col });
+            t.Inlines.Add(new Run(a.Text.Length > 0 ? a.Text : a.IsMeeting ? "Spotkanie" : "Alarm"));
             var alarmRef = a;
-            t.MouseLeftButtonUp += (_, _) => { Close(); AlarmWindow.Edit(Store, alarmRef); };
+            t.MouseLeftButtonUp += (_, _) => { Close(); AlarmWindow.Edit(Store, alarmRef, today); };
             _body.Children.Add(t);
         }
-
         // meetings
         foreach (var e in CalendarService.On(today).Where(x => !x.IsHoliday))
         {

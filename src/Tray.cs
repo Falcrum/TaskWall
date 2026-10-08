@@ -92,21 +92,49 @@ sealed class TrayIcon : IDisposable
             int ev = lParam.ToInt32() & 0xFFFF;
             if (ev == WM_LBUTTONUP) Clicked?.Invoke();
             else if (ev == WM_RBUTTONUP && BuildMenu != null)
-            {
-                SetForegroundWindow(_window.Handle); // lets the menu close when clicking elsewhere
-                var menu = BuildMenu();
-                menu.Placement = PlacementMode.MousePoint;
-                menu.Opened += (_, _) =>
-                {
-                    if (PresentationSource.FromVisual(menu) is HwndSource src) SetForegroundWindow(src.Handle);
-                };
-                menu.IsOpen = true;
-            }
+                // after the click has fully finished – otherwise the same mouse-up closes the fresh menu
+                Application.Current.Dispatcher.BeginInvoke(ShowMenu, System.Windows.Threading.DispatcherPriority.Input);
             handled = true;
         }
         else if (msg == _taskbarCreated) Shell_NotifyIcon(NIM_ADD, ref _data); // Explorer restarted
         return IntPtr.Zero;
     }
+
+    Window? _anchor;
+    ContextMenu? _menu;
+
+    /// <summary>
+    /// The menu hangs on an invisible 1×1 window that takes the foreground: the menu then stays open
+    /// until a click elsewhere (a menu without an active owner window closes right away).
+    /// </summary>
+    void ShowMenu()
+    {
+        if (_menu?.IsOpen == true) { _menu.IsOpen = false; return; }
+        _anchor ??= new Window
+        {
+            WindowStyle = WindowStyle.None, AllowsTransparency = true, Background = Brushes.Transparent, ShowInTaskbar = false,
+            Topmost = true, Width = 1, Height = 1, ResizeMode = ResizeMode.NoResize, ShowActivated = true,
+        };
+        GetCursorPos(out var p);
+        _anchor.Show();
+        // cursor pixels → this window's DIPs (the tray's monitor may have another scale than the board's)
+        var m = PresentationSource.FromVisual(_anchor)?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
+        var pt = m.Transform(new Point(p.X, p.Y));
+        _anchor.Left = pt.X;
+        _anchor.Top = pt.Y;
+        var hwnd = new WindowInteropHelper(_anchor).Handle;
+        SetForegroundWindow(hwnd);
+        _anchor.Activate();
+
+        _menu = BuildMenu!();
+        _menu.PlacementTarget = _anchor;
+        _menu.Placement = PlacementMode.Top;
+        _menu.Closed += (_, _) => _anchor?.Hide();
+        _menu.IsOpen = true;
+    }
+
+    [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
+    [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT p);
 
     /// <summary>32×32 icon: rounded accent square with a 2×3 grid, drawn with WPF.</summary>
     static IntPtr MakeIcon()

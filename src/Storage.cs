@@ -218,9 +218,16 @@ public sealed class BoardStore
     /// <summary>Default categories carry the oldest possible timestamp, so any real edit (from any PC) wins.</summary>
     void EnsureCategories()
     {
-        if (Data.Categories != null) return;
-        Data.Categories = Category.DefaultsFor(Layer);
-        Data.CategoriesModified = DateTime.MinValue.AddTicks(1);
+        if (Data.Categories == null)
+        {
+            Data.Categories = Category.DefaultsFor(Layer);
+            Data.CategoriesModified = DateTime.MinValue.AddTicks(1);
+        }
+        if (Data.Marks == null)
+        {
+            Data.Marks = MarkType.DefaultsFor(Layer);
+            Data.MarksModified = DateTime.MinValue.AddTicks(1);
+        }
     }
 
     public List<Category> Categories => Data.Categories ??= Category.DefaultsFor(Layer);
@@ -233,6 +240,19 @@ public sealed class BoardStore
     }
 
     public Category? CategoryFor(string tag) => Categories.FirstOrDefault(c => c.Key == tag);
+
+    // ---------- kinds of day marks (per account) ----------
+
+    public List<MarkType> MarkTypes => Data.Marks ??= MarkType.DefaultsFor(Layer);
+
+    public void SetMarkTypes(List<MarkType> list)
+    {
+        Data.Marks = list;
+        Data.MarksModified = Stamp.After(Data.MarksModified);
+        MarkDirty();
+    }
+
+    public MarkType? MarkTypeFor(string? code) => code == null ? null : MarkTypes.FirstOrDefault(m => m.Code == code);
 
     /// <summary>Switch to another folder, carrying the current tasks over (merged with whatever is there).</summary>
     public void SwitchFolder(string folder)
@@ -401,12 +421,38 @@ public sealed class BoardStore
         MarkDirty();
     }
 
-    public string? DayMark(string day) => Data.Days.TryGetValue(day, out var d) ? d.Mark : null;
+    /// <summary>
+    /// The mark of a day: set by hand (Days; "" = removed by hand on a day a series would mark) or else from a
+    /// repeating mark series.
+    /// </summary>
+    public string? DayMark(string day)
+    {
+        if (Data.Days.TryGetValue(day, out var d) && d.Mark != null) return d.Mark.Length == 0 ? null : d.Mark;
+        return SeriesMark(day);
+    }
+
+    public string? SeriesMark(string day)
+    {
+        if (Data.MarkRules.Count == 0 || !DateTime.TryParseExact(day, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var date)) return null;
+        return MarkRuleOn(date)?.Text;
+    }
+
+    public RecurringRule? MarkRuleOn(DateTime date) => Data.MarkRules.FirstOrDefault(r => r.Occurs(date));
 
     public void SetDayMark(string day, string? mark)
     {
         var before = Data.Days.TryGetValue(day, out var d) ? d.Modified : DateTime.MinValue;
-        Data.Days[day] = new DayInfo { Mark = mark, Modified = Stamp.After(before) };
+        // same as the series → no override; removing a series mark → "" (explicit "nothing")
+        var series = SeriesMark(day);
+        string? stored = mark == series ? null : mark ?? "";
+        Data.Days[day] = new DayInfo { Mark = stored, Modified = Stamp.After(before) };
+        MarkDirty();
+    }
+
+    public void AddMarkRule(RecurringRule r)
+    {
+        r.Touch();
+        Data.MarkRules.Add(r);
         MarkDirty();
     }
 
@@ -419,7 +465,7 @@ public sealed class BoardStore
     /// <summary>Call before every user action that changes the board.</summary>
     public void Checkpoint()
     {
-        _undo.Add(JsonSerializer.Serialize(new BoardData { Tasks = Data.Tasks, Days = Data.Days, Rules = Data.Rules }, Json.Options));
+        _undo.Add(JsonSerializer.Serialize(new BoardData { Tasks = Data.Tasks, Days = Data.Days, Rules = Data.Rules, MarkRules = Data.MarkRules }, Json.Options));
         if (_undo.Count > UndoMax) _undo.RemoveAt(0);
     }
 
@@ -446,12 +492,27 @@ public sealed class BoardStore
                 Changed(cur);
             }
         }
-        var oldRules = snap.Rules.ToDictionary(r => r.Id);
-        foreach (var r in Data.Rules.Where(r => !oldRules.ContainsKey(r.Id) && !r.Deleted)) { r.Deleted = true; Changed(r); }
+        UndoRules(snap.Rules, Data.Rules);
+        UndoRules(snap.MarkRules ?? new(), Data.MarkRules);
+        foreach (var key in snap.Days.Keys.Union(Data.Days.Keys).ToList())
+        {
+            // raw stored values ("" = removed by hand), so series marks stay series marks
+            var was = snap.Days.TryGetValue(key, out var a) ? a.Mark : null;
+            var now = Data.Days.TryGetValue(key, out var b) ? b.Mark : null;
+            if (was != now) Data.Days[key] = new DayInfo { Mark = was, Modified = Stamp.After(b?.Modified ?? DateTime.MinValue) };
+        }
+        MarkDirty();
+        return true;
+    }
+
+    void UndoRules(List<RecurringRule> snap, List<RecurringRule> live)
+    {
+        var oldRules = snap.ToDictionary(r => r.Id);
+        foreach (var r in live.Where(r => !oldRules.ContainsKey(r.Id) && !r.Deleted)) { r.Deleted = true; Changed(r); }
         foreach (var o in oldRules.Values)
         {
-            var cur = Data.Rules.FirstOrDefault(r => r.Id == o.Id);
-            if (cur == null) AddRule(o);
+            var cur = live.FirstOrDefault(r => r.Id == o.Id);
+            if (cur == null) { o.Touch(); live.Add(o); }
             else if (RuleKey(cur) != RuleKey(o))
             {
                 var stamp = cur.Modified;
@@ -460,17 +521,10 @@ public sealed class BoardStore
                 Changed(cur);
             }
         }
-        foreach (var key in snap.Days.Keys.Union(Data.Days.Keys).ToList())
-        {
-            var was = snap.Days.TryGetValue(key, out var a) ? a.Mark : null;
-            if (was != DayMark(key)) SetDayMark(key, was);
-        }
-        MarkDirty();
-        return true;
     }
 
     static string RuleKey(RecurringRule r) =>
-        $"{r.Text}|{r.Pattern}|{r.Start}|{r.End}|{r.Estimate}|{r.Order}|{string.Join(",", r.Skips)}|{r.Deleted}";
+        $"{r.Text}|{r.Pattern}|{r.Interval}|{string.Join(",", r.Weekdays ?? new())}|{r.Start}|{r.End}|{r.Estimate}|{r.Order}|{string.Join(",", r.Skips)}|{r.Deleted}";
 
     static string Comparable(TaskItem t)
     {
@@ -650,16 +704,12 @@ public sealed class BoardStore
         result.Categories = takeB ? b.Categories : a.Categories;
         result.CategoriesModified = takeB ? b.CategoriesModified : a.CategoriesModified;
 
-        var rules = new Dictionary<string, RecurringRule>();
-        foreach (var r in a.Rules) rules[r.Id] = r;
-        foreach (var r in b.Rules)
-        {
-            if (!rules.TryGetValue(r.Id, out var cur)) { rules[r.Id] = r; continue; }
-            var skips = cur.Skips.Union(r.Skips).ToList(); // a skip made on either PC survives a rename on the other
-            if (r.Modified > cur.Modified) cur.CopyFrom(r);
-            cur.Skips = skips;
-        }
-        result.Rules = rules.Values.ToList();
+        bool takeBMarks = a.Marks == null || (b.Marks != null && b.MarksModified > a.MarksModified);
+        result.Marks = takeBMarks ? b.Marks : a.Marks;
+        result.MarksModified = takeBMarks ? b.MarksModified : a.MarksModified;
+
+        result.Rules = MergeRules(a.Rules, b.Rules);
+        result.MarkRules = MergeRules(a.MarkRules, b.MarkRules);
 
         var alarms = new Dictionary<string, Alarm>();
         foreach (var x in a.Alarms) alarms[x.Id] = x;
@@ -668,11 +718,27 @@ public sealed class BoardStore
             if (!alarms.TryGetValue(x.Id, out var cur)) { alarms[x.Id] = x; continue; }
             // "already rang" travels independently of edits, so a second PC doesn't ring again later
             var rang = string.CompareOrdinal(x.Rang, cur.Rang) > 0 ? x.Rang : cur.Rang;
+            var skips = cur.Skips == null && x.Skips == null ? null : (cur.Skips ?? new()).Union(x.Skips ?? new()).ToList();
             if (x.Modified > cur.Modified) cur.CopyFrom(x);
             cur.Rang = rang;
+            cur.Skips = skips;
         }
         result.Alarms = alarms.Values.ToList();
         return result;
+    }
+
+    static List<RecurringRule> MergeRules(List<RecurringRule> a, List<RecurringRule> b)
+    {
+        var rules = new Dictionary<string, RecurringRule>();
+        foreach (var r in a) rules[r.Id] = r;
+        foreach (var r in b)
+        {
+            if (!rules.TryGetValue(r.Id, out var cur)) { rules[r.Id] = r; continue; }
+            var skips = cur.Skips.Union(r.Skips).ToList(); // a skip made on either PC survives a rename on the other
+            if (r.Modified > cur.Modified) cur.CopyFrom(r);
+            cur.Skips = skips;
+        }
+        return rules.Values.ToList();
     }
 
     /// <summary>Deterministic winner when two edits carry the same timestamp (both PCs must agree).</summary>
@@ -711,6 +777,7 @@ public sealed class BoardStore
                 data.Days ??= new();
                 data.Rules ??= new();
                 data.Alarms ??= new();
+                data.MarkRules ??= new();
                 MigrateTrash(data);
                 return new DiskState(data, Hash(json), false);
             }

@@ -141,6 +141,35 @@ public partial class App : Application
         Dev.AfterStartup();
     }
 
+    /// <summary>Hides the whole board (the clock follows its own setting); the tray icon / hotkey bring it back.</summary>
+    public void SetBoardHidden(bool hidden)
+    {
+        if (Settings.BoardHidden == hidden || Board == null) return;
+        Settings.BoardHidden = hidden;
+        SettingsStore.Save(Settings);
+        if (hidden)
+        {
+            Board.EndEditing();
+            if (GlassWindow.IsPeeking) GlassWindow.Peek(false);
+            var frame = Board.FrameElement;
+            var fade = new System.Windows.Media.Animation.DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(Settings.Animations ? 200 : 1));
+            fade.Completed += (_, _) =>
+            {
+                Board.Hide();
+                frame.BeginAnimation(UIElement.OpacityProperty, null);
+                frame.Opacity = 1;
+                ScheduleTrim();
+            };
+            frame.BeginAnimation(UIElement.OpacityProperty, fade);
+            _tray?.Balloon("DeskWall", "Tablica ukryta. Pokażesz ją z menu ikony w zasobniku albo skrótem " + Settings.Hotkey + ".");
+        }
+        else
+        {
+            LayoutWindows();
+            Anim.Enter(Board.FrameElement, 0, 22, 420);
+        }
+    }
+
     /// <summary>Accounts whose data is loaded (for alarms).</summary>
     public static System.Collections.Generic.IEnumerable<(string Layer, BoardStore Store)> OpenStores() =>
         Stores.Select(kv => (kv.Key, kv.Value)).ToList();
@@ -303,7 +332,8 @@ public partial class App : Application
         if (!_glassReady) { RefreshGlass(); _glassReady = true; }
         else ScheduleGlass();
 
-        if (!Board.IsVisible) Board.Show();
+        if (Settings.BoardHidden) { if (Board.IsVisible) Board.Hide(); }
+        else if (!Board.IsVisible) Board.Show();
         if (Settings.ShowClock) { if (!_clock.IsVisible) _clock.Show(); }
         else if (_clock.IsVisible) _clock.Hide();
     }
@@ -415,6 +445,7 @@ public partial class App : Application
             if (GlassWindow.IsPeeking) GlassWindow.Peek(false);
             else
             {
+                SetBoardHidden(false); // the hotkey always brings a hidden board back
                 GlassWindow.Peek(true);
                 Board?.QuickAdd();
             }
@@ -522,6 +553,7 @@ public partial class App : Application
                 mi.Click += (_, _) => a();
                 menu.Items.Add(mi);
             }
+            Add(Settings.BoardHidden ? "Pokaż tablicę" : "Ukryj tablicę", () => SetBoardHidden(!Settings.BoardHidden));
             Add("Dziś…", ToggleToday);
             Add("Nowy alarm…", () => AlarmWindow.Edit(Store));
             Add("Ustawienia…", ShowSettings);

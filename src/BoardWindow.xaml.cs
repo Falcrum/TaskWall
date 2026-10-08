@@ -13,7 +13,7 @@ using System.Windows.Threading;
 
 namespace DeskWall;
 
-public enum ViewMode { Week1, Week2, Month, Year }
+public enum ViewMode { Day, Week1, Week2, Month, Year }
 
 /// <summary>The board: week / month / year views, day cells, task rows, editing and drag &amp; drop.
 /// Backlog, search, top bar and keyboard live in BoardWindow.Features.cs.</summary>
@@ -27,12 +27,13 @@ public partial class BoardWindow : GlassWindow
     static readonly string[] TagPalette = { "#6EA0FF", "#F07AAE", "#F2A65A", "#5CCB92", "#4CC3D4", "#A08BFF", "#EE6E6E", "#D4C25E" };
 
     ViewMode _view = ParseView(App.Settings.View);
-    ViewMode _lastWeekView = App.Settings.View == "week1" ? ViewMode.Week1 : ViewMode.Week2;
-    bool IsWeekView => _view is ViewMode.Week1 or ViewMode.Week2;
+    ViewMode _lastWeekView = App.Settings.View switch { "week1" => ViewMode.Week1, "day" => ViewMode.Day, _ => ViewMode.Week2 };
+    bool IsWeekView => _view is ViewMode.Day or ViewMode.Week1 or ViewMode.Week2;
+    DateTime _dayDate = DateTime.Today; // the day of the DZIEŃ view
     readonly Dictionary<string, double> _progress = new(); // last shown progress per day (animate only real changes)
 
-    static ViewMode ParseView(string v) => v switch { "week1" => ViewMode.Week1, "month" => ViewMode.Month, "year" => ViewMode.Year, _ => ViewMode.Week2 };
-    static string ViewKey(ViewMode v) => v switch { ViewMode.Week1 => "week1", ViewMode.Month => "month", ViewMode.Year => "year", _ => "week2" };
+    static ViewMode ParseView(string v) => v switch { "day" => ViewMode.Day, "week1" => ViewMode.Week1, "month" => ViewMode.Month, "year" => ViewMode.Year, _ => ViewMode.Week2 };
+    static string ViewKey(ViewMode v) => v switch { ViewMode.Day => "day", ViewMode.Week1 => "week1", ViewMode.Month => "month", ViewMode.Year => "year", _ => "week2" };
     int _weekOffset;
     DateTime _monthFirst = new(DateTime.Today.Year, DateTime.Today.Month, 1);
     int _year = DateTime.Today.Year;
@@ -85,12 +86,13 @@ public partial class BoardWindow : GlassWindow
     static string DayName(DateTime d) => Pl.DateTimeFormat.GetAbbreviatedDayName(d.DayOfWeek).TrimEnd('.').ToUpper(Pl);
     static bool IsWeekend(DateTime d) => d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
     public static int WeekNo(DateTime d) => ISOWeek.GetWeekOfYear(d);
-    static string Hours(double h) => h.ToString("0.#", Pl) + "h";
+    public static string Hours(double h) => h.ToString("0.#", Pl) + "h";
     static SolidColorBrush B(Color c) => new(c);
     static Color A(Color c, byte a) => Color.FromArgb(a, c.R, c.G, c.B);
+    public static Color ParseColor(string hex) { try { return (Color)ColorConverter.ConvertFromString(hex); } catch { return Color.FromRgb(0x9A, 0xA1, 0xB2); } }
 
-    public DateTime FirstMonday => _view == ViewMode.Month ? Monday(_monthFirst) : Monday(DateTime.Today).AddDays(7 * _weekOffset);
-    public int WeekCount => _view switch { ViewMode.Month => MonthRows(), ViewMode.Week1 => 1, _ => 2 };
+    public DateTime FirstMonday => _view == ViewMode.Month ? Monday(_monthFirst) : _view == ViewMode.Day ? Monday(_dayDate) : Monday(DateTime.Today).AddDays(7 * _weekOffset);
+    public int WeekCount => _view switch { ViewMode.Month => MonthRows(), ViewMode.Week1 or ViewMode.Day => 1, _ => 2 };
     public ViewMode View => _view;
     int MonthRows() => (int)((Monday(_monthFirst.AddMonths(1).AddDays(-1)) - Monday(_monthFirst)).TotalDays / 7) + 1;
 
@@ -100,6 +102,7 @@ public partial class BoardWindow : GlassWindow
         ViewMode.Month => MonthRows() * 0.62,
         ViewMode.Year => 2,
         ViewMode.Week1 => 1,
+        ViewMode.Day => 1.5,
         _ => 2,
     };
 
@@ -131,8 +134,9 @@ public partial class BoardWindow : GlassWindow
     {
         int target = (int)Math.Round((Monday(date) - Monday(DateTime.Today)).TotalDays / 7);
         bool viewChanged = !IsWeekView;
-        _slideDir = viewChanged ? 0 : Math.Sign(target - _weekOffset);
+        _slideDir = viewChanged ? 0 : _view == ViewMode.Day ? Math.Sign((date.Date - _dayDate).TotalDays) : Math.Sign(target - _weekOffset);
         _weekOffset = target;
+        _dayDate = date.Date;
         if (viewChanged) { _view = _lastWeekView; S.View = ViewKey(_view); }
         Rebuild();
         if (viewChanged) { Anim.Enter(WeeksGrid, 0, 10, 300); App.Instance.LayoutWindows(); }
@@ -146,8 +150,11 @@ public partial class BoardWindow : GlassWindow
         {
             ViewMode.Year => _year == DateTime.Today.Year ? DateTime.Today : new DateTime(_year, 1, 1),
             ViewMode.Month => _monthFirst.Year == DateTime.Today.Year && _monthFirst.Month == DateTime.Today.Month ? DateTime.Today : _monthFirst,
-            _ => FirstMonday.AddDays(3),
+            ViewMode.Day => _dayDate,
+            // into the day view: today when it's on screen
+            _ => v == ViewMode.Day && DateTime.Today >= FirstMonday && DateTime.Today < FirstMonday.AddDays(7 * WeekCount) ? DateTime.Today : FirstMonday.AddDays(3),
         };
+        _dayDate = anchor.Date;
         _view = v;
         if (IsWeekView) _lastWeekView = v;
         S.View = ViewKey(v);
@@ -183,6 +190,7 @@ public partial class BoardWindow : GlassWindow
     {
         if (!IsWeekView) { _view = _lastWeekView; S.View = ViewKey(_view); }
         _weekOffset = 0;
+        _dayDate = DateTime.Today;
         SetDrawer(false);
         CloseSearch();
         _addingKey = DayKey(DateTime.Today);
@@ -223,7 +231,7 @@ public partial class BoardWindow : GlassWindow
             YearHost.Visibility = Visibility.Visible;
             YearHost.Children.Clear();
             // the "fill in" animation only when the year view is entered or the year changes, not on every refresh
-            YearHost.Children.Add(YearView.Build(_year, Store.Data, d => JumpTo(d), animate: _builtView != ViewMode.Year || _slideDir != 0, export: ExportMarks));
+            YearHost.Children.Add(YearView.Build(_year, Store, d => JumpTo(d), animate: _builtView != ViewMode.Year || _slideDir != 0));
             if (_slideDir != 0) Anim.Enter(YearHost, 50 * _slideDir, 0, 280);
         }
         else
@@ -249,7 +257,7 @@ public partial class BoardWindow : GlassWindow
         OverdueButton.Foreground = B(Color.FromRgb(0xF2, 0xA6, 0x5A));
 
         YearButton.Visibility = S.ShowYearButton ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var (btn, mode) in new[] { (OneWeekButton, ViewMode.Week1), (WeekViewButton, ViewMode.Week2), (MonthViewButton, ViewMode.Month), (YearButton, ViewMode.Year) })
+        foreach (var (btn, mode) in new[] { (DayViewButton, ViewMode.Day), (OneWeekButton, ViewMode.Week1), (WeekViewButton, ViewMode.Week2), (MonthViewButton, ViewMode.Month), (YearButton, ViewMode.Year) })
         {
             bool on = _view == mode;
             btn.Background = on ? B(Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF)) : Brushes.Transparent;
@@ -266,12 +274,16 @@ public partial class BoardWindow : GlassWindow
         ClearDoneButton.Visibility = _view == ViewMode.Year ? Visibility.Collapsed : Visibility.Visible;
         UpdateBacklogButton();
 
-        UpdateMarksText();
         RangeText.Inlines.Clear();
         switch (_view)
         {
             case ViewMode.Year:
                 RangeText.Inlines.Add(new Run(_year.ToString()) { FontWeight = FontWeights.Bold });
+                break;
+            case ViewMode.Day:
+                RangeText.Inlines.Add(new Run($"T {WeekNo(_dayDate)}") { FontWeight = FontWeights.Bold });
+                RangeText.Inlines.Add(new Run("   |   ") { Foreground = Res("FgFaint") });
+                RangeText.Inlines.Add(new Run(AlarmWindow.DayTitle(_dayDate)) { FontWeight = FontWeights.SemiBold, Foreground = Res("FgDim") });
                 break;
             case ViewMode.Month:
             {
@@ -296,34 +308,21 @@ public partial class BoardWindow : GlassWindow
         }
     }
 
-    /// <summary>"HO 6 · BŚU 1" for the month on screen (month view) or the visible weeks.</summary>
-    void UpdateMarksText()
-    {
-        if (_view == ViewMode.Year) { MarksText.Text = ""; return; }
-        DateTime from = _view == ViewMode.Month ? _monthFirst : FirstMonday;
-        DateTime to = _view == ViewMode.Month ? _monthFirst.AddMonths(1).AddDays(-1) : FirstMonday.AddDays(7 * WeekCount - 1);
-        var parts = DayMarks.All.Select(m => (m.Code, n: CountMark(m.Code, from, to))).Where(x => x.n > 0).Select(x => $"{x.Code} {x.n}").ToList();
-        MarksText.Text = string.Join("  ·  ", parts);
-        MarksText.ToolTip = parts.Count > 0 ? "Oznaczone dni w widocznym okresie" : null;
-    }
-
-    static int CountMark(string code, DateTime from, DateTime to) =>
-        Store.Data.Days.Count(kv => kv.Value.Mark == code && string.CompareOrdinal(kv.Key, DayKey(from)) >= 0 && string.CompareOrdinal(kv.Key, DayKey(to)) <= 0);
-
     /// <summary>Week view (1–2 rows) or month view (5–6 compact rows).</summary>
     void BuildGrid()
     {
         WeeksGrid.Children.Clear();
         WeeksGrid.RowDefinitions.Clear();
         WeeksGrid.ColumnDefinitions.Clear();
-        int days = S.ShowWeekends ? 7 : 5;
+        bool single = _view == ViewMode.Day;
+        int days = single ? 1 : S.ShowWeekends ? 7 : 5;
         bool month = _view == ViewMode.Month;
         for (int c = 0; c < days; c++) WeeksGrid.ColumnDefinitions.Add(new ColumnDefinition());
         for (int w = 0; w < WeekCount; w++) WeeksGrid.RowDefinitions.Add(new RowDefinition());
 
         var byDay = TasksByDay();
         var archivedDone = Store.Data.Tasks.Where(t => t.Archived && t.Done && t.Day != null).GroupBy(t => t.Day!).ToDictionary(g => g.Key, g => g.Count());
-        var first = FirstMonday;
+        var first = single ? _dayDate : FirstMonday;
         for (int w = 0; w < WeekCount; w++)
             for (int c = 0; c < days; c++)
             {
@@ -347,8 +346,8 @@ public partial class BoardWindow : GlassWindow
         if (dayOff != null && !holidayNames.Any(n => n.Equals(dayOff, StringComparison.OrdinalIgnoreCase))) holidayNames.Insert(0, dayOff);
         bool red = IsWeekend(date) || dayOff != null;
         var mark = Store.DayMark(key);
-        var markInfo = DayMarks.All.FirstOrDefault(m => m.Code == mark);
-        Color? markColor = mark != null && markInfo.Code != null ? (Color)ColorConverter.ConvertFromString(markInfo.Color) : null;
+        var markInfo = Store.MarkTypeFor(mark);
+        Color? markColor = markInfo != null ? ParseColor(markInfo.Color) : mark != null ? Color.FromRgb(0x9A, 0xA1, 0xB2) : null;
 
         var outer = new Border
         {
@@ -401,7 +400,7 @@ public partial class BoardWindow : GlassWindow
                 Padding = new Thickness(5, 0, 5, 1),
                 Margin = new Thickness(7, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
-                ToolTip = markInfo.Label,
+                ToolTip = (markInfo?.Label ?? mark) + (Store.SeriesMark(key) == mark ? "  ·  powtarzane" : ""),
                 Child = new TextBlock { Text = mark, FontSize = 9.5, FontWeight = FontWeights.Bold, Foreground = Brushes.White },
             });
         left.Children.Add(nameRow);
@@ -424,7 +423,7 @@ public partial class BoardWindow : GlassWindow
 
         // right: estimate sum (+ today's progress count)
         double hours = tasks.Sum(t => t.Estimate ?? 0);
-        double meetingHours = events.Where(e => !e.IsHoliday).Sum(e => e.Hours);
+        double meetingHours = events.Where(e => !e.IsHoliday).Sum(e => e.Hours) + Store.Alarms.Where(a => a.IsMeeting && a.Occurs(date)).Sum(a => a.Hours);
         var right = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(4, 1, 2, 0) };
         Grid.SetColumn(right, 1);
         int total = tasks.Count + archivedDone, done = tasks.Count(t => t.Done) + archivedDone;
@@ -479,8 +478,11 @@ public partial class BoardWindow : GlassWindow
 
         // ----- events + tasks -----
         var panel = new StackPanel();
-        foreach (var a in Store.Alarms.Where(a => a.Occurs(date)).OrderBy(a => a.Time)) panel.Children.Add(BuildAlarmRow(a, date, compact));
-        foreach (var e in events.Where(e => !e.IsHoliday)) panel.Children.Add(BuildEventRow(e, key, compact));
+        // alarms, own meetings and calendar meetings in time order, then the tasks
+        var timed = Store.Alarms.Where(a => a.Occurs(date)).Select(a => (at: a.TimeOfDay, el: BuildAlarmRow(a, date, compact)))
+            .Concat(events.Where(e => !e.IsHoliday).Select(e => (at: e.AllDay ? TimeSpan.Zero : e.Start.TimeOfDay, el: BuildEventRow(e, key, compact))))
+            .OrderBy(x => x.at);
+        foreach (var (_, el) in timed) panel.Children.Add(el);
         foreach (var t in tasks) panel.Children.Add(BuildTaskRow(t, false, compact));
         panel.Children.Add(BuildAddRow(key, date, compact));
         _panels[key] = panel;
@@ -557,38 +559,49 @@ public partial class BoardWindow : GlassWindow
 
     static readonly Color AlarmColor = Color.FromRgb(0xF2, 0xB1, 0x4C);
 
-    /// <summary>Alarm on a day (not a task): click edits, right click deletes.</summary>
+    /// <summary>Alarm or meeting on a day (not a task): click edits, right click deletes.</summary>
     FrameworkElement BuildAlarmRow(Alarm a, DateTime date, bool compact)
     {
         var at = a.At(date);
-        bool past = at <= DateTime.Now;
+        var color = a.IsMeeting ? MeetingColor : AlarmColor;
+        bool past = (a.IsMeeting ? a.EndAt(date) : at) <= DateTime.Now;
+        var what = a.IsMeeting ? "Spotkanie" : "Alarm";
+        var time = a.IsMeeting ? $"{a.Time}–{a.EndAt(date):HH:mm}" : a.Time;
         var row = new Border
         {
             CornerRadius = new CornerRadius(6),
             Padding = new Thickness(5, compact ? 1 : 3, 4, compact ? 1 : 3),
             Margin = new Thickness(-4, 0, 0, 2),
-            Background = B(A(AlarmColor, 0x18)),
-            BorderBrush = B(A(AlarmColor, 0x50)),
+            Background = B(A(color, a.IsMeeting ? (byte)0x1C : (byte)0x18)),
+            BorderBrush = B(A(color, 0x50)),
             BorderThickness = new Thickness(2, 0, 0, 0),
             Opacity = past ? 0.45 : 1,
             Cursor = Cursors.Hand,
-            ToolTip = $"Alarm {a.Time}" + (a.Once ? "" : $"  ·  {a.RepeatLabel.ToLower(Pl)}") + (past ? "" : $"\n{AlarmService.Until(at)}") + "\nKliknij, żeby zmienić",
+            ToolTip = $"{what} {time}" + (a.Once ? "" : $"  ·  {a.RepeatLabel.ToLower(Pl)}")
+                + (a.IsMeeting && a.Remind is { } m ? $"\nprzypomnienie {(m == 0 ? "o czasie" : $"{m} min wcześniej")}" : "")
+                + (past ? "" : $"\n{AlarmService.Until(at)}") + "\nKliknij, żeby zmienić",
         };
         var tb = new TextBlock { TextWrapping = compact ? TextWrapping.NoWrap : TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = Math.Max(9.5, S.FontSize - (compact ? 2 : 1)) };
-        tb.Inlines.Add(new Run("  ") { FontFamily = (FontFamily)FindResource("IconFont"), FontSize = Math.Max(8, S.FontSize - 4), Foreground = B(AlarmColor) });
-        tb.Inlines.Add(new Run(a.Time + "  ") { FontWeight = FontWeights.SemiBold, Foreground = B(AlarmColor) });
-        tb.Inlines.Add(new Run(a.Text.Length > 0 ? a.Text : "Alarm") { Foreground = Res("Fg") });
+        tb.Inlines.Add(new Run(a.IsMeeting ? "  " : "  ") { FontFamily = (FontFamily)FindResource("IconFont"), FontSize = Math.Max(8, S.FontSize - 4), Foreground = B(color) });
+        tb.Inlines.Add(new Run(time + "  ") { FontWeight = FontWeights.SemiBold, Foreground = B(color) });
+        tb.Inlines.Add(new Run(a.Text.Length > 0 ? a.Text : what) { Foreground = Res("Fg") });
         if (!a.Once) tb.Inlines.Add(new Run("  ↻") { Foreground = Res("FgFaint") });
         row.Child = tb;
-        row.MouseLeftButtonUp += (_, e) => { e.Handled = true; AlarmWindow.Edit(Store, a); };
+        row.MouseLeftButtonUp += (_, e) => { e.Handled = true; AlarmWindow.Edit(Store, a, date); };
         row.MouseRightButtonUp += (_, e) =>
         {
             e.Handled = true;
             var menu = new ContextMenu();
-            var edit = new MenuItem { Header = "Zmień alarm…" };
-            edit.Click += (_, _) => AlarmWindow.Edit(Store, a);
+            var edit = new MenuItem { Header = a.IsMeeting ? "Zmień spotkanie…" : "Zmień alarm…" };
+            edit.Click += (_, _) => AlarmWindow.Edit(Store, a, date);
             menu.Items.Add(edit);
-            var del = new MenuItem { Header = a.Once ? "Usuń alarm" : "Usuń alarm (całą serię)" };
+            if (!a.Once)
+            {
+                var skip = new MenuItem { Header = "Usuń tylko ten dzień" };
+                skip.Click += (_, _) => { (a.Skips ??= new()).Add(DayKey(date)); Store.Changed(a); AlarmService.Reschedule(); };
+                menu.Items.Add(skip);
+            }
+            var del = new MenuItem { Header = a.Once ? "Usuń" : "Usuń całą serię" };
             del.Click += (_, _) => { Store.DeleteAlarm(a); AlarmService.Reschedule(); };
             menu.Items.Add(del);
             menu.PlacementTarget = row;
@@ -601,24 +614,41 @@ public partial class BoardWindow : GlassWindow
     {
         var menu = new ContextMenu();
         var mark = Store.DayMark(key);
+        var series = Store.MarkRuleOn(date);
         menu.Items.Add(new MenuItem { Header = date.ToString("dddd, d MMMM", Pl) + $"  ·  tydz. {WeekNo(date)}", IsEnabled = false });
         menu.Items.Add(new Separator());
-        foreach (var (code, label, _) in DayMarks.All)
+        foreach (var m in Store.MarkTypes)
         {
-            var mi = new MenuItem { Header = (mark == code ? "✓  " : "     ") + $"{label} ({code})" };
+            var code = m.Code;
+            var mi = new MenuItem { Header = (mark == code ? "✓  " : "     ") + (m.Label.Length > 0 && m.Label != code ? $"{m.Label} ({code})" : code) };
             mi.Click += (_, _) => Do(() => Store.SetDayMark(key, mark == code ? null : code));
             menu.Items.Add(mi);
         }
-        var clear = new MenuItem { Header = "     Usuń oznaczenie", IsEnabled = mark != null };
-        clear.Click += (_, _) => Do(() => Store.SetDayMark(key, null));
-        menu.Items.Add(clear);
+        if (Store.MarkTypes.Count > 0)
+        {
+            var clear = new MenuItem { Header = "     Usuń oznaczenie" + (series != null && mark == series.Text ? " (tylko ten dzień)" : ""), IsEnabled = mark != null };
+            clear.Click += (_, _) => Do(() => Store.SetDayMark(key, null));
+            menu.Items.Add(clear);
+            if (series != null)
+            {
+                var edit = new MenuItem { Header = $"     Seria „{series.Text}”: {series.Summary}…" };
+                edit.Click += (_, _) => RepeatWindow.ForMark(Store, series, date);
+                menu.Items.Add(edit);
+            }
+            var repeat = new MenuItem { Header = "     Powtarzaj oznaczenie…" };
+            repeat.Click += (_, _) => RepeatWindow.ForMark(Store, null, date, mark);
+            menu.Items.Add(repeat);
+        }
+        else
+        {
+            var setup = new MenuItem { Header = "Oznaczenia dni (np. Urlop): dodaj w ustawieniach…" };
+            setup.Click += (_, _) => App.Instance.ShowSettings();
+            menu.Items.Add(setup);
+        }
         menu.Items.Add(new Separator());
         var add = new MenuItem { Header = "Dodaj zadanie" };
         add.Click += (_, _) => { _addingKey = key; Rebuild(); };
         menu.Items.Add(add);
-        var meet = new MenuItem { Header = "Dodaj spotkanie [Meeting]" };
-        meet.Click += (_, _) => { _addingKey = key; _addPrefix = "[Meeting] "; Rebuild(); };
-        menu.Items.Add(meet);
         var alarm = new MenuItem { Header = "Dodaj alarm…" };
         alarm.Click += (_, _) => AlarmWindow.Edit(Store, null, date);
         menu.Items.Add(alarm);
@@ -1096,7 +1126,12 @@ public partial class BoardWindow : GlassWindow
         box.TextChanged += (_, _) =>
         {
             hint.Visibility = box.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-            var desc = SmartAdd.Describe(SmartAdd.Parse(box.Text, Store.Categories));
+            var p = SmartAdd.Parse(box.Text, Store.Categories);
+            var desc = SmartAdd.Describe(p);
+            if (TaskItem.Tags(p.Text, out var rest).Contains(TaskItem.MeetingTag))
+                desc = AlarmService.ParseMeeting(rest, p.Estimate, out var f, out var t, out _)
+                    ? $"→ spotkanie {f:hh\\:mm}–{t:hh\\:mm}" + (p.Day is { } d ? $", {d.ToString("ddd d MMM", Pl)}" : "")
+                    : "→ dopisz godziny, np. 14-15:30 (albo kliknij Meeting)";
             preview.Text = desc;
             preview.Visibility = desc.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         };
@@ -1120,6 +1155,16 @@ public partial class BoardWindow : GlassWindow
             chip.PreviewMouseLeftButtonDown += (_, e) =>
             {
                 e.Handled = true; // the chip isn't focusable: the text box keeps focus and the user keeps typing
+                if (string.Equals(c.Name, TaskItem.MeetingTag, StringComparison.OrdinalIgnoreCase))
+                {
+                    // a meeting is not a task: open the meeting window with what was typed so far
+                    TaskItem.Tags(SmartAdd.Parse(box.Text, Store.Categories).Text, out var title);
+                    var day = key == BacklogKey ? DateTime.Today : DateTime.ParseExact(key, "yyyy-MM-dd", null);
+                    box.Text = "";
+                    // the window takes the focus: the empty editor then closes by itself
+                    Dispatcher.BeginInvoke(() => AlarmWindow.Edit(Store, null, day, meeting: true, title: title));
+                    return;
+                }
                 box.Text = ToggleCategory(box.Text, c.Name);
                 box.CaretIndex = box.Text.Length;
                 Keyboard.Focus(box);
@@ -1143,6 +1188,15 @@ public partial class BoardWindow : GlassWindow
             bool empty = v.Length == 0 || TaskItem.Tags(v, out var rest) is { Count: > 0 } && rest.Length == 0;
             if (_addingKey == key) _addingKey = keepOpen && !empty ? key : null; // another "+" may have taken over meanwhile
             Action? change = null;
+            // "[Meeting] 14-15:30 Sprint" / "#meeting o 10 daily 30 min" → a meeting (with its hours), not a task
+            var tags = TaskItem.Tags(v, out var withoutTags);
+            if (!empty && tags.Contains(TaskItem.MeetingTag) && AlarmService.ParseMeeting(withoutTags, parsed.Estimate, out var from, out var to, out var title))
+            {
+                var day = parsed.Day ?? (key == BacklogKey ? DateTime.Today : DateTime.ParseExact(key, "yyyy-MM-dd", null));
+                var meeting = new Alarm { Kind = "meeting", Text = title, Day = DayKey(day), Time = from.ToString(@"hh\:mm"), End = to.ToString(@"hh\:mm"), Remind = 5 };
+                change = () => { Store.AddAlarm(meeting); Dispatcher.BeginInvoke(AlarmService.Reschedule); };
+                empty = true;
+            }
             if (!empty)
             {
                 string? day = parsed.Day is { } pd ? DayKey(pd) : key == BacklogKey ? null : key;

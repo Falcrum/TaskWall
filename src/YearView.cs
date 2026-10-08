@@ -57,8 +57,10 @@ static class YearView
 
     static Color C(string hex) => (Color)ColorConverter.ConvertFromString(hex);
 
-    public static FrameworkElement Build(int year, BoardData data, Action<DateTime> pick, bool animate = true, Action<int>? export = null)
+    public static FrameworkElement Build(int year, BoardStore store, Action<DateTime> pick, bool animate = true)
     {
+        var data = store.Data;
+        var types = store.MarkTypes;
         var accent = ((SolidColorBrush)Ui.Res("AccentBrush")).Color;
         var today = DateTime.Today;
         int days = DateTime.IsLeapYear(year) ? 366 : 365;
@@ -79,22 +81,20 @@ static class YearView
         title.Inlines.Add(new Run($"  / {days}") { Foreground = Ui.Res("FgFaint"), FontSize = 15, FontWeight = FontWeights.SemiBold });
         header.Children.Add(title);
 
-        // year totals of day marks + CSV export (for settling HO / BŚU days)
-        int MarkCount(string code, int? month = null) => data.Days.Count(kv => kv.Value.Mark == code && kv.Key.StartsWith(year + "-")
+        // year totals of day marks
+        // effective marks (by hand + repeating series) of the whole year
+        var markOf = new System.Collections.Generic.Dictionary<string, string>();
+        for (var d0 = new DateTime(year, 1, 1); d0.Year == year; d0 = d0.AddDays(1))
+            if (store.DayMark(BoardWindow.DayKey(d0)) is { } mk) markOf[BoardWindow.DayKey(d0)] = mk;
+        int MarkCount(string code, int? month = null) => markOf.Count(kv => kv.Value == code
             && (month == null || kv.Key.Substring(5, 2) == month.Value.ToString("00")));
         var totals = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(18, 0, 0, 6) };
-        foreach (var (code, label, color) in DayMarks.All)
+        foreach (var (code, label, color) in types.Select(m => (m.Code, m.Label, m.Color)))
             totals.Children.Add(new TextBlock
             {
                 Text = $"{code} {MarkCount(code)}", FontSize = 12, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 14, 0),
-                Foreground = new SolidColorBrush(C(color)), ToolTip = $"{label}: dni w {year}",
+                Foreground = new SolidColorBrush(BoardWindow.ParseColor(color)), ToolTip = $"{label}: dni w {year}",
             });
-        if (export != null)
-        {
-            var btn = new Button { Style = (Style)Application.Current.Resources["BarButton"], Content = "EKSPORT CSV", ToolTip = "Zapisz dni HO / BŚU (z podsumowaniem miesięcy) do pliku CSV dla Excela" };
-            btn.Click += (_, _) => export(year);
-            totals.Children.Add(btn);
-        }
         header.Children.Add(totals);
 
         var legend = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 5) };
@@ -111,7 +111,7 @@ static class YearView
         Legend(accent, "zrobione");
         Legend(Color.FromArgb(0x70, accent.R, accent.G, accent.B), "niedokończone");
         Legend(accent, "zaplanowane", ring: true);
-        foreach (var (code, _, color) in DayMarks.All) Legend(C(color), code);
+        foreach (var m in types) Legend(BoardWindow.ParseColor(m.Color), m.Code);
         header.Children.Add(legend);
         dock.Children.Add(header);
 
@@ -131,7 +131,7 @@ static class YearView
 
         var empty = Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF);
         var future = Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF);
-        var marks = DayMarks.All.ToDictionary(m => m.Code, m => C(m.Color));
+        var marks = types.GroupBy(m => m.Code).ToDictionary(g => g.Key, g => BoardWindow.ParseColor(g.First().Color));
         var yearMonday = BoardWindow.Monday(new DateTime(year, 1, 1));
         int Col(DateTime d) => (int)((BoardWindow.Monday(d) - yearMonday).TotalDays / 7);
         int totalCols = Col(new DateTime(year, 12, 31)) + 1;
@@ -152,12 +152,12 @@ static class YearView
             };
             UnitPanel.SetBox(name, new Rect(x + startCol + 0.1, 0, 4, 1));
             panel.Children.Add(name);
-            var counts = DayMarks.All.Select(m => (m.Code, m.Color, n: MarkCount(m.Code, month))).Where(x => x.n > 0).ToList();
+            var counts = types.Select(m => (m.Code, m.Color, n: MarkCount(m.Code, month))).Where(x => x.n > 0).ToList();
             if (counts.Count > 0)
             {
                 var line = new TextBlock { VerticalAlignment = VerticalAlignment.Top, RenderTransform = new ScaleTransform(0.82, 0.82) };
                 foreach (var (code, color, n) in counts)
-                    line.Inlines.Add(new Run($"{code} {n}  ") { Foreground = new SolidColorBrush(C(color)), FontWeight = FontWeights.SemiBold });
+                    line.Inlines.Add(new Run($"{code} {n}  ") { Foreground = new SolidColorBrush(BoardWindow.ParseColor(color)), FontWeight = FontWeights.SemiBold });
                 UnitPanel.SetBox(line, new Rect(x + startCol + 0.1, 0.95, 5, 1));
                 panel.Children.Add(line);
             }
@@ -170,7 +170,7 @@ static class YearView
                 var key = BoardWindow.DayKey(date);
                 byDay.TryGetValue(key, out var tasks);
                 int total = tasks?.Count ?? 0, done = tasks?.Count(t => t.Done) ?? 0;
-                var mark = data.Days.TryGetValue(key, out var info) ? info.Mark : null;
+                var mark = markOf.TryGetValue(key, out var mk2) ? mk2 : null;
                 bool past = date <= today;
                 var dayOff = PolishHolidays.DayOff(date);
 

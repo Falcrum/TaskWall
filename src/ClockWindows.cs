@@ -32,6 +32,7 @@ public sealed class ClockWindow : GlassWindow
     DateTime _month;
     string _shown = "";
     bool _open;
+    double _calHeight = CalendarHeight; // measured: 4–6 week rows, no empty space under "DZIŚ"
 
     public double Scale { get; private set; } = 1;
 
@@ -78,14 +79,16 @@ public sealed class ClockWindow : GlassWindow
         Scale = scale;
         ApplyScale(scale);
         Frame.BeginAnimation(HeightProperty, null);
-        Frame.Height = (_open ? HeaderHeight + CalendarHeight : HeaderHeight) * scale;
+        Frame.Height = (_open ? HeaderHeight + _calHeight : HeaderHeight) * scale;
     }
 
     public void UpdateText()
     {
         var now = DateTime.Now;
         var time = App.Settings.Use24h ? now.ToString("HH:mm") : now.ToString("h:mm", CultureInfo.InvariantCulture);
-        var date = now.ToString("ddd d MMM", BoardWindow.Pl).Replace(".", "").ToUpper(BoardWindow.Pl);
+        // CZWARTEK 8 PAŹDZIERNIK (month in the nominative, like a wall calendar)
+        var c = BoardWindow.Pl;
+        var date = $"{c.DateTimeFormat.GetDayName(now.DayOfWeek)} {now.Day} {c.DateTimeFormat.MonthNames[now.Month - 1]}".ToUpper(c);
         if (time + date == _shown) return;
         _shown = time + date;
         _time.Text = time;
@@ -105,7 +108,7 @@ public sealed class ClockWindow : GlassWindow
             Activate();
             Anim.Enter(_calendar, 0, -10, 300, 60);
         }
-        Anim.Height(Frame, (open ? HeaderHeight + CalendarHeight : HeaderHeight) * Scale, open ? 320 : 240);
+        Anim.Height(Frame, (open ? HeaderHeight + _calHeight : HeaderHeight) * Scale, open ? 320 : 240);
     }
 
     void FillCalendar()
@@ -133,7 +136,9 @@ public sealed class ClockWindow : GlassWindow
         var grid = new Grid();
         for (int c = 0; c < 8; c++) grid.ColumnDefinitions.Add(new ColumnDefinition());
         grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(22) });
-        for (int r = 0; r < 6; r++) grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(30) });
+        var start = BoardWindow.Monday(_month);
+        int weeks = (int)Math.Ceiling(((_month.AddMonths(1) - start).TotalDays) / 7); // 4–6 rows, no empty row
+        for (int r = 0; r < weeks; r++) grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(30) });
         void Put(UIElement e, int row, int col) { Grid.SetRow(e, row); Grid.SetColumn(e, col); grid.Children.Add(e); }
 
         Put(new TextBlock { Text = "tc", FontSize = 9, Foreground = Ui.Res("FgFaint"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, ToolTip = "Tydzień roku" }, 0, 0);
@@ -145,9 +150,9 @@ public sealed class ClockWindow : GlassWindow
         bool showRange = App.Board?.View != ViewMode.Year;
         var shownFrom = App.Board?.FirstMonday ?? BoardWindow.Monday(DateTime.Today);
         var shownTo = shownFrom.AddDays(7 * (App.Board?.WeekCount ?? 2) - 1);
-        var start = BoardWindow.Monday(_month);
+        // (start computed above)
         int r0 = -1, r1 = -1;
-        for (int w = 0; w < 6; w++)
+        for (int w = 0; w < weeks; w++)
         {
             var monday = start.AddDays(w * 7);
             bool inRange = showRange && monday >= shownFrom && monday <= shownTo;
@@ -206,7 +211,7 @@ public sealed class ClockWindow : GlassWindow
             grid.Children.Insert(0, frame); // behind the numbers
         }
 
-        var footer = new Button { Style = (Style)Application.Current.Resources["LinkButton"], Content = "Dziś", HorizontalAlignment = HorizontalAlignment.Center, FontSize = 11, Margin = new Thickness(0, 4, 0, 0) };
+        var footer = new Button { Style = (Style)Application.Current.Resources["LinkButton"], Content = "DZIŚ", HorizontalAlignment = HorizontalAlignment.Center, FontSize = 11, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 4, 0, 0) };
         footer.Click += (_, _) => Pick(DateTime.Today);
 
         var dock = new DockPanel();
@@ -216,6 +221,13 @@ public sealed class ClockWindow : GlassWindow
         dock.Children.Add(footer);
         dock.Children.Add(grid);
         _calendar.Children.Add(dock);
+        _calendar.Measure(new Size(TabWidth, double.PositiveInfinity));
+        var h = _calendar.DesiredSize.Height;
+        if (h > 0 && Math.Abs(h - _calHeight) > 0.5)
+        {
+            _calHeight = h;
+            if (_open && Frame.Height > 0) Anim.Height(Frame, (HeaderHeight + _calHeight) * Scale, 200); // month with more / fewer weeks
+        }
     }
 
     void Pick(DateTime d)

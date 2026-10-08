@@ -87,13 +87,21 @@ public sealed class CheckItem
     public bool Done { get; set; }
 }
 
-/// <summary>Recurring task series ("every Monday", "every workday" …).</summary>
+/// <summary>
+/// Recurring series of tasks or day marks: every N days / weeks (chosen weekdays) / months / years, or every
+/// workday – optionally only within a period (Start … End).
+/// </summary>
 public sealed class RecurringRule
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    /// <summary>Task text, or the mark code (HO …) for a day-mark series.</summary>
     public string Text { get; set; } = "";
-    /// <summary>daily | weekdays | weekly | biweekly | monthly</summary>
+    /// <summary>daily | weekdays | weekly | monthly | yearly (biweekly = legacy weekly ×2)</summary>
     public string Pattern { get; set; } = "weekly";
+    /// <summary>Every N days / weeks / months / years.</summary>
+    public int Interval { get; set; } = 1;
+    /// <summary>Weekly: days of the week (0 = Sunday … 6 = Saturday); null = the start's weekday.</summary>
+    public List<int>? Weekdays { get; set; }
     public string Start { get; set; } = "";
     public string? End { get; set; }
     public double? Estimate { get; set; }
@@ -110,40 +118,90 @@ public sealed class RecurringRule
         ("weekly", "Co tydzień"),
         ("biweekly", "Co 2 tygodnie"),
         ("monthly", "Co miesiąc"),
+        ("yearly", "Co rok"),
     };
 
     string? _parsedFrom;
     DateTime _start;
 
+    [JsonIgnore] public DateTime StartDate => Parse() ? _start : DateTime.MinValue;
+
+    bool Parse()
+    {
+        if (_parsedFrom == Start) return true;
+        if (!DateTime.TryParseExact(Start, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out _start)) return false;
+        _parsedFrom = Start;
+        return true;
+    }
+
+    static DateTime Monday(DateTime d) => d.Date.AddDays(-(((int)d.DayOfWeek + 6) % 7));
+
     public bool Occurs(DateTime d)
     {
-        if (Deleted || string.IsNullOrEmpty(Start)) return false;
-        if (_parsedFrom != Start)
-        {
-            if (!DateTime.TryParseExact(Start, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out _start)) return false;
-            _parsedFrom = Start;
-        }
+        if (Deleted || string.IsNullOrEmpty(Start) || !Parse()) return false;
         var s = _start;
+        d = d.Date;
         if (d < s) return false;
         var key = d.ToString("yyyy-MM-dd");
         if (End != null && string.CompareOrdinal(key, End) > 0) return false;
         if (Skips.Contains(key)) return false;
-        return Pattern switch
+        int n = Math.Max(1, Interval);
+        switch (Pattern)
         {
-            "daily" => true,
-            "weekdays" => d.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday),
-            "weekly" => d.DayOfWeek == s.DayOfWeek,
-            "biweekly" => d.DayOfWeek == s.DayOfWeek && ((d - s).Days / 7) % 2 == 0,
-            "monthly" => d.Day == Math.Min(s.Day, DateTime.DaysInMonth(d.Year, d.Month)),
-            _ => false,
+            case "daily": return (d - s).Days % n == 0;
+            case "weekdays": return d.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday);
+            case "weekly":
+            case "biweekly":
+            {
+                if (Pattern == "biweekly") n = 2;
+                bool day = Weekdays is { Count: > 0 } w ? w.Contains((int)d.DayOfWeek) : d.DayOfWeek == s.DayOfWeek;
+                return day && ((Monday(d) - Monday(s)).Days / 7) % n == 0;
+            }
+            case "monthly":
+            {
+                int months = (d.Year - s.Year) * 12 + d.Month - s.Month;
+                return months % n == 0 && d.Day == Math.Min(s.Day, DateTime.DaysInMonth(d.Year, d.Month));
+            }
+            case "yearly":
+                return (d.Year - s.Year) % n == 0 && d.Month == s.Month && d.Day == Math.Min(s.Day, DateTime.DaysInMonth(d.Year, d.Month));
+            default: return false;
+        }
+    }
+
+    /// <summary>"co 2 tygodnie: pn, śr · od 5 paź do 30 lis"</summary>
+    [JsonIgnore] public string Summary => Describe(Pattern, Interval, Weekdays, StartDate, End);
+
+    public static string Describe(string pattern, int interval, List<int>? weekdays, DateTime start, string? end)
+    {
+        var pl = new System.Globalization.CultureInfo("pl-PL");
+        int n = Math.Max(1, interval);
+        string Every(string one, string few, string many) => n == 1 ? one : $"co {n} " + (n % 10 is >= 2 and <= 4 && n % 100 is < 12 or > 14 ? few : many);
+        var text = pattern switch
+        {
+            "daily" => Every("codziennie", "dni", "dni"),
+            "weekdays" => "w dni robocze",
+            "weekly" => Every("co tydzień", "tygodnie", "tygodni"),
+            "biweekly" => "co 2 tygodnie",
+            "monthly" => Every("co miesiąc", "miesiące", "miesięcy"),
+            "yearly" => Every("co rok", "lata", "lat"),
+            _ => pattern,
         };
+        if (pattern is "weekly" or "biweekly")
+        {
+            var days = weekdays is { Count: > 0 } w ? w : new List<int> { (int)start.DayOfWeek };
+            text += ": " + string.Join(", ", days.OrderBy(x => (x + 6) % 7).Select(x => pl.DateTimeFormat.AbbreviatedDayNames[x]));
+        }
+        if (start > DateTime.MinValue) text += $" · od {start.ToString("d MMM yyyy", pl)}";
+        if (end != null && DateTime.TryParse(end, out var e)) text += $" do {e.ToString("d MMM yyyy", pl)}";
+        return text;
     }
 
     public void Touch() => Modified = Stamp.After(Modified);
 
     public void CopyFrom(RecurringRule o)
     {
-        Text = o.Text; Pattern = o.Pattern; Start = o.Start; End = o.End; Estimate = o.Estimate; Order = o.Order;
+        Text = o.Text; Pattern = o.Pattern; Interval = o.Interval; Weekdays = o.Weekdays == null ? null : new List<int>(o.Weekdays);
+        Start = o.Start; End = o.End; Estimate = o.Estimate; Order = o.Order;
         Skips = new List<string>(o.Skips); Deleted = o.Deleted; Modified = o.Modified;
     }
 }
@@ -155,14 +213,22 @@ public sealed class RecurringRule
 public sealed class Alarm
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    /// <summary>"alarm" (rings at <see cref="Time"/>) or "meeting" (Time–End, rings <see cref="Remind"/> minutes before).</summary>
+    public string Kind { get; set; } = "alarm";
     public string Text { get; set; } = "";
-    /// <summary>yyyy-MM-dd: the day of a one-off alarm, the first day of a repeating one.</summary>
+    /// <summary>yyyy-MM-dd: the day of a one-off entry, the first day of a repeating one.</summary>
     public string Day { get; set; } = "";
-    /// <summary>HH:mm</summary>
+    /// <summary>HH:mm (meeting: start)</summary>
     public string Time { get; set; } = "09:00";
-    /// <summary>"" (once) | daily | weekdays | weekly</summary>
+    /// <summary>Meeting end, HH:mm.</summary>
+    public string? End { get; set; }
+    /// <summary>Meeting reminder: minutes before the start; null = none.</summary>
+    public int? Remind { get; set; }
+    /// <summary>"" (once) | daily | weekdays | weekly | biweekly | monthly</summary>
     public string Repeat { get; set; } = "";
-    /// <summary>Last occurrence ("yyyy-MM-dd HH:mm") that already rang – on this or another PC.</summary>
+    /// <summary>Days (yyyy-MM-dd) of a repeating entry removed by the user.</summary>
+    public List<string>? Skips { get; set; }
+    /// <summary>Last ring ("yyyy-MM-dd HH:mm") – on this or another PC.</summary>
     public string? Rang { get; set; }
     /// <summary>Local time of the last edit: occurrences before it never ring as "missed".</summary>
     public DateTime Armed { get; set; } = DateTime.Now;
@@ -175,40 +241,68 @@ public sealed class Alarm
         ("daily", "Codziennie"),
         ("weekdays", "W dni robocze"),
         ("weekly", "Co tydzień"),
+        ("biweekly", "Co 2 tygodnie"),
+        ("monthly", "Co miesiąc"),
     };
 
     [JsonIgnore] public bool Once => string.IsNullOrEmpty(Repeat);
+    [JsonIgnore] public bool IsMeeting => Kind == "meeting";
 
     public bool Occurs(DateTime d)
     {
         if (Deleted || !DateTime.TryParseExact(Day, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var start)) return false;
         d = d.Date;
         if (d < start) return false;
+        if (Skips != null && Skips.Contains(d.ToString("yyyy-MM-dd"))) return false;
         return Repeat switch
         {
             "" or null => d == start,
             "daily" => true,
             "weekdays" => d.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday),
             "weekly" => d.DayOfWeek == start.DayOfWeek,
+            "biweekly" => d.DayOfWeek == start.DayOfWeek && ((d - start).Days / 7) % 2 == 0,
+            "monthly" => d.Day == Math.Min(start.Day, DateTime.DaysInMonth(d.Year, d.Month)),
             _ => false,
         };
     }
 
-    [JsonIgnore] public TimeSpan TimeOfDay => TimeSpan.TryParseExact(Time, "hh\\:mm", null, out var t) ? t : TimeSpan.FromHours(9);
+    static TimeSpan ParseTime(string? s, TimeSpan fallback) => TimeSpan.TryParseExact(s, @"hh\:mm", null, out var t) ? t : fallback;
+
+    [JsonIgnore] public TimeSpan TimeOfDay => ParseTime(Time, TimeSpan.FromHours(9));
 
     public DateTime At(DateTime day) => day.Date + TimeOfDay;
 
+    /// <summary>Meeting end on <paramref name="day"/> (at least the start).</summary>
+    public DateTime EndAt(DateTime day)
+    {
+        var end = day.Date + ParseTime(End, TimeOfDay + TimeSpan.FromHours(1));
+        return end < At(day) ? At(day) : end;
+    }
+
+    [JsonIgnore] public double Hours => IsMeeting ? (EndAt(DateTime.Today) - At(DateTime.Today)).TotalHours : 0;
+
+    /// <summary>When the occurrence on <paramref name="day"/> rings: alarm at its time, meeting before it (or never).</summary>
+    public DateTime? RingAt(DateTime day) => !IsMeeting ? At(day) : Remind is { } m ? At(day).AddMinutes(-m) : null;
+
     public static string Key(DateTime at) => at.ToString("yyyy-MM-dd HH:mm");
 
-    /// <summary>The one-off alarm already rang (shown dimmed).</summary>
-    [JsonIgnore] public bool Finished => Once && Rang != null && DateTime.TryParse(Day, out var d) && string.CompareOrdinal(Rang, Key(At(d))) >= 0;
-
-    /// <summary>Next occurrence strictly after <paramref name="after"/> (within a year), or null.</summary>
+    /// <summary>Next ring strictly after <paramref name="after"/>, or null.</summary>
     public DateTime? Next(DateTime after)
     {
         if (Deleted || !DateTime.TryParseExact(Day, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var start)) return null;
-        if (Once) return At(start) > after ? At(start) : null;
-        for (int i = 0; i <= 8; i++) // every pattern repeats within a week
+        if (Once) return RingAt(start) is { } r && r > after ? r : null;
+        for (int i = -1; i <= 62; i++) // a reminder may fall on the evening before
+        {
+            var d = after.Date.AddDays(i);
+            if (Occurs(d) && RingAt(d) is { } at && at > after) return at;
+        }
+        return null;
+    }
+
+    /// <summary>Next occurrence (start) after <paramref name="after"/> – for lists of upcoming entries.</summary>
+    public DateTime? NextStart(DateTime after)
+    {
+        for (int i = 0; i <= 62; i++)
         {
             var d = after.Date.AddDays(i);
             if (Occurs(d) && At(d) > after) return At(d);
@@ -222,7 +316,9 @@ public sealed class Alarm
 
     public void CopyFrom(Alarm o)
     {
-        Text = o.Text; Day = o.Day; Time = o.Time; Repeat = o.Repeat; Rang = o.Rang; Armed = o.Armed; Deleted = o.Deleted; Modified = o.Modified;
+        Kind = o.Kind; Text = o.Text; Day = o.Day; Time = o.Time; End = o.End; Remind = o.Remind; Repeat = o.Repeat;
+        Skips = o.Skips == null ? null : new List<string>(o.Skips);
+        Rang = o.Rang; Armed = o.Armed; Deleted = o.Deleted; Modified = o.Modified;
     }
 }
 
@@ -263,6 +359,11 @@ public sealed class BoardData
     public List<Category>? Categories { get; set; }
     public DateTime CategoriesModified { get; set; }
     public List<Alarm> Alarms { get; set; } = new();
+    /// <summary>Kinds of day marks of this account; null = defaults not created yet.</summary>
+    public List<MarkType>? Marks { get; set; }
+    public DateTime MarksModified { get; set; }
+    /// <summary>Repeating day marks ("HO every Friday", "Urlop 3–14 Aug"); Text = mark code.</summary>
+    public List<RecurringRule> MarkRules { get; set; } = new();
     public List<TrashEntry>? Trash { get; set; }
 }
 
@@ -285,13 +386,16 @@ public sealed class Category
         : new() { new() { Name = "Meeting", Color = "#8C9BFF" }, new() { Name = "ART", Color = "#F07AAE" }, new() { Name = "VFX", Color = "#4CC3D4" }, new() { Name = "Review", Color = "#F2A65A" }, new() { Name = "Bug", Color = "#EE6E6E" } };
 }
 
-public static class DayMarks
+/// <summary>A kind of day mark (HO, BŚU, Urlop …) – a list per account, editable in the settings.</summary>
+public sealed class MarkType
 {
-    public static readonly (string Code, string Label, string Color)[] All =
-    {
-        ("HO", "Home Office", "#3BB8C9"),
-        ("BŚU", "Brak Świadczenia Usług", "#A47CF0"),
-    };
+    public string Code { get; set; } = "";
+    public string Label { get; set; } = "";
+    public string Color { get; set; } = "#3BB8C9";
+
+    public static List<MarkType> DefaultsFor(string layer) => layer == "private"
+        ? new()
+        : new() { new() { Code = "HO", Label = "Home Office", Color = "#3BB8C9" }, new() { Code = "BŚU", Label = "Brak Świadczenia Usług", Color = "#A47CF0" } };
 }
 
 /// <summary>An iCal (.ics) feed, e.g. Google Calendar's "secret address in iCal format".</summary>
@@ -348,6 +452,9 @@ public sealed class AppSettings
     public bool OpenNotionInApp { get; set; }
     public bool AutoRollover { get; set; }
     public bool AlarmSound { get; set; } = true;
+    public bool BoardHidden { get; set; }
+    /// <summary>"pl" or "en".</summary>
+    public string Language { get; set; } = "pl";
     /// <summary>"Ctrl+Shift+Space", "Ctrl+Alt+D", "Ctrl+Alt+T", "Win+Shift+D" or "" (off).</summary>
     public string Hotkey { get; set; } = "Ctrl+Shift+Space";
 

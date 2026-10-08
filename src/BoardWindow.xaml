@@ -29,6 +29,7 @@
                     <Border Width="1" Height="14" Margin="8,0" Background="{StaticResource Line}"/>
                     <Border x:Name="ViewSwitch" CornerRadius="8" Background="#10FFFFFF" Padding="2" VerticalAlignment="Center">
                         <StackPanel Orientation="Horizontal">
+                            <Button x:Name="DayViewButton" Style="{StaticResource BarButton}" Content="DZIEŃ" Click="DayView_Click" Padding="9,2"/>
                             <Button x:Name="OneWeekButton" Style="{StaticResource BarButton}" Content="1 TYDZIEŃ" Click="OneWeek_Click" Padding="9,2"/>
                             <Button x:Name="WeekViewButton" Style="{StaticResource BarButton}" Content="2 TYGODNIE" Click="WeekView_Click" Padding="9,2"/>
                             <Button x:Name="MonthViewButton" Style="{StaticResource BarButton}" Content="MIESIĄC" Click="MonthView_Click" Padding="9,2"/>
@@ -37,7 +38,6 @@
                     </Border>
                     <Button x:Name="OverdueButton" Style="{StaticResource BarButton}" Click="Overdue_Click" Margin="8,0,0,0"
                             Visibility="Collapsed" ToolTip="Przenieś niezrobione zadania z minionych dni na dziś"/>
-                    <TextBlock x:Name="MarksText" VerticalAlignment="Center" Margin="10,0,0,0" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource FgDim}"/>
                     <TextBlock x:Name="SyncText" VerticalAlignment="Center" Margin="12,0,0,0" FontSize="11" Foreground="{StaticResource FgFaint}"/>
                 </StackPanel>
                 <Border x:Name="LayerSwitch" Grid.Column="1" CornerRadius="8" Background="#10FFFFFF" Padding="2" VerticalAlignment="Center" Margin="12,0"
@@ -59,9 +59,12 @@
                     <Button x:Name="BacklogButton" Style="{StaticResource BarButton}" Click="ToggleBacklog_Click" AllowDrop="True"/>
                     <Button x:Name="ArchiveButton" Style="{StaticResource BarButton}" Click="ToggleArchive_Click" AllowDrop="True"
                             ToolTip="Zarchiwizowane zadania (upuść tu zadanie, żeby je zarchiwizować)"/>
-                    <Button x:Name="AlarmButton" Style="{StaticResource IconButton}" Content="&#xE823;" Click="Alarm_Click" ToolTip="Alarmy"/>
+                    <Button x:Name="ExportButton" Style="{StaticResource BarButton}" Content="EKSPORT" Click="Export_Click"
+                            ToolTip="Zapisz widoczny okres do CSV: dni, oznaczenia, liczba zadań, godziny, kategorie"/>
+                    <Button x:Name="AlarmButton" Style="{StaticResource IconButton}" Content="&#xE823;" Click="Alarm_Click" ToolTip="Alarmy i spotkania"/>
                     <Button x:Name="MoreButton" Style="{StaticResource IconButton}" Content="&#xE712;" Click="More_Click" ToolTip="Więcej"/>
                     <Button Style="{StaticResource IconButton}" Content="&#xE713;" Click="Settings_Click" ToolTip="Ustawienia"/>
+                    <Button Style="{StaticResource IconButton}" Content="&#xE921;" Click="Hide_Click" ToolTip="Ukryj tablicę (pokażesz ją ikoną w zasobniku albo skrótem)"/>
                 </StackPanel>
             </Grid>
             <Grid x:Name="ContentHost">

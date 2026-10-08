@@ -84,11 +84,10 @@ static class AlarmService
     public static DateTime? Due(Alarm a, DateTime now)
     {
         var armed = a.Armed.AddTicks(-(a.Armed.Ticks % TimeSpan.TicksPerMinute)); // set at 15:30:20 for 15:30 still rings
-        for (int i = 0; i <= 1; i++)
+        for (int i = -1; i <= 1; i++) // tomorrow first: a reminder for a meeting just after midnight rings today
         {
             var d = now.Date.AddDays(-i);
-            if (!a.Occurs(d)) continue;
-            var at = a.At(d);
+            if (!a.Occurs(d) || a.RingAt(d) is not { } at) continue;
             if (at > now || now - at > TimeSpan.FromHours(12) || at < armed) continue;
             if (string.CompareOrdinal(Alarm.Key(at), a.Rang) <= 0) continue;
             return at;
@@ -127,6 +126,52 @@ static class AlarmService
             if (h <= 23 && m <= 59) return (new TimeSpan(h, m, 0), null);
         }
         return (null, null);
+    }
+
+    static readonly Regex Range = new(@"(?<![\d:.])(\d{1,2})(?:[:.](\d{2}))?\s*(?:-|–|—|do)\s*(\d{1,2})(?:[:.](\d{2}))?(?![\d:.])", RegexOptions.IgnoreCase);
+    static readonly Regex Single = new(@"(?<![\d:.])(?:(?:o|od|godz\.?)\s*)?(\d{1,2})[:.](\d{2})(?![\d:.])|(?<!\w)(?:o|od|godz\.?)\s*(\d{1,2})(?![\d:.\w])", RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// "14-15:30 Sprint", "Sprint 9:30–10", "o 14 Sprint 1,5h": time (and end) of a meeting typed as one line.
+    /// <paramref name="rest"/> is the text without the times; <paramref name="duration"/> (e.g. from "1,5h") sets the end
+    /// when no range was given.
+    /// </summary>
+    public static bool ParseMeeting(string text, double? duration, out TimeSpan start, out TimeSpan end, out string rest)
+    {
+        start = end = default;
+        rest = text;
+        static TimeSpan T(Group h, Group m) => new(int.Parse(h.Value), m.Success ? int.Parse(m.Value) : 0, 0);
+        static bool Ok(Group h, Group m) => int.Parse(h.Value) <= 23 && (!m.Success || int.Parse(m.Value) <= 59);
+        var r = Range.Match(text);
+        if (r.Success && Ok(r.Groups[1], r.Groups[2]) && Ok(r.Groups[3], r.Groups[4]))
+        {
+            start = T(r.Groups[1], r.Groups[2]);
+            end = T(r.Groups[3], r.Groups[4]);
+            if (end <= start) end = start + TimeSpan.FromHours(1);
+            rest = text.Remove(r.Index, r.Length);
+        }
+        else
+        {
+            var s = Single.Match(text);
+            if (!s.Success) return false;
+            if (s.Groups[1].Success) { if (!Ok(s.Groups[1], s.Groups[2])) return false; start = T(s.Groups[1], s.Groups[2]); }
+            else { if (int.Parse(s.Groups[3].Value) > 23) return false; start = TimeSpan.FromHours(int.Parse(s.Groups[3].Value)); }
+            end = start + TimeSpan.FromHours(duration is > 0 and <= 12 ? duration.Value : 1);
+            rest = text.Remove(s.Index, s.Length);
+        }
+        if (end >= TimeSpan.FromDays(1)) end = new TimeSpan(23, 59, 0);
+        rest = Regex.Replace(rest, @"\s{2,}", " ").Trim(' ', ',', '-', '–');
+        return true;
+    }
+
+    /// <summary>Duration for a meeting's "do" field: "1h", "90 min", "+30 min".</summary>
+    public static TimeSpan? ParseDuration(string input)
+    {
+        var m = Regex.Match(input.Trim(), @"^\+?\s*(\d+(?:[.,]\d+)?)\s*(m|min|minut\w*|h|godz\w*\.?)$", RegexOptions.IgnoreCase);
+        if (!m.Success) return null;
+        var n = double.Parse(m.Groups[1].Value.Replace(',', '.'), CultureInfo.InvariantCulture);
+        return m.Groups[2].Value.StartsWith("h", StringComparison.OrdinalIgnoreCase) || m.Groups[2].Value.StartsWith("godz", StringComparison.OrdinalIgnoreCase)
+            ? TimeSpan.FromHours(n) : TimeSpan.FromMinutes(n);
     }
 
     public static string Until(DateTime at)
@@ -179,15 +224,20 @@ public sealed class AlarmToast : Window
         var body = new StackPanel();
         var head = new TextBlock { Foreground = new SolidColorBrush(Amber), FontSize = 11.5, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 4) };
         head.Inlines.Add(new System.Windows.Documents.Run("  ") { FontFamily = Ui.Font("IconFont"), FontSize = 11 });
-        head.Inlines.Add(new System.Windows.Documents.Run($"ALARM  {at:HH:mm}  ·  {App.AccountName(layer).ToUpper(BoardWindow.Pl)}"));
-        var late = DateTime.Now - at;
+        var occurrence = a.IsMeeting ? a.At(at.AddMinutes(a.Remind ?? 0).Date) : at;
+        head.Inlines.Add(new System.Windows.Documents.Run(a.IsMeeting
+            ? $"SPOTKANIE  {occurrence:HH:mm}–{a.EndAt(occurrence):HH:mm}  ·  {App.AccountName(layer).ToUpper(BoardWindow.Pl)}"
+            : $"ALARM  {at:HH:mm}  ·  {App.AccountName(layer).ToUpper(BoardWindow.Pl)}"));
+        if (a.IsMeeting && occurrence > DateTime.Now)
+            head.Inlines.Add(new System.Windows.Documents.Run("  ·  " + AlarmService.Until(occurrence)) { Foreground = Ui.Res("FgDim") });
+        var late = a.IsMeeting ? TimeSpan.Zero : DateTime.Now - at;
         if (snoozed) head.Inlines.Add(new System.Windows.Documents.Run("  ·  drzemka") { Foreground = Ui.Res("FgDim") });
         else if (late.TotalMinutes >= 2)
             head.Inlines.Add(new System.Windows.Documents.Run($"  ·  spóźniony o {(late.TotalHours >= 1 ? $"{(int)late.TotalHours} h " : "")}{late.Minutes} min") { Foreground = Ui.Res("FgDim") });
         body.Children.Add(head);
         body.Children.Add(new TextBlock
         {
-            Text = string.IsNullOrWhiteSpace(a.Text) ? "Alarm" : a.Text,
+            Text = string.IsNullOrWhiteSpace(a.Text) ? (a.IsMeeting ? "Spotkanie" : "Alarm") : a.Text,
             FontSize = 16, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10),
         });
 
@@ -262,52 +312,78 @@ public sealed class AlarmToast : Window
     static void StopSound(object? s, EventArgs e) { SoundLimit.Stop(); PlaySound(null, IntPtr.Zero, 0); }
 }
 
-/// <summary>Add / edit an alarm: time ("15:30", "za 20 min"), day ("jutro", "pt", "14.10"), repeat.</summary>
+/// <summary>
+/// Add / edit an alarm (time: "15:30", "9", "za 20 min") or a meeting (from–to: "14-15:30", reminder). The day is the
+/// cell it was opened from (today from the tray / top bar); repeating entries start on that day.
+/// </summary>
 public sealed class AlarmWindow : DarkWindow
 {
     readonly BoardStore _store;
     readonly Alarm? _existing;
-    readonly TextBox _text = new() { Style = (Style)Application.Current.Resources["FieldBox"] };
-    readonly TextBox _time = new() { Style = (Style)Application.Current.Resources["FieldBox"], Width = 150, HorizontalAlignment = HorizontalAlignment.Left };
-    readonly TextBox _day = new() { Style = (Style)Application.Current.Resources["FieldBox"], Width = 150 };
+    readonly bool _meeting, _fixedDay;
+    readonly DateTime _day;
+    readonly TextBox _text = Field(0);
+    readonly TextBox _time = Field(120);
+    readonly TextBox _end = Field(120);
+    readonly ComboBox _remind = new() { Width = 200, HorizontalAlignment = HorizontalAlignment.Left };
     readonly ComboBox _repeat = new() { Width = 200, HorizontalAlignment = HorizontalAlignment.Left };
+    readonly TextBlock _dayText = Label("", 15, "Fg", FontWeights.Bold);
     readonly TextBlock _preview = Label("", 12, "FgDim");
     readonly Button _save;
-    bool _dayTouched;
 
-    public AlarmWindow(BoardStore store, Alarm? existing = null, DateTime? day = null)
+    static readonly (int? Minutes, string Label)[] Reminders =
+        { (null, "Bez przypomnienia"), (0, "W chwili rozpoczęcia"), (5, "5 min przed"), (10, "10 min przed"), (15, "15 min przed"), (30, "30 min przed"), (60, "1 h przed") };
+
+    static TextBox Field(double width)
+    {
+        var t = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"] };
+        if (width > 0) { t.Width = width; t.HorizontalAlignment = HorizontalAlignment.Left; }
+        return t;
+    }
+
+    AlarmWindow(BoardStore store, Alarm? existing, DateTime? day, bool meeting, string? title)
     {
         _store = store;
         _existing = existing;
-        Title = existing == null ? "Nowy alarm" : "Alarm";
-        Width = 440;
+        _meeting = existing?.IsMeeting ?? meeting;
+        _fixedDay = day != null || existing != null;
+        _day = (day ?? (existing != null && DateTime.TryParse(existing.Day, out var d) ? d : DateTime.Today)).Date;
+        Title = _meeting ? (existing == null ? "Nowe spotkanie" : "Spotkanie") : (existing == null ? "Nowy alarm" : "Alarm");
+        Width = 460;
         SizeToContent = SizeToContent.Height;
         ResizeMode = ResizeMode.NoResize;
         Topmost = true;
 
         var p = new StackPanel { Margin = new Thickness(20, 16, 20, 18) };
-        p.Children.Add(Label("ALARM  ·  " + App.AccountName(store.Layer).ToUpper(BoardWindow.Pl), 12, "FgDim", FontWeights.Bold));
-        p.Children.Add(Label("Przypomnienie o konkretnej godzinie, niezależne od zadań. Dzwoni na każdym komputerze z DeskWall.", 11.5, "FgFaint"));
+        p.Children.Add(Label((_meeting ? "SPOTKANIE" : "ALARM") + "  ·  " + App.AccountName(store.Layer).ToUpper(BoardWindow.Pl), 11.5, "FgDim", FontWeights.Bold));
+        _dayText.Margin = new Thickness(0, 2, 0, 0);
+        _dayText.Foreground = Ui.Res("AccentBrush");
+        p.Children.Add(_dayText);
 
-        p.Children.Add(Caption("OPIS"));
+        p.Children.Add(Caption(_meeting ? "TYTUŁ" : "OPIS"));
         p.Children.Add(_text);
 
-        p.Children.Add(Caption("GODZINA"));
-        var timeRow = new StackPanel { Orientation = Orientation.Horizontal };
-        timeRow.Children.Add(_time);
-        timeRow.Children.Add(new TextBlock { Text = "np. 15:30 · 9 · za 20 min · za 2 h", Foreground = Ui.Res("FgFaint"), FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) });
-        p.Children.Add(timeRow);
-
-        p.Children.Add(Caption("DZIEŃ"));
-        var dayRow = new StackPanel { Orientation = Orientation.Horizontal };
-        dayRow.Children.Add(_day);
-        foreach (var (label, offset) in new[] { ("DZIŚ", 0), ("JUTRO", 1), ("POJUTRZE", 2) })
+        if (_meeting)
         {
-            var b = new Button { Content = label, Style = (Style)Application.Current.Resources["BarButton"], Margin = new Thickness(6, 0, 0, 0) };
-            b.Click += (_, _) => { _day.Text = DayText(DateTime.Today.AddDays(offset)); _dayTouched = true; _time.Focus(); };
-            dayRow.Children.Add(b);
+            p.Children.Add(Caption("OD – DO"));
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(_time);
+            row.Children.Add(new TextBlock { Text = "–", Foreground = Ui.Res("FgDim"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 8, 0) });
+            row.Children.Add(_end);
+            row.Children.Add(Hint("np. 14-15:30 · do: 1h"));
+            p.Children.Add(row);
+            p.Children.Add(Caption("PRZYPOMNIENIE"));
+            foreach (var (m, label) in Reminders) _remind.Items.Add(new ComboBoxItem { Content = label, Tag = m });
+            p.Children.Add(_remind);
         }
-        p.Children.Add(dayRow);
+        else
+        {
+            p.Children.Add(Caption("GODZINA"));
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(_time);
+            row.Children.Add(Hint("np. 15:30 · 9 · za 20 min · za 2 h"));
+            p.Children.Add(row);
+        }
 
         p.Children.Add(Caption("POWTARZAJ"));
         foreach (var (code, label) in Alarm.Repeats) _repeat.Items.Add(new ComboBoxItem { Content = label, Tag = code });
@@ -319,10 +395,23 @@ public sealed class AlarmWindow : DarkWindow
         var buttons = new DockPanel { Margin = new Thickness(0, 16, 0, 0) };
         if (existing != null)
         {
-            var del = Btn("Usuń alarm", "SecondaryButton", (_, _) => { _store.DeleteAlarm(_existing!); Done(); });
+            var left = new StackPanel { Orientation = Orientation.Horizontal };
+            if (!existing.Once && day != null)
+            {
+                var skip = Btn("Usuń ten dzień", "SecondaryButton", (_, _) =>
+                {
+                    (existing.Skips ??= new()).Add(BoardWindow.DayKey(_day));
+                    _store.Changed(existing);
+                    Done();
+                });
+                skip.Margin = new Thickness(0, 0, 8, 0);
+                left.Children.Add(skip);
+            }
+            var del = Btn(existing.Once ? "Usuń" : "Usuń serię", "SecondaryButton", (_, _) => { _store.DeleteAlarm(existing); Done(); });
             del.Margin = new Thickness(0);
-            DockPanel.SetDock(del, Dock.Left);
-            buttons.Children.Add(del);
+            left.Children.Add(del);
+            DockPanel.SetDock(left, Dock.Left);
+            buttons.Children.Add(left);
         }
         var right = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         right.Children.Add(Btn("Anuluj", "SecondaryButton", (_, _) => Close()));
@@ -337,31 +426,48 @@ public sealed class AlarmWindow : DarkWindow
         {
             _text.Text = existing.Text;
             _time.Text = existing.Time;
-            _day.Text = DateTime.TryParse(existing.Day, out var d) ? DayText(d) : DayText(DateTime.Today);
-            _dayTouched = true;
+            _end.Text = existing.End ?? "";
             _repeat.SelectedIndex = Math.Max(0, Array.FindIndex(Alarm.Repeats, r => r.Code == (existing.Repeat ?? "")));
+            _remind.SelectedIndex = Math.Max(0, Array.FindIndex(Reminders, r => r.Minutes == existing.Remind));
         }
         else
         {
-            var start = day ?? DateTime.Today;
-            _day.Text = DayText(start);
-            _dayTouched = day != null && day != DateTime.Today;
-            // a sensible default: the next full hour
+            _text.Text = title ?? "";
             var next = DateTime.Now.AddHours(1);
             _time.Text = $"{next.Hour:00}:00";
+            if (_meeting) _end.Text = $"{(next.Hour + 1) % 24:00}:00";
             _repeat.SelectedIndex = 0;
+            _remind.SelectedIndex = Array.FindIndex(Reminders, r => r.Minutes == 5);
         }
 
         _text.TextChanged += (_, _) => Update();
-        _time.TextChanged += (_, _) => Update();
-        _day.TextChanged += (_, _) => { if (_day.IsKeyboardFocused) _dayTouched = true; Update(); };
+        _time.TextChanged += (_, _) =>
+        {
+            // "14-15:30" typed into "od" fills both fields
+            if (_meeting && Regex.IsMatch(_time.Text, "[-–]") && AlarmService.ParseMeeting(_time.Text, null, out var s, out var e, out var rest) && rest.Length == 0)
+            {
+                _time.Text = s.ToString("hh\\:mm");
+                _end.Text = e.ToString("hh\\:mm");
+                _end.Focus();
+                _end.CaretIndex = _end.Text.Length;
+            }
+            Update();
+        };
+        _end.TextChanged += (_, _) => Update();
         _repeat.SelectionChanged += (_, _) => Update();
+        _remind.SelectionChanged += (_, _) => Update();
         PreviewKeyDown += (_, e) =>
         {
             if (e.Key == Key.Escape) Close();
             else if (e.Key == Key.Enter && _save.IsEnabled) { e.Handled = true; Save(); }
         };
-        Loaded += (_, _) => { Activate(); _text.Focus(); };
+        Loaded += (_, _) =>
+        {
+            Activate();
+            var focus = _text.Text.Length == 0 ? _text : _time;
+            focus.Focus();
+            focus.SelectAll();
+        };
         Update();
     }
 
@@ -372,49 +478,81 @@ public sealed class AlarmWindow : DarkWindow
         return t;
     }
 
-    static string DayText(DateTime d) =>
-        d == DateTime.Today ? "dziś" : d == DateTime.Today.AddDays(1) ? "jutro" : d.ToString("dd.MM.yyyy");
+    static TextBlock Hint(string text) => new() { Text = text, Foreground = Ui.Res("FgFaint"), FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) };
+
+    /// <summary>CZWARTEK 8 PAŹDZIERNIK (with "DZIŚ" / "JUTRO" in front).</summary>
+    public static string DayTitle(DateTime d)
+    {
+        var c = BoardWindow.Pl;
+        var text = $"{c.DateTimeFormat.GetDayName(d.DayOfWeek)} {d.Day} {c.DateTimeFormat.MonthNames[d.Month - 1]}".ToUpper(c);
+        if (d.Year != DateTime.Today.Year) text += $" {d.Year}";
+        var rel = d == DateTime.Today ? "DZIŚ" : d == DateTime.Today.AddDays(1) ? "JUTRO" : null;
+        return rel != null ? $"{rel}  ·  {text}" : text;
+    }
 
     string RepeatCode => (_repeat.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
+    int? RemindMinutes => (_remind.SelectedItem as ComboBoxItem)?.Tag as int?;
 
-    /// <summary>The resulting first occurrence (null = can't read the time / day).</summary>
-    DateTime? Resolve()
+    /// <summary>Start (and meeting end) of the first occurrence; null = can't read the time.</summary>
+    (DateTime Start, DateTime? End)? Resolve()
     {
         var (time, delay) = AlarmService.ParseTime(_time.Text);
-        if (delay is { } dl)
+        DateTime start;
+        if (delay is { } dl && !_meeting)
         {
             var t = DateTime.Now + dl;
-            return t.AddTicks(-(t.Ticks % TimeSpan.TicksPerMinute));
+            start = t.AddTicks(-(t.Ticks % TimeSpan.TicksPerMinute));
         }
-        if (time is not { } tod) return null;
-        var day = SmartAdd.ParseDay(_day.Text.Trim()) ?? (DateTime.TryParseExact(_day.Text.Trim(), "dd.MM.yyyy", null, DateTimeStyles.None, out var d) ? d : (DateTime?)null);
-        if (day is not { } dd) return null;
-        var at = dd.Date + tod;
-        // "8:00" typed in the afternoon without picking a day = tomorrow morning
-        if (!_dayTouched && at <= DateTime.Now && dd.Date == DateTime.Today) at = at.AddDays(1);
-        return at;
+        else if (time is { } tod)
+        {
+            start = _day + tod;
+            // "8:00" typed in the afternoon from the tray / top bar = tomorrow morning
+            if (!_fixedDay && start <= DateTime.Now) start = start.AddDays(1);
+        }
+        else return null;
+        if (!_meeting) return (start, null);
+
+        DateTime end;
+        var endText = _end.Text.Trim();
+        if (endText.Length == 0) end = start.AddHours(1);
+        else if (AlarmService.ParseDuration(endText) is { } dur) end = start + dur;
+        else if (AlarmService.ParseTime(endText).Time is { } et) end = start.Date + et;
+        else return null;
+        if (end <= start) return null;
+        return (start, end);
     }
 
     void Update()
     {
-        var at = Resolve();
-        _save.IsEnabled = at != null;
-        if (at is not { } a) { _preview.Text = "Nie rozumiem godziny albo dnia."; _preview.Foreground = new SolidColorBrush(Color.FromRgb(0xF2, 0xA6, 0x5A)); return; }
+        var r = Resolve();
+        _save.IsEnabled = r != null;
+        _dayText.Text = DayTitle(r?.Start.Date ?? _day);
+        if (r is not { } v)
+        {
+            _preview.Text = _meeting ? "Nie rozumiem godzin (koniec musi być po początku)." : "Nie rozumiem godziny.";
+            _preview.Foreground = new SolidColorBrush(Color.FromRgb(0xF2, 0xA6, 0x5A));
+            return;
+        }
         _preview.Foreground = Ui.Res("FgDim");
         var repeat = RepeatCode;
-        var when = a.ToString("dddd, d MMMM, HH:mm", BoardWindow.Pl);
-        _preview.Text = repeat.Length == 0
-            ? (a <= DateTime.Now ? $"→ {when}  (już minęło)" : $"→ {when}  ({AlarmService.Until(a)})")
-            : $"→ {Alarm.Repeats.First(r => r.Code == repeat).Label.ToLower(BoardWindow.Pl)} o {a:HH:mm}, od {a.ToString("d MMMM", BoardWindow.Pl)}";
+        var when = _meeting ? $"{v.Start:HH:mm}–{v.End:HH:mm}  ({BoardWindow.Hours((v.End!.Value - v.Start).TotalHours)})" : $"{v.Start:HH:mm}";
+        string text = repeat.Length == 0
+            ? (v.Start <= DateTime.Now ? $"→ {when}  ·  już minęło" : $"→ {when}  ·  {AlarmService.Until(v.Start)}")
+            : $"→ {Alarm.Repeats.First(x => x.Code == repeat).Label.ToLower(BoardWindow.Pl)}, {when}";
+        if (_meeting && RemindMinutes is { } m) text += m == 0 ? "  ·  przypomnienie o czasie" : $"  ·  przypomnienie {m} min wcześniej";
+        _preview.Text = text;
     }
 
     void Save()
     {
-        if (Resolve() is not { } at) return;
-        var x = _existing ?? new Alarm();
+        if (Resolve() is not { } r) return;
+        var x = _existing ?? new Alarm { Kind = _meeting ? "meeting" : "alarm" };
         x.Text = _text.Text.Trim();
-        x.Day = at.ToString("yyyy-MM-dd");
-        x.Time = at.ToString("HH:mm");
+        // a repeating series keeps its first day when edited from a later occurrence
+        if (_existing == null || _existing.Once || RepeatCode.Length == 0) x.Day = r.Start.ToString("yyyy-MM-dd");
+        x.Time = r.Start.ToString("HH:mm");
+        x.End = r.End?.ToString("HH:mm");
+        x.Remind = _meeting ? RemindMinutes : null;
         x.Repeat = RepeatCode;
         x.Armed = DateTime.Now;
         x.Deleted = false;
@@ -429,9 +567,9 @@ public sealed class AlarmWindow : DarkWindow
     }
 
     /// <summary>Opens the dialog above everything (the board may be behind other windows).</summary>
-    public static void Edit(BoardStore store, Alarm? alarm = null, DateTime? day = null)
+    public static void Edit(BoardStore store, Alarm? alarm = null, DateTime? day = null, bool meeting = false, string? title = null)
     {
         GlassWindow.EndOverlays();
-        new AlarmWindow(store, alarm, day).Show();
+        new AlarmWindow(store, alarm, day, meeting, title).Show();
     }
 }

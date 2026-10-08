@@ -58,35 +58,80 @@ public partial class BoardWindow
 
     public void ShowMonth() => SetView(ViewMode.Month);
 
-    /// <summary>HO / BŚU days of a year to CSV (semicolon-separated, UTF-8 with BOM → opens straight in Polish Excel).</summary>
-    void ExportMarks(int year)
+    /// <summary>The period on screen: the day, the weeks, the month or the year.</summary>
+    (DateTime From, DateTime To, string Name) VisiblePeriod() => _view switch
     {
+        ViewMode.Year => (new DateTime(_year, 1, 1), new DateTime(_year, 12, 31), _year.ToString()),
+        ViewMode.Month => (_monthFirst, _monthFirst.AddMonths(1).AddDays(-1), _monthFirst.ToString("yyyy-MM")),
+        ViewMode.Day => (_dayDate, _dayDate, DayKey(_dayDate)),
+        _ => (FirstMonday, FirstMonday.AddDays(7 * WeekCount - 1), WeekCount == 1 ? $"T{WeekNo(FirstMonday)}-{FirstMonday.Year}" : $"T{WeekNo(FirstMonday)}-{WeekNo(FirstMonday.AddDays(7))}-{FirstMonday.Year}"),
+    };
+
+    /// <summary>
+    /// The period on screen to CSV (semicolon-separated, UTF-8 with BOM → opens straight in Polish Excel): one row per day
+    /// (mark, tasks, done, hours, meetings), totals, day marks and categories, then the task list.
+    /// </summary>
+    void Export_Click(object sender, RoutedEventArgs e)
+    {
+        var (from, to, name) = VisiblePeriod();
         var dlg = new Microsoft.Win32.SaveFileDialog
         {
-            Title = "Eksport dni HO / BŚU",
-            FileName = $"DeskWall-{App.AccountName(S.Layer)}-HO-BSU-{year}.csv",
+            Title = "Eksport okresu do CSV",
+            FileName = $"DeskWall-{App.AccountName(S.Layer)}-{name}.csv",
             Filter = "CSV (*.csv)|*.csv",
             InitialDirectory = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"),
         };
         GlassWindow.EndOverlays();
         if (dlg.ShowDialog() != true) return;
+
+        string H(double h) => h.ToString("0.##", Pl);
+        static string Q(string s) => s.Contains(';') || s.Contains('"') ? "\"" + s.Replace("\"", "\"\"") + "\"" : s;
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("Data;Dzień tygodnia;Tydzień;Oznaczenie;Opis");
-        var marked = Store.Data.Days.Where(kv => kv.Value.Mark != null && kv.Key.StartsWith(year + "-")).OrderBy(kv => kv.Key).ToList();
-        foreach (var (key, info) in marked)
-        {
-            var d = ParseKey(key);
-            var label = DayMarks.All.FirstOrDefault(m => m.Code == info.Mark).Label ?? "";
-            sb.AppendLine($"{key};{d.ToString("dddd", Pl)};{WeekNo(d)};{info.Mark};{label}");
-        }
+        sb.AppendLine($"{App.AccountName(S.Layer)};{from:yyyy-MM-dd} – {to:yyyy-MM-dd}");
         sb.AppendLine();
-        sb.AppendLine("Miesiąc;" + string.Join(";", DayMarks.All.Select(m => m.Code)));
-        for (int m = 1; m <= 12; m++)
+        sb.AppendLine("Data;Dzień tygodnia;Tydzień;Oznaczenie;Zadania;Zrobione;Estymacja [h];Zrobione [h];Spotkania [h]");
+
+        var allTasks = new List<(DateTime Day, TaskItem Task)>();
+        int tasksSum = 0, doneSum = 0;
+        double hoursSum = 0, doneHoursSum = 0, meetSum = 0;
+        var marks = new Dictionary<string, int>();
+        for (var d = from; d <= to; d = d.AddDays(1))
         {
-            var prefix = $"{year}-{m:00}";
-            sb.AppendLine(Pl.DateTimeFormat.GetMonthName(m) + ";" + string.Join(";", DayMarks.All.Select(x => marked.Count(kv => kv.Key.StartsWith(prefix) && kv.Value.Mark == x.Code))));
+            var key = DayKey(d);
+            var tasks = Store.Data.Tasks.Where(t => t.Day == key).Concat(Store.VirtualTasks(d)).ToList(); // archived ones too
+            allTasks.AddRange(tasks.Select(t => (d, t)));
+            int done = tasks.Count(t => t.Done);
+            double hours = tasks.Sum(t => t.Estimate ?? 0), doneHours = tasks.Where(t => t.Done).Sum(t => t.Estimate ?? 0);
+            double meet = CalendarService.On(d).Where(x => !x.IsHoliday).Sum(x => x.Hours) + Store.Alarms.Where(a => a.IsMeeting && a.Occurs(d)).Sum(a => a.Hours);
+            var mark = Store.DayMark(key);
+            if (mark != null) marks[mark] = marks.GetValueOrDefault(mark) + 1;
+            tasksSum += tasks.Count; doneSum += done; hoursSum += hours; doneHoursSum += doneHours; meetSum += meet;
+            sb.AppendLine($"{key};{d.ToString("dddd", Pl)};{WeekNo(d)};{mark};{tasks.Count};{done};{H(hours)};{H(doneHours)};{H(meet)}");
         }
-        sb.AppendLine("Razem;" + string.Join(";", DayMarks.All.Select(x => marked.Count(kv => kv.Value.Mark == x.Code))));
+        sb.AppendLine($"Razem;;;{string.Join(" ", marks.Select(kv => $"{kv.Key} {kv.Value}"))};{tasksSum};{doneSum};{H(hoursSum)};{H(doneHoursSum)};{H(meetSum)}");
+
+        sb.AppendLine();
+        sb.AppendLine("Oznaczenie;Opis;Dni");
+        foreach (var m in Store.MarkTypes) sb.AppendLine($"{Q(m.Code)};{Q(m.Label)};{marks.GetValueOrDefault(m.Code)}");
+        foreach (var kv in marks.Where(kv => Store.MarkTypeFor(kv.Key) == null)) sb.AppendLine($"{Q(kv.Key)};;{kv.Value}");
+
+        sb.AppendLine();
+        sb.AppendLine("Kategoria;Zadania;Zrobione;Estymacja [h];Zrobione [h]");
+        var byCat = allTasks.SelectMany(x => (TaskItem.Tags(x.Task.Text, out _) is { Count: > 0 } tags ? tags : new List<string> { "(bez kategorii)" }).Select(c => (c, x.Task)))
+            .GroupBy(x => x.c).OrderByDescending(g => g.Sum(x => x.Task.Estimate ?? 0));
+        foreach (var g in byCat)
+        {
+            var name2 = Store.CategoryFor(g.Key)?.Name ?? g.Key;
+            sb.AppendLine($"{Q(name2)};{g.Count()};{g.Count(x => x.Task.Done)};{H(g.Sum(x => x.Task.Estimate ?? 0))};{H(g.Where(x => x.Task.Done).Sum(x => x.Task.Estimate ?? 0))}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("Data;Zadanie;Kategorie;Zrobione;Estymacja [h];Link");
+        foreach (var (d, t) in allTasks.OrderBy(x => x.Day).ThenBy(x => x.Task.Order))
+        {
+            var tags = TaskItem.Tags(t.Text, out var rest);
+            sb.AppendLine($"{DayKey(d)};{Q(rest)};{Q(string.Join(", ", tags))};{(t.Done ? "tak" : "nie")};{(t.Estimate is { } est ? H(est) : "")};{t.Url}");
+        }
         try
         {
             System.IO.File.WriteAllText(dlg.FileName, sb.ToString(), new System.Text.UTF8Encoding(true));
@@ -492,7 +537,9 @@ public partial class BoardWindow
         if (t.Day != null)
         {
             var rule = Store.Rule(t.RuleId);
-            var rep = new MenuItem { Header = rule != null ? "Seria: " + RecurringRule.Patterns.First(p => p.Code == rule.Pattern).Label : "Powtarzaj" };
+            var rep = new MenuItem { Header = rule != null ? "Seria: " + rule.Summary : "Powtarzaj" };
+            rep.Items.Add(Item(rule != null ? "Zmień powtarzanie…" : "Powtarzaj…  (co N, wybrane dni, okres od–do)", () => RepeatWindow.ForTask(Store, t)));
+            rep.Items.Add(new Separator());
             foreach (var (code, label) in RecurringRule.Patterns)
             {
                 var d = ParseKey(t.Day);
@@ -504,7 +551,7 @@ public partial class BoardWindow
                 };
                 rep.Items.Add(Item((rule?.Pattern == code ? "✓  " : "     ") + label + detail, () => Do(() =>
                 {
-                    if (rule != null) { rule.Pattern = code; rule.Start = t.RuleDay ?? t.Day; Store.Changed(rule); return; }
+                    if (rule != null) { rule.Pattern = code; rule.Interval = 1; rule.Weekdays = null; rule.Start = t.RuleDay ?? t.Day; Store.Changed(rule); return; }
                     var real = Store.Materialize(t);
                     var r = new RecurringRule { Text = real.Text, Pattern = code, Start = real.Day!, Estimate = real.Estimate, Order = real.Order };
                     Store.AddRule(r);
@@ -652,7 +699,7 @@ public partial class BoardWindow
         {
             var next = Enumerable.Range(0, 400).Select(i => DateTime.Today.AddDays(i)).FirstOrDefault(r.Occurs);
             if (next == default) continue;
-            var label = "Seria · " + RecurringRule.Patterns.First(p => p.Code == r.Pattern).Label.ToLower(Pl) + " · najbliżej " + next.ToString("ddd d MMM", Pl);
+            var label = "Seria · " + r.Summary + " · najbliżej " + next.ToString("ddd d MMM", Pl);
             hits.Add(new Hit(next, label, r.Text, false, () => JumpTo(next)));
         }
         foreach (var ev in CalendarService.All.Where(e => !e.IsHoliday && Matches(e.Title, q)))
@@ -753,6 +800,7 @@ public partial class BoardWindow
         switch (_view)
         {
             case ViewMode.Year: _year += dir; break;
+            case ViewMode.Day: _dayDate = _dayDate.AddDays(dir); break;
             case ViewMode.Month:
                 int rows = MonthRows();
                 _monthFirst = _monthFirst.AddMonths(dir);
@@ -769,6 +817,7 @@ public partial class BoardWindow
         switch (_view)
         {
             case ViewMode.Year: _slideDir = Math.Sign(DateTime.Today.Year - _year); _year = DateTime.Today.Year; break;
+            case ViewMode.Day: _slideDir = Math.Sign((DateTime.Today - _dayDate).TotalDays); _dayDate = DateTime.Today; break;
             case ViewMode.Month:
                 var m = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
                 _slideDir = Math.Sign((m - _monthFirst).TotalDays);
@@ -781,7 +830,9 @@ public partial class BoardWindow
         Rebuild();
     }
 
+    void DayView_Click(object sender, RoutedEventArgs e) => SetView(ViewMode.Day);
     void OneWeek_Click(object sender, RoutedEventArgs e) => SetView(ViewMode.Week1);
+    void Hide_Click(object sender, RoutedEventArgs e) => App.Instance.SetBoardHidden(true);
     void WeekView_Click(object sender, RoutedEventArgs e) => SetView(ViewMode.Week2);
     void WorkLayer_Click(object sender, RoutedEventArgs e) => App.Instance.SwitchLayer("work");
     void PrivateLayer_Click(object sender, RoutedEventArgs e) => App.Instance.SwitchLayer("private");
@@ -814,25 +865,34 @@ public partial class BoardWindow
     }
 
 
-    /// <summary>Upcoming alarms of this account (next 7 days) + "Nowy alarm…".</summary>
+    /// <summary>Upcoming alarms and meetings of this account (next 7 days) + "Nowy alarm…" / "Nowe spotkanie…".</summary>
     void Alarm_Click(object sender, RoutedEventArgs e)
     {
         var menu = new ContextMenu { PlacementTarget = AlarmButton, Placement = PlacementMode.Bottom };
         var now = DateTime.Now;
-        var upcoming = Store.Alarms.Select(a => (a, at: a.Next(now))).Where(x => x.at is { } t && t < now.AddDays(7))
-            .OrderBy(x => x.at).Take(12).ToList();
-        if (upcoming.Count == 0) menu.Items.Add(new MenuItem { Header = "Brak alarmów w najbliższym tygodniu", IsEnabled = false });
+        var upcoming = Store.Alarms.Select(a => (a, at: a.NextStart(now))).Where(x => x.at is { } t && t < now.AddDays(7))
+            .OrderBy(x => x.at).Take(14).ToList();
+        if (upcoming.Count == 0) menu.Items.Add(new MenuItem { Header = "Brak alarmów i spotkań w najbliższym tygodniu", IsEnabled = false });
         foreach (var (a, at) in upcoming)
         {
-            var when = at!.Value.Date == DateTime.Today ? "dziś" : at.Value.Date == DateTime.Today.AddDays(1) ? "jutro" : at.Value.ToString("ddd d MMM", Pl);
-            var mi = new MenuItem { Header = $"{when} {a.Time}   {(a.Text.Length > 0 ? a.Text : "Alarm")}{(a.Once ? "" : "  ↻")}", ToolTip = AlarmService.Until(at.Value) };
-            mi.Click += (_, _) => AlarmWindow.Edit(Store, a);
+            var d = at!.Value;
+            var when = d.Date == DateTime.Today ? "dziś" : d.Date == DateTime.Today.AddDays(1) ? "jutro" : d.ToString("ddd d MMM", Pl);
+            var time = a.IsMeeting ? $"{a.Time}–{a.EndAt(d):HH:mm}" : a.Time;
+            var mi = new MenuItem
+            {
+                Header = $"{(a.IsMeeting ? "◆" : "⏰")}  {when} {time}   {(a.Text.Length > 0 ? a.Text : a.IsMeeting ? "Spotkanie" : "Alarm")}{(a.Once ? "" : "  ↻")}",
+                ToolTip = AlarmService.Until(d),
+            };
+            mi.Click += (_, _) => AlarmWindow.Edit(Store, a, d.Date);
             menu.Items.Add(mi);
         }
         menu.Items.Add(new Separator());
         var add = new MenuItem { Header = "Nowy alarm…" };
         add.Click += (_, _) => AlarmWindow.Edit(Store);
         menu.Items.Add(add);
+        var meet = new MenuItem { Header = "Nowe spotkanie…" };
+        meet.Click += (_, _) => AlarmWindow.Edit(Store, null, DateTime.Today, meeting: true);
+        menu.Items.Add(meet);
         menu.IsOpen = true;
     }
 
@@ -840,9 +900,9 @@ public partial class BoardWindow
 
     void ClearDone_Click(object sender, RoutedEventArgs e)
     {
-        var first = FirstMonday;
-        var keys = Enumerable.Range(0, 7 * WeekCount).Select(i => first.AddDays(i))
-            .Where(d => S.ShowWeekends || !IsWeekend(d)).Select(DayKey).ToHashSet(); // only what's on screen
+        var (first, last, _) = VisiblePeriod();
+        var keys = Enumerable.Range(0, (int)(last - first).TotalDays + 1).Select(i => first.AddDays(i))
+            .Where(d => _view == ViewMode.Day || S.ShowWeekends || !IsWeekend(d)).Select(DayKey).ToHashSet(); // only what's on screen
         var done = Store.Data.Tasks.Where(t => t.Done && !t.Archived && (t.IsBacklog || keys.Contains(t.Day!))).ToList();
         if (done.Count == 0) return;
         Do(() => { foreach (var t in done) Store.Archive(t); });
