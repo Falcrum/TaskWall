@@ -112,7 +112,9 @@
                         <TextBlock x:Name="SearchHint" Text="Filtruj backlog…" Foreground="{StaticResource FgFaint}" FontSize="12"
                                    Margin="27,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
                     </Grid>
-                    <WrapPanel x:Name="TagChips" DockPanel.Dock="Top" Margin="0,0,4,4"/>
+                    <ScrollViewer DockPanel.Dock="Top" MaxHeight="130" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,0,0,4">
+                        <WrapPanel x:Name="TagChips" Margin="0,0,4,0"/>
+                    </ScrollViewer>
                     <ScrollViewer x:Name="BacklogScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                   Background="Transparent" AllowDrop="True" Padding="0,0,4,0">
                         <StackPanel x:Name="BacklogList"/>

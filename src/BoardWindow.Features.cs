@@ -17,6 +17,8 @@ public partial class BoardWindow
     bool _drawerOpen, _pinnedVisible = true;
     string? _tagFilter;
     bool _archiveTab;
+    bool _allTags;          // backlog: all category chips or only the biggest ones
+    int _backlogShown = 200; // backlog rows built (more on demand)
 
     void InitFeatures()
     {
@@ -228,7 +230,10 @@ public partial class BoardWindow
         if (_tagFilter != null && tagCounts.All(g => g.Key != _tagFilter)) _tagFilter = null;
         TagChips.Children.Clear();
         TagChips.Visibility = tagCounts.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var g in tagCounts)
+        // only the biggest categories (a whole team's Notion has dozens) – the rest behind "+ N"
+        const int TagLimit = 10;
+        var visibleTags = _allTags ? tagCounts : tagCounts.Take(TagLimit).Concat(tagCounts.Skip(TagLimit).Where(g => g.Key == _tagFilter)).ToList();
+        foreach (var g in visibleTags)
         {
             var tag = g.Key;
             var color = TagColor(tag);
@@ -249,12 +254,31 @@ public partial class BoardWindow
             TagChips.Children.Add(chip);
         }
 
+        if (tagCounts.Count > TagLimit)
+        {
+            var more = new Border
+            {
+                CornerRadius = new CornerRadius(9), Padding = new Thickness(8, 1, 8, 2), Margin = new Thickness(0, 0, 5, 5), Cursor = Cursors.Hand,
+                Background = B(Color.FromArgb(0x18, 0xFF, 0xFF, 0xFF)),
+                Child = new TextBlock { Text = _allTags ? L.T("mniej") : L.F("+ {0} więcej", tagCounts.Count - TagLimit), FontSize = 10.5, FontWeight = FontWeights.SemiBold, Foreground = Res("FgDim") },
+            };
+            more.MouseLeftButtonUp += (_, _) => { _allTags = !_allTags; BuildBacklog(); };
+            TagChips.Children.Add(more);
+        }
+
         var shown = all.Where(t =>
             (_tagFilter == null || TaskItem.Tags(t.Text, out _).Contains(_tagFilter)) &&
             (q.Length == 0 || Matches(t.Text, q) || Matches(t.Status, q) || Matches(t.Priority, q))).ToList();
 
         BacklogCount.Text = shown.Count == all.Count ? all.Count.ToString() : $"{shown.Count}/{all.Count}";
-        foreach (var t in shown) BacklogList.Children.Add(BuildTaskRow(t, true));
+        // thousands of rows would freeze the drawer: the first ones, then "show more"
+        foreach (var t in shown.Take(_backlogShown)) BacklogList.Children.Add(BuildTaskRow(t, true));
+        if (shown.Count > _backlogShown)
+        {
+            var moreRows = new Button { Style = (Style)FindResource("BarButton"), Content = L.F("POKAŻ KOLEJNE ({0} z {1})", Math.Min(200, shown.Count - _backlogShown), shown.Count - _backlogShown), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 4, 0, 4) };
+            moreRows.Click += (_, _) => { _backlogShown += 200; BuildBacklog(); };
+            BacklogList.Children.Add(moreRows);
+        }
         BacklogList.Children.Add(BuildAddRow(BacklogKey, null));
         if (all.Count == 0)
             BacklogList.Children.Add(new TextBlock

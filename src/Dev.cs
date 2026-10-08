@@ -291,6 +291,20 @@ static class Dev
                 var r2 = NotionSync.Apply(ns, nlink, new() { page with { Title = "[vfx] Woda w Tuathan v2", Status = "Done" } }, "me-1");
                 Check("notion: rename followed, done in Notion ticks the task", r2.Updated == 1 && nt.Text == "[VFX] Woda w Tuathan v2" && nt.Done && ns.Data.Tasks.Count == 1);
             }
+            Check("notion: view id from 'Copy link to view'", NotionSync.ViewId("https://www.notion.so/team/1111aaaa2222bbbb3333cccc4444dddd?v=aaaabbbbccccddddeeeeffff00001111&pvs=4") == "aaaabbbbccccddddeeeeffff00001111"
+                && NotionSync.ViewId("https://www.notion.so/team/1111aaaa2222bbbb3333cccc4444dddd") == null);
+            var clearStore = new BoardStore("work");
+            clearStore.Open(Path.Combine(dir, "clear"));
+            clearStore.Add(new TaskItem { Text = "a", Day = "2026-10-08" });
+            clearStore.Add(new TaskItem { Text = "b" });
+            clearStore.AddRule(new RecurringRule { Text = "c", Pattern = "daily", Start = "2026-10-01" });
+            clearStore.AddAlarm(new Alarm { Text = "x", Day = "2026-10-08" });
+            clearStore.AddAlarm(new Alarm { Kind = "meeting", Text = "m", Day = "2026-10-08" });
+            clearStore.ClearTasks();
+            clearStore.ClearAlarms(meetings: true);
+            Check("clear: tasks + series gone (tombstoned), meetings gone, alarms kept",
+                clearStore.Data.Tasks.Count == 0 && clearStore.Data.Deleted.Count == 2 && !clearStore.VirtualTasks(new DateTime(2026, 10, 9)).Any()
+                && clearStore.Alarms.Count() == 1 && !clearStore.Alarms.Single().IsMeeting);
             var sealedToken = NotionSync.Protect("ntn_test_token_1234567890");
             Check("notion: token encrypted (DPAPI), not stored in plain text", sealedToken != null && !sealedToken.Contains("ntn_test"));
 

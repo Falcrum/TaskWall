@@ -444,6 +444,11 @@ public sealed class NotionLink
     public int Minutes { get; set; } = 10;
     /// <summary>Only pages where a person property contains me.</summary>
     public bool OnlyMine { get; set; }
+    /// <summary>Use the filter and sorts of the view from the link ("Copy link to view": …?v=…).</summary>
+    public bool UseViewFilter { get; set; } = true;
+    /// <summary>Safety limit: a sync that would bring more pages is refused (a whole team database).</summary>
+    public int MaxPages { get; set; } = 500;
+    public string? ViewName { get; set; }
     /// <summary>Statuses that are not imported (still updated when already on the board).</summary>
     public List<string>? SkipStatuses { get; set; }
     /// <summary>A page done in Notion ticks its task off.</summary>

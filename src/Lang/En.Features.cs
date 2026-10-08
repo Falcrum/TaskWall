@@ -5,6 +5,9 @@ static partial class L
     /// <summary>Polish → English (Features).</summary>
     static readonly (string Pl, string En)[] Features =
     {
+        ("mniej", "less"),
+        ("+ {0} więcej", "+ {0} more"),
+        ("POKAŻ KOLEJNE ({0} z {1})", "SHOW MORE ({0} of {1})"),
         // CSV export
         ("Eksport okresu do CSV", "Export period to CSV"),
         ("Data;Dzień tygodnia;Tydzień;Oznaczenie;Zadania;Zrobione;Estymacja [h];Zrobione [h];Spotkania [h]", "Date;Weekday;Week;Mark;Tasks;Done;Estimate [h];Done [h];Meetings [h]"),

@@ -5,6 +5,11 @@ static partial class L
     /// <summary>Polish → English (Common).</summary>
     static readonly (string Pl, string En)[] Common =
     {
+        ("Nie znalazłem widoku z linku. Skopiuj link jeszcze raz (nazwa widoku → Copy link to view).", "Couldn't find the view from the link. Copy the link again (view name → Copy link to view)."),
+        ("Nie mogę odczytać filtrów widoku z linku.", "Can't read the filters of the view in the link."),
+        ("Ten widok ma ponad {0} zadań – nic nie wczytałem. Użyj widoku z filtrami (np. przypisane do mnie) albo podnieś limit.", "This view has more than {0} tasks – nothing was loaded. Use a filtered view (e.g. assigned to me) or raise the limit."),
+        ("widok „{0}”", "view “{0}”"),
+        ("cała baza (link bez widoku)", "whole database (link without a view)"),
         // repeat / series labels (Models)
         ("Jednorazowo", "Once"),
         ("Codziennie", "Daily"),

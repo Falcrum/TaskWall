@@ -5,6 +5,22 @@ static partial class L
     /// <summary>Polish → English (Settings).</summary>
     static readonly (string Pl, string En)[] Settings =
     {
+        ("Rozpoznano bazę i widok ✓ – wczytane będą tylko zadania pasujące do filtrów tego widoku{0}.", "Database and view recognised ✓ – only tasks matching this view's filters will be loaded{0}."),
+        ("Rozpoznano bazę, ale link nie ma widoku (…?v=…) – wczytana byłaby cała baza. Skopiuj link do widoku z filtrami, np. „Dla mnie”.", "Database recognised, but the link has no view (…?v=…) – the whole database would be loaded. Copy the link of a filtered view, e.g. “Assigned to me”."),
+        ("Używaj filtrów i sortowania widoku z linku (zalecane)", "Use the filters and sorting of the view in the link (recommended)"),
+        ("Nie wczytuj, jeśli widok ma więcej zadań niż", "Don't load when the view has more tasks than"),
+        ("Wyczyść dane", "Clear data"),
+        ("Usuwa dane tego konta – także na innych komputerach, które synchronizują ten folder. Zadania i oznaczenia da się jeszcze cofnąć Ctrl+Z na tablicy, a kopie dzienne zostają w podfolderze backup.", "Deletes this account's data – also on other computers syncing this folder. Tasks and marks can still be undone with Ctrl+Z on the board, and the daily copies stay in the backup subfolder."),
+        ("Konto „{0}” nie ma: {1}.", "Account “{0}” has no {1}."),
+        ("Usunąć z konta „{0}”: {1} ({2})?", "Delete from account “{0}”: {1} ({2})?"),
+        ("Usuń wszystkie zadania", "Delete all tasks"),
+        ("wszystkie zadania (dni, backlog, archiwum, serie)", "all tasks (days, backlog, archive, series)"),
+        ("Usuń spotkania", "Delete meetings"),
+        ("spotkania", "meetings"),
+        ("Usuń alarmy", "Delete alarms"),
+        ("alarmy", "alarms"),
+        ("Usuń oznaczenia dni", "Delete day marks"),
+        ("oznaczenia dni (też powtarzane)", "day marks (repeating ones too)"),
         // SettingsWindow
         ("TaskWall – ustawienia", "TaskWall – settings"),
         ("Ogólne", "General"),

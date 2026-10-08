@@ -254,6 +254,31 @@ public sealed class SettingsWindow : DarkWindow
         addMark.HorizontalAlignment = HorizontalAlignment.Left;
         addMark.Margin = new Thickness(0, 6, 0, 0);
         p.Children.Add(addMark);
+
+        // clearing this account's data (goes to the other computers too)
+        p.Children.Add(Sub(L.T("Wyczyść dane")));
+        p.Children.Add(Label(L.T("Usuwa dane tego konta – także na innych komputerach, które synchronizują ten folder. Zadania i oznaczenia da się jeszcze cofnąć Ctrl+Z na tablicy, a kopie dzienne zostają w podfolderze backup."), 11, "FgFaint"));
+        var clearRow = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+        void ClearButton(string label, Func<int> count, Func<int> clear, string what)
+        {
+            var b = Btn(label, "SecondaryButton", (_, _) =>
+            {
+                int n = count();
+                if (n == 0) { MessageBox.Show(this, L.F("Konto „{0}” nie ma: {1}.", App.AccountName(id), what), "TaskWall"); return; }
+                if (MessageBox.Show(this, L.F("Usunąć z konta „{0}”: {1} ({2})?", App.AccountName(id), what, n), "TaskWall", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+                clear();
+                AlarmService.Reschedule();
+                App.Board?.Rebuild();
+                FillMarks(store, marks);
+            });
+            b.Margin = new Thickness(0, 0, 8, 8);
+            clearRow.Children.Add(b);
+        }
+        ClearButton(L.T("Usuń wszystkie zadania"), () => store.Data.Tasks.Count + store.Data.Rules.Count(r => !r.Deleted), store.ClearTasks, L.T("wszystkie zadania (dni, backlog, archiwum, serie)"));
+        ClearButton(L.T("Usuń spotkania"), () => store.Alarms.Count(a => a.IsMeeting), () => store.ClearAlarms(meetings: true), L.T("spotkania"));
+        ClearButton(L.T("Usuń alarmy"), () => store.Alarms.Count(a => !a.IsMeeting), () => store.ClearAlarms(meetings: false), L.T("alarmy"));
+        ClearButton(L.T("Usuń oznaczenia dni"), () => store.Data.Days.Count(kv => !string.IsNullOrEmpty(kv.Value.Mark)) + store.Data.MarkRules.Count(r => !r.Deleted), store.ClearMarks, L.T("oznaczenia dni (też powtarzane)"));
+        p.Children.Add(clearRow);
     }
 
     FrameworkElement FolderRow(string layer)
@@ -367,7 +392,10 @@ public sealed class SettingsWindow : DarkWindow
         {
             var v = db.Text.Trim();
             var id = NotionImport.ExtractId(v);
-            dbState.Text = v.Length == 0 ? L.T("Wklej link do bazy.") : id != null ? L.F("Rozpoznano bazę ✓  (id {0}…)", id[..8]) : L.T("To nie wygląda na link do bazy Notion.");
+            dbState.Text = v.Length == 0 ? L.T("Wklej link do bazy.")
+                : id == null ? L.T("To nie wygląda na link do bazy Notion.")
+                : NotionSync.ViewId(v) != null ? L.F("Rozpoznano bazę i widok ✓ – wczytane będą tylko zadania pasujące do filtrów tego widoku{0}.", link.ViewName != null ? $" („{link.ViewName}”)" : "")
+                : L.T("Rozpoznano bazę, ale link nie ma widoku (…?v=…) – wczytana byłaby cała baza. Skopiuj link do widoku z filtrami, np. „Dla mnie”.");
             dbState.Foreground = v.Length > 0 && id == null ? new SolidColorBrush(Color.FromRgb(0xF2, 0xA6, 0x5A)) : Ui.Res("FgDim");
         }
         db.TextChanged += (_, _) => ShowDbState();
@@ -421,6 +449,18 @@ public sealed class SettingsWindow : DarkWindow
         autoRow.Children.Add(auto);
         autoRow.Children.Add(every);
         p.Children.Add(autoRow);
+        var viewFilter = new CheckBox { Content = L.T("Używaj filtrów i sortowania widoku z linku (zalecane)"), IsChecked = link.UseViewFilter, Margin = new Thickness(0, 4, 0, 4) };
+        viewFilter.Checked += (_, _) => { link.UseViewFilter = true; SettingsStore.Save(S); };
+        viewFilter.Unchecked += (_, _) => { link.UseViewFilter = false; SettingsStore.Save(S); };
+        p.Children.Add(viewFilter);
+        var limit = new ComboBox { Width = 110, Margin = new Thickness(8, 0, 0, 0) };
+        foreach (var n in new[] { 100, 250, 500, 1000, 2000 }) limit.Items.Add(new ComboBoxItem { Content = n.ToString(), Tag = n });
+        limit.SelectedItem = limit.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (int)i.Tag == link.MaxPages) ?? limit.Items[2];
+        limit.SelectionChanged += (_, _) => { if (limit.SelectedItem is ComboBoxItem it) { link.MaxPages = (int)it.Tag; SettingsStore.Save(S); } };
+        var limitRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 4) };
+        limitRow.Children.Add(new TextBlock { Text = L.T("Nie wczytuj, jeśli widok ma więcej zadań niż"), Foreground = Ui.Res("Fg"), VerticalAlignment = VerticalAlignment.Center });
+        limitRow.Children.Add(limit);
+        p.Children.Add(limitRow);
         var mine = new CheckBox { Content = L.T("Tylko zadania przypisane do mnie (pole osoby zawiera moje konto)"), IsChecked = link.OnlyMine, Margin = new Thickness(0, 4, 0, 4) };
         mine.Checked += (_, _) => { link.OnlyMine = true; SettingsStore.Save(S); };
         mine.Unchecked += (_, _) => { link.OnlyMine = false; SettingsStore.Save(S); };

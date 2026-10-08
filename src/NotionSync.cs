@@ -102,8 +102,21 @@ static class NotionSync
         public HttpStatusCode Code { get; } = code;
     }
 
-    /// <summary>Reads the whole database (all pages, up to 5 000).</summary>
-    public static async Task<(string Title, List<Page> Pages, string? MeId)> Read(NotionLink link)
+    /// <summary>"…?v=1a2b…" → the view id from a "Copy link to view" link, or null.</summary>
+    public static string? ViewId(string? link)
+    {
+        if (string.IsNullOrWhiteSpace(link)) return null;
+        var m = System.Text.RegularExpressions.Regex.Match(link, @"[?&]v=([0-9a-fA-F-]{8,36})");
+        return m.Success ? m.Groups[1].Value.Replace("-", "").ToLowerInvariant() : null;
+    }
+
+    static string Dashed(string id) => id.Length == 32 ? $"{id[..8]}-{id[8..12]}-{id[12..16]}-{id[16..20]}-{id[20..]}" : id;
+
+    /// <summary>
+    /// Reads the database – through the filter of the view from the link (e.g. "Dla mnie": assigned to me, chosen
+    /// statuses), so only those pages come in. Stops at <see cref="NotionLink.MaxPages"/> instead of flooding the backlog.
+    /// </summary>
+    public static async Task<(string Title, List<Page> Pages, string? MeId, string? ViewName, bool Capped)> Read(NotionLink link)
     {
         var token = Token(link) ?? throw new InvalidOperationException(L.T("Brak tokenu (albo został zapisany na innym koncie Windows) – wklej go ponownie."));
         var id = NotionImport.ExtractId(link.Database) ?? throw new InvalidOperationException(L.T("Nie rozpoznaję linku do bazy. Skopiuj link do widoku bazy (••• → Copy link to view)."));
@@ -120,25 +133,46 @@ static class NotionSync
         catch (NotionError) { /* "me" is only needed for "only mine" */ }
 
         string title = "";
-        string sourceId;
+        string sourceId = id;
         try
         {
             using var db = await Call(token, HttpMethod.Get, "databases/" + id);
             title = PlainText(db.RootElement, "title");
-            sourceId = db.RootElement.TryGetProperty("data_sources", out var ds) && ds.GetArrayLength() > 0
-                ? ds[0].GetProperty("id").GetString()! : id;
+            if (db.RootElement.TryGetProperty("data_sources", out var ds) && ds.GetArrayLength() > 0) sourceId = ds[0].GetProperty("id").GetString()!;
         }
-        catch (NotionError e) when (e.Code == HttpStatusCode.NotFound)
+        catch (NotionError e) when (e.Code == HttpStatusCode.NotFound) { /* maybe the link points at a data source itself */ }
+
+        // the view's saved filter (and sorts) – Notion evaluates "me" as the token's user
+        JsonElement? filter = null, sorts = null;
+        string? viewName = null;
+        if (link.UseViewFilter && ViewId(link.Database) is { } viewId)
         {
-            // maybe the link points at a data source itself
-            sourceId = id;
+            var full = viewId.Length == 32 ? viewId : await FindView(token, id, viewId);
+            if (full == null) throw new InvalidOperationException(L.T("Nie znalazłem widoku z linku. Skopiuj link jeszcze raz (nazwa widoku → Copy link to view)."));
+            try
+            {
+                using var v = await Call(token, HttpMethod.Get, "views/" + Dashed(full));
+                var r = v.RootElement;
+                viewName = r.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String ? n.GetString() : null;
+                if (r.TryGetProperty("filter", out var f) && f.ValueKind == JsonValueKind.Object) filter = f.Clone();
+                if (r.TryGetProperty("sorts", out var s) && s.ValueKind == JsonValueKind.Array) sorts = s.Clone();
+                if (r.TryGetProperty("data_source_id", out var vds) && vds.ValueKind == JsonValueKind.String) sourceId = vds.GetString()!;
+            }
+            catch (NotionError e) when (e.Code is HttpStatusCode.NotFound or HttpStatusCode.BadRequest)
+            {
+                throw new InvalidOperationException(L.T("Nie mogę odczytać filtrów widoku z linku.") + " (" + e.Message + ")");
+            }
         }
 
         var pages = new List<Page>();
         string? cursor = null;
+        int max = Math.Max(50, link.MaxPages);
+        bool capped = false;
         do
         {
             var body = new Dictionary<string, object> { ["page_size"] = 100 };
+            if (filter is { } fl) body["filter"] = fl;
+            if (sorts is { } so) body["sorts"] = so;
             if (cursor != null) body["start_cursor"] = cursor;
             JsonDocument q;
             try { q = await Call(token, HttpMethod.Post, $"data_sources/{sourceId}/query", body); }
@@ -152,8 +186,25 @@ static class NotionSync
                     if (ParsePage(p) is { } page) pages.Add(page);
                 cursor = q.RootElement.TryGetProperty("has_more", out var more) && more.GetBoolean() && q.RootElement.TryGetProperty("next_cursor", out var nc) ? nc.GetString() : null;
             }
-        } while (cursor != null && pages.Count < 5000);
-        return (title, pages, me);
+            if (cursor != null && pages.Count >= max) { capped = true; break; }
+        } while (cursor != null);
+        return (title, pages, me, viewName, capped);
+    }
+
+    /// <summary>A short "?v=" id → the full view id (views of the database, matched by prefix).</summary>
+    static async Task<string?> FindView(string token, string databaseId, string prefix)
+    {
+        try
+        {
+            using var list = await Call(token, HttpMethod.Get, "views?database_id=" + Dashed(databaseId));
+            foreach (var v in list.RootElement.GetProperty("results").EnumerateArray())
+            {
+                var vid = v.GetProperty("id").GetString()!.Replace("-", "");
+                if (vid.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return vid;
+            }
+        }
+        catch (NotionError) { }
+        return null;
     }
 
     static string PlainText(JsonElement owner, string prop)
@@ -224,7 +275,7 @@ static class NotionSync
     // ---------- applying to the board ----------
 
     /// <summary>Brings the pages into the store (no network – also used by the self-test).</summary>
-    public static (int Added, int Updated) Apply(BoardStore store, NotionLink link, List<Page> pages, string? me)
+    public static (int Added, int Updated) Apply(BoardStore store, NotionLink link, List<Page> pages, string? me, bool viewFiltered = false)
     {
         int added = 0, updated = 0;
         var skip = (link.SkipStatuses ?? new()).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -237,7 +288,7 @@ static class NotionSync
             var t = store.Data.Tasks.FirstOrDefault(x => x.NotionId == page.Id);
             if (t == null)
             {
-                if (page.Status != null && (skip.Contains(page.Status) || (link.SkipStatuses == null && NotionImport.LooksDone(page.Status)))) continue;
+                if (page.Status != null && (skip.Contains(page.Status) || (link.SkipStatuses == null && !viewFiltered && NotionImport.LooksDone(page.Status)))) continue;
                 store.Add(new TaskItem
                 {
                     Text = title, NotionTitle = title, NotionId = page.Id, Url = page.Url,
@@ -277,12 +328,16 @@ static class NotionSync
         if (!Running.Add(layer)) return new Result(0, 0, 0, L.T("Synchronizacja już trwa."));
         try
         {
-            var (_, pages, me) = await Read(link);
+            var (_, pages, me, viewName, capped) = await Read(link);
+            if (capped)
+                throw new InvalidOperationException(L.F("Ten widok ma ponad {0} zadań – nic nie wczytałem. Użyj widoku z filtrami (np. przypisane do mnie) albo podnieś limit.", link.MaxPages));
             var store = App.StoreFor(layer);
-            var (added, updated) = Apply(store, link, pages, me);
+            var (added, updated) = Apply(store, link, pages, me, viewFiltered: link.UseViewFilter && ViewId(link.Database) != null);
             link.KnownStatuses = pages.Select(p => p.Status).Where(s => s != null).Select(s => s!).Distinct().OrderBy(s => s).ToList();
             link.LastSync = DateTime.Now;
-            link.LastResult = $"{DateTime.Now:HH:mm}: " + L.F("stron {0}, nowe {1}, zmienione {2}", pages.Count, added, updated) + (link.OnlyMine && me == null ? " " + L.T("(nie udało się ustalić „moich”)") : "");
+            link.ViewName = viewName;
+            link.LastResult = $"{DateTime.Now:HH:mm}: " + (viewName != null ? L.F("widok „{0}”", viewName) + " · " : link.UseViewFilter && ViewId(link.Database) == null ? L.T("cała baza (link bez widoku)") + " · " : "")
+                + L.F("stron {0}, nowe {1}, zmienione {2}", pages.Count, added, updated) + (link.OnlyMine && me == null ? " " + L.T("(nie udało się ustalić „moich”)") : "");
             SettingsStore.Save(App.Settings);
             if (added + updated > 0 && ReferenceEquals(store, App.Store)) App.Board?.OnExternalChange(quiet: true);
             return new Result(added, updated, pages.Count, null);

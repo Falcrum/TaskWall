@@ -408,6 +408,44 @@ public sealed class BoardStore
     }
 
 
+    // ---------- clearing (Settings → Konta → Wyczyść dane) ----------
+    // Everything goes through tombstones / "deleted" flags, so the other computers clear the same data instead of
+    // bringing it back. Ctrl+Z can undo tasks and series (a checkpoint is taken first).
+
+    /// <summary>All tasks: days, backlog, archive, plus the repeating series.</summary>
+    public int ClearTasks()
+    {
+        Checkpoint();
+        var all = Data.Tasks.ToList();
+        foreach (var t in all) Remove(t, skipOccurrence: false);
+        foreach (var r in Data.Rules.Where(r => !r.Deleted).ToList()) { r.Deleted = true; Changed(r); }
+        MarkDirty();
+        return all.Count;
+    }
+
+    public int ClearAlarms(bool meetings)
+    {
+        var list = Data.Alarms.Where(a => !a.Deleted && a.IsMeeting == meetings).ToList();
+        foreach (var a in list) DeleteAlarm(a);
+        return list.Count;
+    }
+
+    /// <summary>Day marks set by hand and the repeating ones.</summary>
+    public int ClearMarks()
+    {
+        Checkpoint();
+        int n = 0;
+        foreach (var key in Data.Days.Where(kv => !string.IsNullOrEmpty(kv.Value.Mark)).Select(kv => kv.Key).ToList())
+        {
+            Data.Days[key] = new DayInfo { Mark = null, Modified = Stamp.After(Data.Days[key].Modified) };
+            n++;
+        }
+        foreach (var r in Data.MarkRules.Where(r => !r.Deleted).ToList()) { r.Deleted = true; Changed(r); n++; }
+        MarkDirty();
+        return n;
+    }
+
+
     // ---------- alarms ----------
 
     public IEnumerable<Alarm> Alarms => Data.Alarms.Where(x => !x.Deleted);
