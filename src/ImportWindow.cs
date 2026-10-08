@@ -55,8 +55,9 @@ public sealed class ImportWindow : DarkWindow
         public FrameworkElement View = null!;
     }
 
-    const string None = "(brak)";
-    const string ZipNames = "(z nazw plików w ZIP)";
+    static readonly string None = L.T("(brak)");
+    static readonly string ZipNames = L.T("(z nazw plików w ZIP)");
+    static readonly string NoStatus = L.T("(bez statusu)");
 
     readonly NotionExport _x;
     readonly ComboBox _title = new(), _status = new(), _prio = new(), _est = new(), _link = new();
@@ -75,7 +76,7 @@ public sealed class ImportWindow : DarkWindow
     public ImportWindow(NotionExport export)
     {
         _x = export;
-        Title = "Import z Notion";
+        Title = L.T("Import z Notion");
         Width = 820;
         Height = 720;
         MinWidth = 600;
@@ -83,7 +84,7 @@ public sealed class ImportWindow : DarkWindow
 
         var t = export.Table;
         var cols = new List<string> { None };
-        cols.AddRange(t.Headers.Select((h, i) => string.IsNullOrWhiteSpace(h) ? $"Kolumna {i + 1}" : h));
+        cols.AddRange(t.Headers.Select((h, i) => string.IsNullOrWhiteSpace(h) ? L.F("Kolumna {0}", i + 1) : h));
         foreach (var cb in new[] { _title, _status, _prio, _est }) cb.ItemsSource = cols;
         var linkCols = new List<string>(cols);
         if (export.HasZipIds) linkCols.Insert(1, ZipNames);
@@ -105,17 +106,17 @@ public sealed class ImportWindow : DarkWindow
 
         var head = new StackPanel();
         DockPanel.SetDock(head, Dock.Top);
-        head.Children.Add(Label("Import z Notion do backlogu", 18, "Fg", FontWeights.SemiBold));
-        head.Children.Add(Label($"{export.SourceName} · {t.Rows.Count} wierszy", 12, "FgFaint"));
+        head.Children.Add(Label(L.T("Import z Notion do backlogu"), 18, "Fg", FontWeights.SemiBold));
+        head.Children.Add(Label(L.F("{0} · {1} wierszy", export.SourceName, t.Rows.Count), 12, "FgFaint"));
         dock.Children.Add(head);
 
         var map = new UniformGrid { Columns = 5, Margin = new Thickness(0, 16, 0, 0) };
         DockPanel.SetDock(map, Dock.Top);
-        map.Children.Add(Field("Nazwa zadania", _title));
+        map.Children.Add(Field(L.T("Nazwa zadania"), _title));
         map.Children.Add(Field("Status", _status));
-        map.Children.Add(Field("Priorytet", _prio));
-        map.Children.Add(Field("Estymacja (h)", _est));
-        map.Children.Add(Field("Link do strony", _link));
+        map.Children.Add(Field(L.T("Priorytet"), _prio));
+        map.Children.Add(Field(L.T("Estymacja (h)"), _est));
+        map.Children.Add(Field(L.T("Link do strony"), _link));
         dock.Children.Add(map);
 
         DockPanel.SetDock(_linkInfo, Dock.Top);
@@ -123,8 +124,8 @@ public sealed class ImportWindow : DarkWindow
 
         var filter = new DockPanel { Margin = new Thickness(0, 14, 0, 0) };
         DockPanel.SetDock(filter, Dock.Top);
-        var selAll = Btn("Zaznacz widoczne", "LinkButton", (_, _) => SetVisibleChecked(true));
-        var selNone = Btn("Odznacz widoczne", "LinkButton", (_, _) => SetVisibleChecked(false));
+        var selAll = Btn(L.T("Zaznacz widoczne"), "LinkButton", (_, _) => SetVisibleChecked(true));
+        var selNone = Btn(L.T("Odznacz widoczne"), "LinkButton", (_, _) => SetVisibleChecked(false));
         DockPanel.SetDock(selNone, Dock.Right);
         DockPanel.SetDock(selAll, Dock.Right);
         filter.Children.Add(selNone);
@@ -133,7 +134,7 @@ public sealed class ImportWindow : DarkWindow
         _search.Style = (Style)Application.Current.Resources["FieldBox"];
         _search.Padding = new Thickness(24, 4, 6, 4);
         _search.TextChanged += (_, _) => ApplyFilter();
-        var hint = Label("Filtruj po nazwie…", 12.5, "FgFaint");
+        var hint = Label(L.T("Filtruj po nazwie…"), 12.5, "FgFaint");
         hint.Margin = new Thickness(28, 0, 0, 0);
         hint.VerticalAlignment = VerticalAlignment.Center;
         hint.IsHitTestVisible = false;
@@ -149,8 +150,8 @@ public sealed class ImportWindow : DarkWindow
 
         var footer = new DockPanel { Margin = new Thickness(0, 14, 0, 0) };
         DockPanel.SetDock(footer, Dock.Bottom);
-        _importBtn = Btn("Importuj", "PrimaryButton", (_, _) => DoImport());
-        var cancel = Btn("Anuluj", "SecondaryButton", (_, _) => { DialogResult = false; });
+        _importBtn = Btn(L.T("Importuj"), "PrimaryButton", (_, _) => DoImport());
+        var cancel = Btn(L.T("Anuluj"), "SecondaryButton", (_, _) => { DialogResult = false; });
         DockPanel.SetDock(_importBtn, Dock.Right);
         DockPanel.SetDock(cancel, Dock.Right);
         footer.Children.Add(_importBtn);
@@ -227,12 +228,12 @@ public sealed class ImportWindow : DarkWindow
         // status chips (statuses that look finished start switched off)
         _statusOff.Clear();
         _chips.Children.Clear();
-        var statuses = _rows.Select(r => r.Status ?? "(bez statusu)").Distinct().ToList();
+        var statuses = _rows.Select(r => r.Status ?? NoStatus).Distinct().ToList();
         if (si >= 0 && statuses.Count > 1)
         {
             foreach (var s in statuses)
             {
-                int count = _rows.Count(r => (r.Status ?? "(bez statusu)") == s);
+                int count = _rows.Count(r => (r.Status ?? NoStatus) == s);
                 bool on = !NotionImport.LooksDone(s);
                 if (!on) _statusOff.Add(s);
                 var chip = new ToggleButton { Style = (Style)Application.Current.Resources["Chip"], IsChecked = on, Content = $"{s}  {count}" };
@@ -272,9 +273,9 @@ public sealed class ImportWindow : DarkWindow
         if (meta.Length > 0) sp.Children.Add(Label(meta, 11, "FgFaint"));
         g.Children.Add(sp);
 
-        var (badge, color) = r.Existing != null ? ("AKTUALIZACJA", Color.FromRgb(0x4A, 0x50, 0x5E))
-            : r.Url == null ? ("BEZ LINKU", Color.FromRgb(0x8A, 0x5A, 0x1E))
-            : ("NOWE", ((SolidColorBrush)Ui.Res("AccentBrush")).Color);
+        var (badge, color) = r.Existing != null ? (L.T("AKTUALIZACJA"), Color.FromRgb(0x4A, 0x50, 0x5E))
+            : r.Url == null ? (L.T("BEZ LINKU"), Color.FromRgb(0x8A, 0x5A, 0x1E))
+            : (L.T("NOWE"), ((SolidColorBrush)Ui.Res("AccentBrush")).Color);
         var pill = new Border
         {
             Background = new SolidColorBrush(color),
@@ -284,8 +285,8 @@ public sealed class ImportWindow : DarkWindow
             Margin = new Thickness(10, 1, 0, 0),
             Child = new TextBlock { Text = badge, FontSize = 9.5, FontWeight = FontWeights.SemiBold, Foreground = Brushes.White },
         };
-        if (r.Existing != null) pill.ToolTip = r.Existing.Archived ? "Jest w archiwum – zostanie zaktualizowane (zostaje w archiwum)"
-            : r.Existing.IsBacklog ? "Jest już w backlogu – zostanie zaktualizowane" : $"Jest już na tablicy ({r.Existing.Day}) – zostanie zaktualizowane w miejscu";
+        if (r.Existing != null) pill.ToolTip = r.Existing.Archived ? L.T("Jest w archiwum – zostanie zaktualizowane (zostaje w archiwum)")
+            : r.Existing.IsBacklog ? L.T("Jest już w backlogu – zostanie zaktualizowane") : L.F("Jest już na tablicy ({0}) – zostanie zaktualizowane w miejscu", r.Existing.Day);
         Grid.SetColumn(pill, 2);
         g.Children.Add(pill);
 
@@ -304,13 +305,13 @@ public sealed class ImportWindow : DarkWindow
         if (hasLinks && withLink > 0)
         {
             _linkInfo.Background = new SolidColorBrush(Color.FromArgb(0x22, 0x4C, 0xC3, 0x8A));
-            tb.Inlines.Add(new Run($"✓ Linki do stron Notion: {withLink} z {_rows.Count}. Kliknięcie zadania na tablicy otworzy jego stronę."));
+            tb.Inlines.Add(new Run(L.F("✓ Linki do stron Notion: {0} z {1}. Kliknięcie zadania na tablicy otworzy jego stronę.", withLink, _rows.Count)));
         }
         else
         {
             _linkInfo.Background = new SolidColorBrush(Color.FromArgb(0x26, 0xF0, 0xA0, 0x4B));
-            tb.Inlines.Add(new Run("Eksport CSV z Notion nie zawiera linków do stron. ") { FontWeight = FontWeights.SemiBold });
-            tb.Inlines.Add(new Run("Żeby zadania były linkami, dodaj w bazie Notion właściwość typu Formula o tej treści (kolumna pojawi się w CSV):"));
+            tb.Inlines.Add(new Run(L.T("Eksport CSV z Notion nie zawiera linków do stron. ")) { FontWeight = FontWeights.SemiBold });
+            tb.Inlines.Add(new Run(L.T("Żeby zadania były linkami, dodaj w bazie Notion właściwość typu Formula o tej treści (kolumna pojawi się w CSV):")));
             _linkInfo.Child = new StackPanel
             {
                 Children =
@@ -321,7 +322,7 @@ public sealed class ImportWindow : DarkWindow
                         Text = NotionImport.Formula, IsReadOnly = true, Margin = new Thickness(0, 6, 0, 4),
                         Style = (Style)Application.Current.Resources["FieldBox"], FontFamily = new FontFamily("Cascadia Mono, Consolas"),
                     },
-                    Label("Możesz też wyeksportować bazę jako ZIP z opcją „Include subpages” i wczytać cały plik ZIP. Wtedy linki zostaną odtworzone z nazw plików.", 11.5, "FgDim"),
+                    Label(L.T("Możesz też wyeksportować bazę jako ZIP z opcją „Include subpages” i wczytać cały plik ZIP. Wtedy linki zostaną odtworzone z nazw plików."), 11.5, "FgDim"),
                 },
             };
             return;
@@ -334,7 +335,7 @@ public sealed class ImportWindow : DarkWindow
         var q = _search.Text.Trim();
         foreach (var r in _rows)
         {
-            r.Visible = !_statusOff.Contains(r.Status ?? "(bez statusu)") &&
+            r.Visible = !_statusOff.Contains(r.Status ?? NoStatus) &&
                         (q.Length == 0 || r.Title.Contains(q, StringComparison.OrdinalIgnoreCase));
             r.View.Visibility = r.Visible ? Visibility.Visible : Visibility.Collapsed;
         }
@@ -352,9 +353,9 @@ public sealed class ImportWindow : DarkWindow
     {
         var sel = Selected.ToList();
         int upd = sel.Count(r => r.Existing != null);
-        _summary.Text = $"Wybrane: {sel.Count} z {_rows.Count(r => r.Visible)} widocznych   ·   nowe: {sel.Count - upd}   ·   aktualizacje: {upd}";
+        _summary.Text = L.F("Wybrane: {0} z {1} widocznych   ·   nowe: {2}   ·   aktualizacje: {3}", sel.Count, _rows.Count(r => r.Visible), sel.Count - upd, upd);
         _importBtn.IsEnabled = sel.Count > 0;
-        _importBtn.Content = sel.Count > 0 ? $"Importuj ({sel.Count})" : "Importuj";
+        _importBtn.Content = sel.Count > 0 ? L.F("Importuj ({0})", sel.Count) : L.T("Importuj");
     }
 
     void DoImport()

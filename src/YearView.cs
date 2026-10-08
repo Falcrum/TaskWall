@@ -76,7 +76,7 @@ static class YearView
         DockPanel.SetDock(header, Dock.Top);
         int dayNo = year < today.Year ? days : year > today.Year ? 0 : today.DayOfYear;
         var title = new TextBlock { FontSize = 30, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Bottom };
-        title.Inlines.Add(new Run("Dzień ") { Foreground = new SolidColorBrush(Color.FromArgb(0xB0, accent.R, accent.G, accent.B)) });
+        title.Inlines.Add(new Run(L.T("Dzień") + " ") { Foreground = new SolidColorBrush(Color.FromArgb(0xB0, accent.R, accent.G, accent.B)) });
         title.Inlines.Add(new Run(dayNo.ToString()) { Foreground = Ui.Res("Fg") });
         title.Inlines.Add(new Run($"  / {days}") { Foreground = Ui.Res("FgFaint"), FontSize = 15, FontWeight = FontWeights.SemiBold });
         header.Children.Add(title);
@@ -93,7 +93,7 @@ static class YearView
             totals.Children.Add(new TextBlock
             {
                 Text = $"{code} {MarkCount(code)}", FontSize = 12, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 14, 0),
-                Foreground = new SolidColorBrush(BoardWindow.ParseColor(color)), ToolTip = $"{label}: dni w {year}",
+                Foreground = new SolidColorBrush(BoardWindow.ParseColor(color)), ToolTip = L.F("{0}: dni w {1}", label, year),
             });
         header.Children.Add(totals);
 
@@ -108,16 +108,16 @@ static class YearView
             });
             legend.Children.Add(new TextBlock { Text = label, FontSize = 11, Foreground = Ui.Res("FgDim"), VerticalAlignment = VerticalAlignment.Center });
         }
-        Legend(accent, "zrobione");
-        Legend(Color.FromArgb(0x70, accent.R, accent.G, accent.B), "niedokończone");
-        Legend(accent, "zaplanowane", ring: true);
+        Legend(accent, L.T("zrobione"));
+        Legend(Color.FromArgb(0x70, accent.R, accent.G, accent.B), L.T("niedokończone"));
+        Legend(accent, L.T("zaplanowane"), ring: true);
         foreach (var m in types) Legend(BoardWindow.ParseColor(m.Color), m.Code);
         header.Children.Add(legend);
         dock.Children.Add(header);
 
         // ----- layout: months side by side, each month = its own week columns -----
         var panel = new UnitPanel();
-        string[] dayLabels = { "Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd" };
+        string[] dayLabels = L.En ? new[] { "Mo", "Tu", "We", "Th", "Fr", "Sa", "Su" } : new[] { "Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd" };
         for (int r = 0; r < 7; r++)
         {
             var l = new TextBlock
@@ -202,9 +202,9 @@ static class YearView
                 };
                 cell.SizeChanged += (_, e) => cell.CornerRadius = new CornerRadius(e.NewSize.Width * 0.24);
 
-                var tip = date.ToString("dddd, d MMMM yyyy", BoardWindow.Pl) + $"  ·  tydz. {BoardWindow.WeekNo(date)}";
-                if (dayOff != null) tip += $"\n{dayOff} (dzień wolny)";
-                if (total > 0) tip += $"\nzadania: {total}, zrobione: {done}";
+                var tip = date.ToString("dddd, d MMMM yyyy", BoardWindow.Pl) + "  ·  " + L.F("tydz. {0}", BoardWindow.WeekNo(date));
+                if (dayOff != null) tip += "\n" + L.F("{0} (dzień wolny)", dayOff);
+                if (total > 0) tip += "\n" + L.F("zadania: {0}, zrobione: {1}", total, done);
                 if (mark != null) tip += $"\n{mark}";
                 cell.ToolTip = tip;
                 cell.MouseEnter += (_, _) => cell.Opacity = 0.7;

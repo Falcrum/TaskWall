@@ -77,7 +77,7 @@ public partial class BoardWindow
         var (from, to, name) = VisiblePeriod();
         var dlg = new Microsoft.Win32.SaveFileDialog
         {
-            Title = "Eksport okresu do CSV",
+            Title = L.T("Eksport okresu do CSV"),
             FileName = $"DeskWall-{App.AccountName(S.Layer)}-{name}.csv",
             Filter = "CSV (*.csv)|*.csv",
             InitialDirectory = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"),
@@ -90,7 +90,7 @@ public partial class BoardWindow
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"{App.AccountName(S.Layer)};{from:yyyy-MM-dd} – {to:yyyy-MM-dd}");
         sb.AppendLine();
-        sb.AppendLine("Data;Dzień tygodnia;Tydzień;Oznaczenie;Zadania;Zrobione;Estymacja [h];Zrobione [h];Spotkania [h]");
+        sb.AppendLine(L.T("Data;Dzień tygodnia;Tydzień;Oznaczenie;Zadania;Zrobione;Estymacja [h];Zrobione [h];Spotkania [h]"));
 
         var allTasks = new List<(DateTime Day, TaskItem Task)>();
         int tasksSum = 0, doneSum = 0;
@@ -109,16 +109,16 @@ public partial class BoardWindow
             tasksSum += tasks.Count; doneSum += done; hoursSum += hours; doneHoursSum += doneHours; meetSum += meet;
             sb.AppendLine($"{key};{d.ToString("dddd", Pl)};{WeekNo(d)};{mark};{tasks.Count};{done};{H(hours)};{H(doneHours)};{H(meet)}");
         }
-        sb.AppendLine($"Razem;;;{string.Join(" ", marks.Select(kv => $"{kv.Key} {kv.Value}"))};{tasksSum};{doneSum};{H(hoursSum)};{H(doneHoursSum)};{H(meetSum)}");
+        sb.AppendLine($"{L.T("Razem")};;;{string.Join(" ", marks.Select(kv => $"{kv.Key} {kv.Value}"))};{tasksSum};{doneSum};{H(hoursSum)};{H(doneHoursSum)};{H(meetSum)}");
 
         sb.AppendLine();
-        sb.AppendLine("Oznaczenie;Opis;Dni");
+        sb.AppendLine(L.T("Oznaczenie;Opis;Dni"));
         foreach (var m in Store.MarkTypes) sb.AppendLine($"{Q(m.Code)};{Q(m.Label)};{marks.GetValueOrDefault(m.Code)}");
         foreach (var kv in marks.Where(kv => Store.MarkTypeFor(kv.Key) == null)) sb.AppendLine($"{Q(kv.Key)};;{kv.Value}");
 
         sb.AppendLine();
-        sb.AppendLine("Kategoria;Zadania;Zrobione;Estymacja [h];Zrobione [h]");
-        var byCat = allTasks.SelectMany(x => (TaskItem.Tags(x.Task.Text, out _) is { Count: > 0 } tags ? tags : new List<string> { "(bez kategorii)" }).Select(c => (c, x.Task)))
+        sb.AppendLine(L.T("Kategoria;Zadania;Zrobione;Estymacja [h];Zrobione [h]"));
+        var byCat = allTasks.SelectMany(x => (TaskItem.Tags(x.Task.Text, out _) is { Count: > 0 } tags ? tags : new List<string> { L.T("(bez kategorii)") }).Select(c => (c, x.Task)))
             .GroupBy(x => x.c).OrderByDescending(g => g.Sum(x => x.Task.Estimate ?? 0));
         foreach (var g in byCat)
         {
@@ -127,20 +127,20 @@ public partial class BoardWindow
         }
 
         sb.AppendLine();
-        sb.AppendLine("Data;Zadanie;Kategorie;Zrobione;Estymacja [h];Link");
+        sb.AppendLine(L.T("Data;Zadanie;Kategorie;Zrobione;Estymacja [h];Link"));
         foreach (var (d, t) in allTasks.OrderBy(x => x.Day).ThenBy(x => x.Task.Order))
         {
             var tags = TaskItem.Tags(t.Text, out var rest);
-            sb.AppendLine($"{DayKey(d)};{Q(rest)};{Q(string.Join(", ", tags))};{(t.Done ? "tak" : "nie")};{(t.Estimate is { } est ? H(est) : "")};{t.Url}");
+            sb.AppendLine($"{DayKey(d)};{Q(rest)};{Q(string.Join(", ", tags))};{(t.Done ? L.T("tak") : L.T("nie"))};{(t.Estimate is { } est ? H(est) : "")};{t.Url}");
         }
         try
         {
             System.IO.File.WriteAllText(dlg.FileName, sb.ToString(), new System.Text.UTF8Encoding(true));
-            SyncText.Text = "zapisano CSV";
+            SyncText.Text = L.T("zapisano CSV");
             _syncFlash.Stop();
             _syncFlash.Start();
         }
-        catch (Exception ex) { MessageBox.Show("Nie udało się zapisać pliku:\n" + ex.Message, "DeskWall"); }
+        catch (Exception ex) { MessageBox.Show(L.T("Nie udało się zapisać pliku:") + "\n" + ex.Message, "DeskWall"); }
     }
 
     TaskItem? DraggedTask(DragEventArgs e) =>
@@ -172,7 +172,7 @@ public partial class BoardWindow
     {
         var all = Store.Data.Tasks.Where(t => t.Archived).ToList();
         if (all.Count == 0) return;
-        if (MessageBox.Show($"Usunąć na zawsze {all.Count} zarchiwizowanych zadań z warstwy „{App.LayerName(S.Layer)}”?\nZnikną też z widoku roku. Ctrl+Z na tablicy cofa.",
+        if (MessageBox.Show(L.F("Usunąć na zawsze {0} zarchiwizowanych zadań z warstwy „{1}”?\nZnikną też z widoku roku. Ctrl+Z na tablicy cofa.", all.Count, App.LayerName(S.Layer)),
                 "DeskWall", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
         Do(() => { foreach (var t in all) Store.Remove(t); });
     }
@@ -218,7 +218,7 @@ public partial class BoardWindow
         }
         ImportButton.Visibility = _archiveTab ? Visibility.Collapsed : Visibility.Visible;
         EmptyArchiveButton.Visibility = _archiveTab && archived > 0 ? Visibility.Visible : Visibility.Collapsed;
-        SearchHint.Text = _archiveTab ? "Filtruj archiwum…" : "Filtruj backlog…";
+        SearchHint.Text = _archiveTab ? L.T("Filtruj archiwum…") : L.T("Filtruj backlog…");
         BacklogCount.Text = Store.Data.Tasks.Count(t => t.IsBacklog && !t.Archived).ToString();
         if (_archiveTab) { BuildArchiveList(q); return; }
 
@@ -243,7 +243,7 @@ public partial class BoardWindow
                 BorderBrush = B(A(color, on ? (byte)0xFF : (byte)0x55)),
                 Background = B(A(color, on ? (byte)0x55 : (byte)0x18)),
                 Child = new TextBlock { Text = $"{(tag == TaskItem.MeetingTag ? "Meeting" : tag)}  {g.Count()}", FontSize = 10.5, FontWeight = FontWeights.SemiBold, Foreground = B(color) },
-                ToolTip = on ? "Pokaż wszystkie" : $"Pokaż tylko [{tag}]",
+                ToolTip = on ? L.T("Pokaż wszystkie") : L.F("Pokaż tylko [{0}]", tag),
             };
             chip.MouseLeftButtonUp += (_, _) => { _tagFilter = on ? null : tag; BuildBacklog(); };
             TagChips.Children.Add(chip);
@@ -259,7 +259,7 @@ public partial class BoardWindow
         if (all.Count == 0)
             BacklogList.Children.Add(new TextBlock
             {
-                Text = "Backlog jest pusty. Zaimportuj zadania z Notion (eksport CSV albo ZIP) albo dodaj własne. Zadania przeciągaj stąd na konkretne dni.",
+                Text = L.T("Backlog jest pusty. Zaimportuj zadania z Notion (eksport CSV albo ZIP) albo dodaj własne. Zadania przeciągaj stąd na konkretne dni."),
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Res("FgFaint"),
                 FontSize = 11.5,
@@ -278,7 +278,7 @@ public partial class BoardWindow
         foreach (var t in list)
         {
             var when = (t.ArchivedAt ?? t.Modified).ToLocalTime();
-            var group = when.Date == DateTime.Today ? "Dziś" : when.Date == DateTime.Today.AddDays(-1) ? "Wczoraj" : Pl.TextInfo.ToTitleCase(when.ToString("MMMM yyyy", Pl));
+            var group = when.Date == DateTime.Today ? L.T("Dziś") : when.Date == DateTime.Today.AddDays(-1) ? L.T("Wczoraj") : Pl.TextInfo.ToTitleCase(when.ToString("MMMM yyyy", Pl));
             if (group != lastGroup)
             {
                 BacklogList.Children.Add(new TextBlock { Text = group, FontSize = 10.5, FontWeight = FontWeights.Bold, Foreground = Res("FgFaint"), Margin = new Thickness(0, lastGroup == null ? 2 : 10, 0, 4) });
@@ -289,7 +289,7 @@ public partial class BoardWindow
         if (list.Count == 0)
             BacklogList.Children.Add(new TextBlock
             {
-                Text = q.Length > 0 ? "Nic nie znaleziono." : "Archiwum jest puste. Trafiają tu zadania z ✕, środkowego przycisku myszy i „Wyczyść zrobione”.",
+                Text = q.Length > 0 ? L.T("Nic nie znaleziono.") : L.T("Archiwum jest puste. Trafiają tu zadania z ✕, środkowego przycisku myszy i „Wyczyść zrobione”."),
                 TextWrapping = TextWrapping.Wrap, Foreground = Res("FgFaint"), FontSize = 11.5, Margin = new Thickness(2, 10, 6, 0),
             });
     }
@@ -328,12 +328,12 @@ public partial class BoardWindow
         text.Inlines.Add(new Run(tags.Count > 0 ? rest : t.Text));
         if (t.Done) { text.TextDecorations = TextDecorations.Strikethrough; text.Opacity = 0.75; }
         sp.Children.Add(text);
-        var where = t.Day == null ? "z backlogu" : ParseKey(t.Day).ToString("ddd, d MMM yyyy", Pl);
+        var where = t.Day == null ? L.T("z backlogu") : ParseKey(t.Day).ToString("ddd, d MMM yyyy", Pl);
         var meta = new WrapPanel { Margin = new Thickness(0, 3, 0, 1) };
         meta.Children.Add(new Border
         {
             CornerRadius = new CornerRadius(4), Padding = new Thickness(5, 0, 5, 1), Margin = new Thickness(0, 0, 7, 0), Background = B(A(neutral, 0x40)),
-            Child = new TextBlock { Text = t.Done ? "zrobione" : "niezrobione", FontSize = 10.5, Foreground = Res("Fg") },
+            Child = new TextBlock { Text = t.Done ? L.T("zrobione") : L.T("niezrobione"), FontSize = 10.5, Foreground = Res("Fg") },
         });
         meta.Children.Add(new TextBlock { Text = where, FontSize = 10.5, Foreground = Res("FgFaint"), VerticalAlignment = VerticalAlignment.Center });
         sp.Children.Add(meta);
@@ -347,8 +347,8 @@ public partial class BoardWindow
             b.Click += (_, _) => a();
             return b;
         }
-        buttons.Children.Add(Icon("\uE7A7", "Przywróć na swoje miejsce", () => Do(() => Store.Unarchive(Store.Materialize(t)))));
-        buttons.Children.Add(Icon("\uE74D", "Usuń całkowicie (Ctrl+Z cofa)", () => DeleteForGood(t, row)));
+        buttons.Children.Add(Icon("\uE7A7", L.T("Przywróć na swoje miejsce"), () => Do(() => Store.Unarchive(Store.Materialize(t)))));
+        buttons.Children.Add(Icon("\uE74D", L.T("Usuń całkowicie (Ctrl+Z cofa)"), () => DeleteForGood(t, row)));
         g.Children.Add(buttons);
         row.Child = g;
         row.MouseEnter += (_, _) => buttons.Visibility = Visibility.Visible;
@@ -362,7 +362,7 @@ public partial class BoardWindow
             _pressed = null;
             StartDrag(t, row);
         };
-        row.ToolTip = "Przeciągnij na dzień albo na BACKLOG, żeby przywrócić";
+        row.ToolTip = L.T("Przeciągnij na dzień albo na BACKLOG, żeby przywrócić");
         if (_flashId == t.Id) Flash(row);
         return row;
     }
@@ -373,7 +373,7 @@ public partial class BoardWindow
         int a = Store.Data.Tasks.Count(t => t.Archived);
         bool shown = S.BacklogMode == "drawer" ? _drawerOpen : _pinnedVisible;
         BacklogButton.Content = $"BACKLOG ({n})";
-        ArchiveButton.Content = $"ARCHIWUM ({a})";
+        ArchiveButton.Content = L.F("ARCHIWUM ({0})", a);
         foreach (var (btn, on) in new[] { (BacklogButton, shown && !_archiveTab), (ArchiveButton, shown && _archiveTab) })
         {
             btn.Background = on ? B(Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF)) : Brushes.Transparent;
@@ -504,9 +504,9 @@ public partial class BoardWindow
             return mi;
         }
 
-        if (t.HasLink) menu.Items.Add(Item("Otwórz w Notion", () => OpenLink(t)));
-        menu.Items.Add(Item(t.HasLink ? "Edytuj tekst" : "Edytuj", () => BeginEdit(t, content, text, series: false)));
-        menu.Items.Add(Item(t.Done ? "Oznacz jako niezrobione" : "Oznacz jako zrobione", () => Do(() =>
+        if (t.HasLink) menu.Items.Add(Item(L.T("Otwórz w Notion"), () => OpenLink(t)));
+        menu.Items.Add(Item(t.HasLink ? L.T("Edytuj tekst") : L.T("Edytuj"), () => BeginEdit(t, content, text, series: false)));
+        menu.Items.Add(Item(t.Done ? L.T("Oznacz jako niezrobione") : L.T("Oznacz jako zrobione"), () => Do(() =>
         {
             var real = Store.Materialize(t);
             real.Done = !real.Done;
@@ -515,11 +515,11 @@ public partial class BoardWindow
         })));
 
         var todayKey = DayKey(DateTime.Today);
-        if (t.Day != todayKey) menu.Items.Add(Item("Przenieś na dziś", () => Do(() => MoveToEnd(t, todayKey))));
-        var move = new MenuItem { Header = "Przenieś do" };
+        if (t.Day != todayKey) menu.Items.Add(Item(L.T("Przenieś na dziś"), () => Do(() => MoveToEnd(t, todayKey))));
+        var move = new MenuItem { Header = L.T("Przenieś do") };
         if (!t.IsBacklog) move.Items.Add(Item("Backlog", () => Do(() => MoveToEnd(t, null))));
         if (t.Day != null)
-            move.Items.Add(Item("Ten sam dzień za tydzień", () => Do(() => MoveToEnd(t, DayKey(ParseKey(t.Day).AddDays(7))))));
+            move.Items.Add(Item(L.T("Ten sam dzień za tydzień"), () => Do(() => MoveToEnd(t, DayKey(ParseKey(t.Day).AddDays(7))))));
         move.Items.Add(new Separator());
         var first = IsWeekView ? FirstMonday : Monday(DateTime.Today);
         int span = IsWeekView ? 7 * WeekCount : 14;
@@ -529,7 +529,7 @@ public partial class BoardWindow
             if (!S.ShowWeekends && IsWeekend(date)) continue;
             var key = DayKey(date);
             var label = date.ToString("dddd, d MMM", Pl);
-            if (date == DateTime.Today) label += "  (dziś)";
+            if (date == DateTime.Today) label += "  " + L.T("(dziś)");
             move.Items.Add(Item(label, () => Do(() => MoveToEnd(t, key)), key != t.Day));
         }
         menu.Items.Add(move);
@@ -538,8 +538,8 @@ public partial class BoardWindow
         if (t.Day != null)
         {
             var rule = Store.Rule(t.RuleId);
-            var rep = new MenuItem { Header = rule != null ? "Seria: " + rule.Summary : "Powtarzaj" };
-            rep.Items.Add(Item(rule != null ? "Zmień powtarzanie…" : "Powtarzaj…  (co N, wybrane dni, okres od–do)", () => RepeatWindow.ForTask(Store, t)));
+            var rep = new MenuItem { Header = rule != null ? L.T("Seria:") + " " + rule.Summary : L.T("Powtarzaj") };
+            rep.Items.Add(Item(rule != null ? L.T("Zmień powtarzanie…") : L.T("Powtarzaj…  (co N, wybrane dni, okres od–do)"), () => RepeatWindow.ForTask(Store, t)));
             rep.Items.Add(new Separator());
             foreach (var (code, label) in RecurringRule.Patterns)
             {
@@ -547,7 +547,7 @@ public partial class BoardWindow
                 var detail = code switch
                 {
                     "weekly" or "biweekly" => $" ({d.ToString("dddd", Pl)})",
-                    "monthly" => $" ({d.Day}. dnia)",
+                    "monthly" => " " + L.F("({0}. dnia)", d.Day),
                     _ => "",
                 };
                 rep.Items.Add(Item((rule?.Pattern == code ? "✓  " : "     ") + label + detail, () => Do(() =>
@@ -564,32 +564,32 @@ public partial class BoardWindow
             if (rule != null)
             {
                 rep.Items.Add(new Separator());
-                rep.Items.Add(Item("Zmień nazwę serii", () => BeginEdit(t, content, text, series: true)));
-                rep.Items.Add(Item("Zakończ serię na tym dniu", () => Do(() => { rule.End = t.RuleDay ?? t.Day; Store.Changed(rule); })));
-                rep.Items.Add(Item("Usuń serię (wykonane zostają)", () => Do(() => { rule.Deleted = true; Store.Changed(rule); })));
+                rep.Items.Add(Item(L.T("Zmień nazwę serii"), () => BeginEdit(t, content, text, series: true)));
+                rep.Items.Add(Item(L.T("Zakończ serię na tym dniu"), () => Do(() => { rule.End = t.RuleDay ?? t.Day; Store.Changed(rule); })));
+                rep.Items.Add(Item(L.T("Usuń serię (wykonane zostają)"), () => Do(() => { rule.Deleted = true; Store.Changed(rule); })));
             }
             menu.Items.Add(rep);
         }
 
         bool hasList = t.Checklist is { Count: > 0 };
-        menu.Items.Add(Item(hasList ? (_expanded.Contains(t.Id) ? "Zwiń listę kontrolną" : "Pokaż listę kontrolną") : "Dodaj listę kontrolną", () =>
+        menu.Items.Add(Item(hasList ? (_expanded.Contains(t.Id) ? L.T("Zwiń listę kontrolną") : L.T("Pokaż listę kontrolną")) : L.T("Dodaj listę kontrolną"), () =>
         {
             if (hasList && _expanded.Contains(t.Id)) _expanded.Remove(t.Id);
             else { _expanded.Add(t.Id); if (!hasList) _checkAddFor = t.Id; }
             Rebuild();
         }));
 
-        var est = new MenuItem { Header = "Estymacja" + (t.Estimate is > 0 ? $"  ({Hours(t.Estimate.Value)})" : "") };
+        var est = new MenuItem { Header = L.T("Estymacja") +(t.Estimate is > 0 ? $"  ({Hours(t.Estimate.Value)})" : "") };
         foreach (var h in new double?[] { null, 0.5, 1, 1.5, 2, 3, 4, 6, 8 })
         {
-            var label = h == null ? "Brak" : Hours(h.Value);
+            var label = h == null ? L.T("Brak") : Hours(h.Value);
             if (t.Estimate == h) label = "✓  " + label;
             est.Items.Add(Item(label, () => Do(() => { var real = Store.Materialize(t); real.Estimate = h; Store.Changed(real); })));
         }
         menu.Items.Add(est);
 
         var tags = TaskItem.Tags(t.Text, out _);
-        var cats = new MenuItem { Header = "Kategoria" + (tags.Count > 0 ? $"  ({string.Join(", ", tags.Select(x => Store.CategoryFor(x)?.Name ?? x))})" : "") };
+        var cats = new MenuItem { Header = L.T("Kategoria") +(tags.Count > 0 ? $"  ({string.Join(", ", tags.Select(x => Store.CategoryFor(x)?.Name ?? x))})" : "") };
         foreach (var c in Store.Categories)
         {
             bool has = tags.Contains(c.Key);
@@ -603,10 +603,10 @@ public partial class BoardWindow
             cats.Items.Add(mi);
         }
         cats.Items.Add(new Separator());
-        cats.Items.Add(Item("Edytuj kategorie…", () => App.Instance.ShowSettings()));
+        cats.Items.Add(Item(L.T("Edytuj kategorie…"), () => App.Instance.ShowSettings()));
         menu.Items.Add(cats);
 
-        menu.Items.Add(Item("Duplikuj", () =>
+        menu.Items.Add(Item(L.T("Duplikuj"), () =>
         {
             var copy = t.Clone();
             copy.Id = Guid.NewGuid().ToString("N");
@@ -618,8 +618,8 @@ public partial class BoardWindow
             Do(() => Store.Add(copy));
         }));
         menu.Items.Add(new Separator());
-        menu.Items.Add(Item(t.IsVirtual ? "Pomiń to wystąpienie" : "Archiwizuj", () => ArchiveRow(t, row)));
-        if (!t.IsVirtual) menu.Items.Add(Item("Usuń całkowicie", () => DeleteForGood(t, row)));
+        menu.Items.Add(Item(t.IsVirtual ? L.T("Pomiń to wystąpienie") : L.T("Archiwizuj"), () => ArchiveRow(t, row)));
+        if (!t.IsVirtual) menu.Items.Add(Item(L.T("Usuń całkowicie"), () => DeleteForGood(t, row)));
         return menu;
     }
 
@@ -670,7 +670,7 @@ public partial class BoardWindow
         SearchResults.Children.Clear();
         if (q.Length < 2)
         {
-            SearchInfo.Text = "Wpisz co najmniej 2 znaki. Szuka bez względu na wielkość liter i polskie znaki.";
+            SearchInfo.Text = L.T("Wpisz co najmniej 2 znaki. Szuka bez względu na wielkość liter i polskie znaki.");
             return;
         }
 
@@ -679,7 +679,7 @@ public partial class BoardWindow
         {
             var task = t;
             DateTime? d = t.Day != null ? ParseKey(t.Day) : null;
-            var label = t.Archived ? "Archiwum" + (d != null ? " · " + d.Value.ToString("d MMM yyyy", Pl) : "")
+            var label = t.Archived ? L.T("Archiwum") +(d != null ? " · " + d.Value.ToString("d MMM yyyy", Pl) : "")
                 : d == null ? "Backlog" : d.Value.ToString("ddd, d MMM yyyy", Pl);
             hits.Add(new Hit(d, label, t.Text, t.Done, () =>
             {
@@ -700,7 +700,7 @@ public partial class BoardWindow
         {
             var next = Enumerable.Range(0, 400).Select(i => DateTime.Today.AddDays(i)).FirstOrDefault(r.Occurs);
             if (next == default) continue;
-            var label = "Seria · " + r.Summary + " · najbliżej " + next.ToString("ddd d MMM", Pl);
+            var label = L.F("Seria · {0} · najbliżej {1}", r.Summary, next.ToString("ddd d MMM", Pl));
             hits.Add(new Hit(next, label, r.Text, false, () => JumpTo(next)));
         }
         foreach (var ev in CalendarService.All.Where(e => !e.IsHoliday && Matches(e.Title, q)))
@@ -714,7 +714,7 @@ public partial class BoardWindow
             .ThenBy(h => h.Archived ? 1 : 0)
             .ThenBy(h => h.Date == null ? 0 : Math.Abs((h.Date.Value - DateTime.Today).TotalDays))
             .Take(80).ToList();
-        SearchInfo.Text = hits.Count == 0 ? "Nic nie znaleziono." : hits.Count > ordered.Count ? $"Wyniki: {hits.Count} (pokazuję {ordered.Count} najbliższych)" : $"Wyniki: {hits.Count}";
+        SearchInfo.Text = hits.Count == 0 ? L.T("Nic nie znaleziono.") : hits.Count > ordered.Count ? L.F("Wyniki: {0} (pokazuję {1} najbliższych)", hits.Count, ordered.Count) : L.F("Wyniki: {0}", hits.Count);
 
         foreach (var h in ordered)
         {
@@ -787,7 +787,7 @@ public partial class BoardWindow
     public void Undo()
     {
         if (Store.Undo()) Rebuild();
-        else SyncText.Text = "nie ma czego cofnąć";
+        else SyncText.Text = L.T("nie ma czego cofnąć");
     }
 
     // ---------- top bar ----------
@@ -854,14 +854,14 @@ public partial class BoardWindow
             mi.Click += (_, _) => a();
             menu.Items.Add(mi);
         }
-        Add("Szukaj…  (Ctrl+F)", OpenSearch);
-        Add("Cofnij  (Ctrl+Z)", Undo, Store.CanUndo);
-        Add($"Archiwum ({Store.Data.Tasks.Count(t => t.Archived)})", ShowArchive);
+        Add(L.T("Szukaj…  (Ctrl+F)"), OpenSearch);
+        Add(L.T("Cofnij  (Ctrl+Z)"), Undo, Store.CanUndo);
+        Add(L.F("Archiwum ({0})", Store.Data.Tasks.Count(t => t.Archived)), ShowArchive);
         menu.Items.Add(new Separator());
-        Add("Importuj z Notion…", () => App.Instance.ImportNotion());
-        Add("Odśwież kalendarze", () => App.Instance.RefreshCalendars());
-        Add("Otwórz folder danych", () => OpenUrl(Store.Folder));
-        Add("Ustawienia…", () => App.Instance.ShowSettings());
+        Add(L.T("Importuj z Notion…"), () => App.Instance.ImportNotion());
+        Add(L.T("Odśwież kalendarze"), () => App.Instance.RefreshCalendars());
+        Add(L.T("Otwórz folder danych"), () => OpenUrl(Store.Folder));
+        Add(L.T("Ustawienia…"), () => App.Instance.ShowSettings());
         menu.IsOpen = true;
     }
 
@@ -873,25 +873,25 @@ public partial class BoardWindow
         var now = DateTime.Now;
         var upcoming = Store.Alarms.Select(a => (a, at: a.NextStart(now))).Where(x => x.at is { } t && t < now.AddDays(7))
             .OrderBy(x => x.at).Take(14).ToList();
-        if (upcoming.Count == 0) menu.Items.Add(new MenuItem { Header = "Brak alarmów i spotkań w najbliższym tygodniu", IsEnabled = false });
+        if (upcoming.Count == 0) menu.Items.Add(new MenuItem { Header = L.T("Brak alarmów i spotkań w najbliższym tygodniu"), IsEnabled = false });
         foreach (var (a, at) in upcoming)
         {
             var d = at!.Value;
-            var when = d.Date == DateTime.Today ? "dziś" : d.Date == DateTime.Today.AddDays(1) ? "jutro" : d.ToString("ddd d MMM", Pl);
+            var when = d.Date == DateTime.Today ? L.T("dziś") : d.Date == DateTime.Today.AddDays(1) ? L.T("jutro") : d.ToString("ddd d MMM", Pl);
             var time = a.IsMeeting ? $"{a.Time}–{a.EndAt(d):HH:mm}" : a.Time;
             var mi = new MenuItem
             {
-                Header = $"{(a.IsMeeting ? "◆" : "⏰")}  {when} {time}   {(a.Text.Length > 0 ? a.Text : a.IsMeeting ? "Spotkanie" : "Alarm")}{(a.Once ? "" : "  ↻")}",
+                Header = $"{(a.IsMeeting ? "◆" : "⏰")}  {when} {time}   {(a.Text.Length > 0 ? a.Text : a.IsMeeting ? L.T("Spotkanie") : L.T("Alarm"))}{(a.Once ? "" : "  ↻")}",
                 ToolTip = AlarmService.Until(d),
             };
             mi.Click += (_, _) => AlarmWindow.Edit(Store, a, d.Date);
             menu.Items.Add(mi);
         }
         menu.Items.Add(new Separator());
-        var add = new MenuItem { Header = "Nowy alarm…" };
+        var add = new MenuItem { Header = L.T("Nowy alarm…") };
         add.Click += (_, _) => AlarmWindow.Edit(Store);
         menu.Items.Add(add);
-        var meet = new MenuItem { Header = "Nowe spotkanie…" };
+        var meet = new MenuItem { Header = L.T("Nowe spotkanie…") };
         meet.Click += (_, _) => AlarmWindow.Edit(Store, null, DateTime.Today, meeting: true);
         menu.Items.Add(meet);
         menu.IsOpen = true;
@@ -907,7 +907,7 @@ public partial class BoardWindow
         var done = Store.Data.Tasks.Where(t => t.Done && !t.Archived && (t.IsBacklog || keys.Contains(t.Day!))).ToList();
         if (done.Count == 0) return;
         Do(() => { foreach (var t in done) Store.Archive(t); });
-        SyncText.Text = $"zarchiwizowano {done.Count}";
+        SyncText.Text = L.F("zarchiwizowano {0}", done.Count);
         _syncFlash.Stop();
         _syncFlash.Start();
     }

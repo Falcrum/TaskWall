@@ -113,14 +113,15 @@ public sealed class RecurringRule
     public bool Deleted { get; set; }
     public DateTime Modified { get; set; } = DateTime.UtcNow;
 
-    public static readonly (string Code, string Label)[] Patterns =
+    /// <summary>Labels in the UI language (built on each access, so the language chosen at start-up applies).</summary>
+    public static (string Code, string Label)[] Patterns => new[]
     {
-        ("daily", "Codziennie"),
-        ("weekdays", "W dni robocze"),
-        ("weekly", "Co tydzień"),
-        ("biweekly", "Co 2 tygodnie"),
-        ("monthly", "Co miesiąc"),
-        ("yearly", "Co rok"),
+        ("daily", L.T("Codziennie")),
+        ("weekdays", L.T("W dni robocze")),
+        ("weekly", L.T("Co tydzień")),
+        ("biweekly", L.T("Co 2 tygodnie")),
+        ("monthly", L.T("Co miesiąc")),
+        ("yearly", L.T("Co rok")),
     };
 
     string? _parsedFrom;
@@ -175,26 +176,29 @@ public sealed class RecurringRule
 
     public static string Describe(string pattern, int interval, List<int>? weekdays, DateTime start, string? end)
     {
-        var pl = new System.Globalization.CultureInfo("pl-PL");
+        var c = L.Culture;
         int n = Math.Max(1, interval);
-        string Every(string one, string few, string many) => n == 1 ? one : $"co {n} " + (n % 10 is >= 2 and <= 4 && n % 100 is < 12 or > 14 ? few : many);
+        // Polish: co 2/3/4/22 tygodnie, co 5/12/25 tygodni; English: every 2 weeks
+        string Every(string one, string few, string many, string en) => n == 1 ? L.T(one)
+            : L.En ? $"every {n} {en}"
+            : $"co {n} " + (n % 10 is >= 2 and <= 4 && n % 100 is < 12 or > 14 ? few : many);
         var text = pattern switch
         {
-            "daily" => Every("codziennie", "dni", "dni"),
-            "weekdays" => "w dni robocze",
-            "weekly" => Every("co tydzień", "tygodnie", "tygodni"),
-            "biweekly" => "co 2 tygodnie",
-            "monthly" => Every("co miesiąc", "miesiące", "miesięcy"),
-            "yearly" => Every("co rok", "lata", "lat"),
+            "daily" => Every("codziennie", "dni", "dni", "days"),
+            "weekdays" => L.T("w dni robocze"),
+            "weekly" => Every("co tydzień", "tygodnie", "tygodni", "weeks"),
+            "biweekly" => L.T("co 2 tygodnie"),
+            "monthly" => Every("co miesiąc", "miesiące", "miesięcy", "months"),
+            "yearly" => Every("co rok", "lata", "lat", "years"),
             _ => pattern,
         };
         if (pattern is "weekly" or "biweekly")
         {
             var days = weekdays is { Count: > 0 } w ? w : new List<int> { (int)start.DayOfWeek };
-            text += ": " + string.Join(", ", days.OrderBy(x => (x + 6) % 7).Select(x => pl.DateTimeFormat.AbbreviatedDayNames[x]));
+            text += ": " + string.Join(", ", days.OrderBy(x => (x + 6) % 7).Select(x => c.DateTimeFormat.AbbreviatedDayNames[x]));
         }
-        if (start > DateTime.MinValue) text += $" · od {start.ToString("d MMM yyyy", pl)}";
-        if (end != null && DateTime.TryParse(end, out var e)) text += $" do {e.ToString("d MMM yyyy", pl)}";
+        if (start > DateTime.MinValue) text += " · " + L.F("od {0}", start.ToString("d MMM yyyy", c));
+        if (end != null && DateTime.TryParse(end, out var e)) text += " " + L.F("do {0}", e.ToString("d MMM yyyy", c));
         return text;
     }
 
@@ -237,14 +241,15 @@ public sealed class Alarm
     public bool Deleted { get; set; }
     public DateTime Modified { get; set; } = DateTime.UtcNow;
 
-    public static readonly (string Code, string Label)[] Repeats =
+    /// <summary>Labels in the UI language (built on each access, so the language chosen at start-up applies).</summary>
+    public static (string Code, string Label)[] Repeats => new[]
     {
-        ("", "Jednorazowo"),
-        ("daily", "Codziennie"),
-        ("weekdays", "W dni robocze"),
-        ("weekly", "Co tydzień"),
-        ("biweekly", "Co 2 tygodnie"),
-        ("monthly", "Co miesiąc"),
+        ("", L.T("Jednorazowo")),
+        ("daily", L.T("Codziennie")),
+        ("weekdays", L.T("W dni robocze")),
+        ("weekly", L.T("Co tydzień")),
+        ("biweekly", L.T("Co 2 tygodnie")),
+        ("monthly", L.T("Co miesiąc")),
     };
 
     [JsonIgnore] public bool Once => string.IsNullOrEmpty(Repeat);

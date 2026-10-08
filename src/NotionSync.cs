@@ -105,8 +105,8 @@ static class NotionSync
     /// <summary>Reads the whole database (all pages, up to 5 000).</summary>
     public static async Task<(string Title, List<Page> Pages, string? MeId)> Read(NotionLink link)
     {
-        var token = Token(link) ?? throw new InvalidOperationException("Brak tokenu (albo został zapisany na innym koncie Windows) – wklej go ponownie.");
-        var id = NotionImport.ExtractId(link.Database) ?? throw new InvalidOperationException("Nie rozpoznaję linku do bazy. Skopiuj link do widoku bazy (••• → Copy link to view).");
+        var token = Token(link) ?? throw new InvalidOperationException(L.T("Brak tokenu (albo został zapisany na innym koncie Windows) – wklej go ponownie."));
+        var id = NotionImport.ExtractId(link.Database) ?? throw new InvalidOperationException(L.T("Nie rozpoznaję linku do bazy. Skopiuj link do widoku bazy (••• → Copy link to view)."));
 
         string? me = null;
         try
@@ -116,7 +116,7 @@ static class NotionSync
             me = r.GetProperty("type").GetString() == "person" ? r.GetProperty("id").GetString()
                 : r.TryGetProperty("bot", out var bot) && bot.TryGetProperty("owner", out var owner) && owner.TryGetProperty("user", out var user) && user.TryGetProperty("id", out var uid) ? uid.GetString() : null;
         }
-        catch (NotionError e) when (e.Code == HttpStatusCode.Unauthorized) { throw new InvalidOperationException("Notion nie przyjął tokenu (wygasł albo jest błędny)."); }
+        catch (NotionError e) when (e.Code == HttpStatusCode.Unauthorized) { throw new InvalidOperationException(L.T("Notion nie przyjął tokenu (wygasł albo jest błędny).")); }
         catch (NotionError) { /* "me" is only needed for "only mine" */ }
 
         string title = "";
@@ -144,7 +144,7 @@ static class NotionSync
             try { q = await Call(token, HttpMethod.Post, $"data_sources/{sourceId}/query", body); }
             catch (NotionError e) when (e.Code is HttpStatusCode.NotFound or HttpStatusCode.BadRequest)
             {
-                throw new InvalidOperationException("Nie widzę tej bazy. Sprawdź link i to, czy masz do niej dostęp w Notion na koncie, z którego jest token. (" + e.Message + ")");
+                throw new InvalidOperationException(L.T("Nie widzę tej bazy. Sprawdź link i to, czy masz do niej dostęp w Notion na koncie, z którego jest token.") + " (" + e.Message + ")");
             }
             using (q)
             {
@@ -273,8 +273,8 @@ static class NotionSync
     public static async Task<Result> Run(string layer)
     {
         var link = App.Settings.AccountFor(layer).Notion;
-        if (!link.Configured) return new Result(0, 0, 0, "Notion nie jest skonfigurowany.");
-        if (!Running.Add(layer)) return new Result(0, 0, 0, "Synchronizacja już trwa.");
+        if (!link.Configured) return new Result(0, 0, 0, L.T("Notion nie jest skonfigurowany."));
+        if (!Running.Add(layer)) return new Result(0, 0, 0, L.T("Synchronizacja już trwa."));
         try
         {
             var (_, pages, me) = await Read(link);
@@ -282,7 +282,7 @@ static class NotionSync
             var (added, updated) = Apply(store, link, pages, me);
             link.KnownStatuses = pages.Select(p => p.Status).Where(s => s != null).Select(s => s!).Distinct().OrderBy(s => s).ToList();
             link.LastSync = DateTime.Now;
-            link.LastResult = $"{DateTime.Now:HH:mm}: stron {pages.Count}, nowe {added}, zmienione {updated}" + (link.OnlyMine && me == null ? " (nie udało się ustalić „moich”)" : "");
+            link.LastResult = $"{DateTime.Now:HH:mm}: " + L.F("stron {0}, nowe {1}, zmienione {2}", pages.Count, added, updated) + (link.OnlyMine && me == null ? " " + L.T("(nie udało się ustalić „moich”)") : "");
             SettingsStore.Save(App.Settings);
             if (added + updated > 0 && ReferenceEquals(store, App.Store)) App.Board?.OnExternalChange(quiet: true);
             return new Result(added, updated, pages.Count, null);
@@ -290,8 +290,8 @@ static class NotionSync
         catch (Exception ex)
         {
             Log.Error("notion sync " + layer, ex);
-            var msg = ex is HttpRequestException or TaskCanceledException ? "Brak połączenia z Notion." : ex.Message;
-            link.LastResult = $"{DateTime.Now:HH:mm}: błąd – {msg}";
+            var msg = ex is HttpRequestException or TaskCanceledException ? L.T("Brak połączenia z Notion.") : ex.Message;
+            link.LastResult = $"{DateTime.Now:HH:mm}: " + L.F("błąd – {0}", msg);
             SettingsStore.Save(App.Settings);
             return new Result(0, 0, 0, msg);
         }

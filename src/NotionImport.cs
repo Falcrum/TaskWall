@@ -99,7 +99,7 @@ static class NotionImport
         using (var zip = ZipFile.OpenRead(path))
             Collect(zip, csvs, mds, 0);
 
-        if (csvs.Count == 0) throw new InvalidDataException("W archiwum ZIP nie ma pliku CSV.");
+        if (csvs.Count == 0) throw new InvalidDataException(L.T("W archiwum ZIP nie ma pliku CSV."));
         var pick = csvs.OrderBy(c => c.all).ThenBy(c => c.depth).ThenByDescending(c => c.text.Length).First();
         var export = new NotionExport { Table = Csv.Parse(pick.text), SourceName = Path.GetFileName(path) + " › " + pick.name };
         foreach (var md in mds)

@@ -26,7 +26,7 @@ public sealed class CalEvent
 
     public bool IsHoliday => Kind == "holidays";
     public double Hours => AllDay ? 0 : Math.Max(0, (End - Start).TotalHours);
-    public string TimeText => AllDay ? "cały dzień" : $"{Start:HH:mm}–{End:HH:mm}";
+    public string TimeText => AllDay ? L.T("cały dzień") : $"{Start:HH:mm}–{End:HH:mm}";
 }
 
 /// <summary>Statutory days off in Poland (computed, so they work without any feed).</summary>
@@ -242,7 +242,7 @@ static class Ics
                 : start.AllDay ? TimeSpan.FromDays(1) : TimeSpan.Zero;
             if (dur < TimeSpan.Zero) dur = TimeSpan.Zero;
 
-            var title = Unescape(Get(ev, "SUMMARY")?.Value ?? "(bez tytułu)");
+            var title = Unescape(Get(ev, "SUMMARY")?.Value ?? L.T("(bez tytułu)"));
             var location = Get(ev, "LOCATION") is { } loc ? Unescape(loc.Value) : null;
             var uidValue = Get(ev, "UID")?.Value ?? "";
             bool isOverride = Get(ev, "RECURRENCE-ID") != null;

@@ -31,8 +31,8 @@ public sealed class RepeatWindow : DarkWindow
     readonly Button _save;
     readonly List<(ToggleButton Button, int Day)> _dayButtons = new();
 
-    static readonly (string Code, string Label)[] Patterns =
-        { ("daily", "Dni"), ("weekdays", "W dni robocze"), ("weekly", "Tygodnie"), ("monthly", "Miesiące"), ("yearly", "Lata") };
+    static (string Code, string Label)[] Patterns => new[]
+        { ("daily", L.T("Dni")), ("weekdays", L.T("W dni robocze")), ("weekly", L.T("Tygodnie")), ("monthly", L.T("Miesiące")), ("yearly", L.T("Lata")) };
 
     RepeatWindow(BoardStore store, RecurringRule? rule, TaskItem? task, DateTime day, string? mark)
     {
@@ -40,17 +40,17 @@ public sealed class RepeatWindow : DarkWindow
         _rule = rule;
         _task = task;
         bool forMark = task == null;
-        Title = forMark ? "Powtarzane oznaczenie dnia" : "Powtarzanie zadania";
+        Title = forMark ? L.T("Powtarzane oznaczenie dnia") : L.T("Powtarzanie zadania");
         Width = 500;
         SizeToContent = SizeToContent.Height;
         ResizeMode = ResizeMode.NoResize;
         Topmost = true;
 
         var p = new StackPanel { Margin = new Thickness(20, 16, 20, 18) };
-        p.Children.Add(Label((forMark ? "POWTARZANE OZNACZENIE" : "POWTARZANIE ZADANIA") + "  ·  " + App.AccountName(store.Layer).ToUpper(BoardWindow.Pl), 11.5, "FgDim", FontWeights.Bold));
+        p.Children.Add(Label((forMark ? L.T("POWTARZANE OZNACZENIE") : L.T("POWTARZANIE ZADANIA")) + "  ·  " + L.Up(App.AccountName(store.Layer)), 11.5, "FgDim", FontWeights.Bold));
         if (forMark)
         {
-            p.Children.Add(Caption("OZNACZENIE"));
+            p.Children.Add(Caption(L.T("OZNACZENIE")));
             foreach (var m in store.MarkTypes) _mark.Items.Add(new ComboBoxItem { Content = m.Label.Length > 0 && m.Label != m.Code ? $"{m.Code}  ·  {m.Label}" : m.Code, Tag = m.Code });
             p.Children.Add(_mark);
             var code = rule?.Text ?? mark ?? store.MarkTypes.FirstOrDefault()?.Code;
@@ -63,11 +63,11 @@ public sealed class RepeatWindow : DarkWindow
             p.Children.Add(name);
         }
 
-        p.Children.Add(Caption("POWTARZAJ"));
+        p.Children.Add(Caption(L.T("POWTARZAJ")));
         var row = new StackPanel { Orientation = Orientation.Horizontal };
         foreach (var (c, label) in Patterns) _pattern.Items.Add(new ComboBoxItem { Content = label, Tag = c });
         row.Children.Add(_pattern);
-        _intervalRow.Children.Add(new TextBlock { Text = "co", Foreground = Ui.Res("FgDim"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 0, 0) });
+        _intervalRow.Children.Add(new TextBlock { Text = L.T("co"), Foreground = Ui.Res("FgDim"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 0, 0) });
         _intervalRow.Children.Add(_interval);
         _unit.VerticalAlignment = VerticalAlignment.Center;
         _intervalRow.Children.Add(_unit);
@@ -85,12 +85,12 @@ public sealed class RepeatWindow : DarkWindow
         }
         p.Children.Add(_weekdays);
 
-        p.Children.Add(Caption("OD – DO  (puste „do” = bez końca)"));
+        p.Children.Add(Caption(L.T("OD – DO  (puste „do” = bez końca)")));
         var period = new StackPanel { Orientation = Orientation.Horizontal };
         period.Children.Add(_from);
         period.Children.Add(new TextBlock { Text = "–", Foreground = Ui.Res("FgDim"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 8, 0) });
         period.Children.Add(_to);
-        period.Children.Add(new TextBlock { Text = "np. 14.10 · jutro · pt", Foreground = Ui.Res("FgFaint"), FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) });
+        period.Children.Add(new TextBlock { Text = L.T("np. 14.10 · jutro · pt"), Foreground = Ui.Res("FgFaint"), FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) });
         p.Children.Add(period);
 
         _preview.Margin = new Thickness(0, 14, 0, 0);
@@ -99,7 +99,7 @@ public sealed class RepeatWindow : DarkWindow
         var buttons = new DockPanel { Margin = new Thickness(0, 16, 0, 0) };
         if (rule != null)
         {
-            var del = Btn(forMark ? "Usuń serię" : "Usuń serię (wykonane zostają)", "SecondaryButton", (_, _) =>
+            var del = Btn(forMark ? L.T("Usuń serię") : L.T("Usuń serię (wykonane zostają)"), "SecondaryButton", (_, _) =>
             {
                 _store.Checkpoint();
                 rule.Deleted = true;
@@ -111,8 +111,8 @@ public sealed class RepeatWindow : DarkWindow
             buttons.Children.Add(del);
         }
         var right = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-        right.Children.Add(Btn("Anuluj", "SecondaryButton", (_, _) => Close()));
-        _save = Btn("Zapisz", "PrimaryButton", (_, _) => Save());
+        right.Children.Add(Btn(L.T("Anuluj"), "SecondaryButton", (_, _) => Close()));
+        _save = Btn(L.T("Zapisz"), "PrimaryButton", (_, _) => Save());
         right.Children.Add(_save);
         buttons.Children.Add(right);
         p.Children.Add(buttons);
@@ -184,19 +184,19 @@ public sealed class RepeatWindow : DarkWindow
         _weekdays.Visibility = pattern == "weekly" ? Visibility.Visible : Visibility.Collapsed;
         _intervalRow.Visibility = pattern == "weekdays" ? Visibility.Collapsed : Visibility.Visible;
         int.TryParse(_interval.Text.Trim(), out var n);
-        _unit.Text = pattern switch
+        _unit.Text = L.T(pattern switch // each Polish form maps to the English singular / plural
         {
             "daily" => n == 1 ? "dzień" : "dni",
             "weekly" => n == 1 ? "tydzień" : n is >= 2 and <= 4 ? "tygodnie" : "tygodni",
             "monthly" => n == 1 ? "miesiąc" : n is >= 2 and <= 4 ? "miesiące" : "miesięcy",
             "yearly" => n == 1 ? "rok" : n is >= 2 and <= 4 ? "lata" : "lat",
             _ => "",
-        };
+        });
         var r = Read();
         _save.IsEnabled = r != null && (_task != null || _mark.SelectedItem != null);
         if (r == null)
         {
-            _preview.Text = "Sprawdź daty (np. 14.10.2026), co ile i dni tygodnia.";
+            _preview.Text = L.T("Sprawdź daty (np. 14.10.2026), co ile i dni tygodnia.");
             _preview.Foreground = new SolidColorBrush(Color.FromRgb(0xF2, 0xA6, 0x5A));
             return;
         }
@@ -206,8 +206,8 @@ public sealed class RepeatWindow : DarkWindow
             if (r.Occurs(d) && d >= DateTime.Today.AddDays(-1)) next.Add(d);
         int total = r.End != null ? CountUntil(r) : -1;
         _preview.Text = "→ " + r.Summary
-            + (next.Count > 0 ? "\nNajbliżej: " + string.Join(", ", next.Select(d => d.ToString("ddd d MMM", BoardWindow.Pl))) + (next.Count == 6 ? " …" : "") : "\nBrak dni w tym okresie.")
-            + (total >= 0 ? $"\nRazem dni w okresie: {total}" : "");
+            + (next.Count > 0 ? "\n" + L.T("Najbliżej:") + " " + string.Join(", ", next.Select(d => d.ToString("ddd d MMM", BoardWindow.Pl))) + (next.Count == 6 ? " …" : "") : "\n" + L.T("Brak dni w tym okresie."))
+            + (total >= 0 ? "\n" + L.F("Razem dni w okresie: {0}", total) : "");
     }
 
     static int CountUntil(RecurringRule r)

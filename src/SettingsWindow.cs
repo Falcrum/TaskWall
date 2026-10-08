@@ -26,23 +26,23 @@ public sealed class SettingsWindow : DarkWindow
 
     public SettingsWindow()
     {
-        Title = "DeskWall – ustawienia";
+        Title = L.T("DeskWall – ustawienia");
         Width = 640;
         Height = 780;
         MinWidth = 520;
         ResizeMode = ResizeMode.CanResize;
         Content = new ScrollViewer { Content = _sections, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
 
-        AddSection("Ogólne", "język, autostart, zegar, alarmy, Notion, skrót klawiszowy", BuildGeneral);
-        AddSection("Konta", "Praca i Prywatne: folder, kalendarze Google, Notion, kategorie, oznaczenia dni", BuildAccounts, open: true);
-        AddSection("Ekran i rozmiar", "monitor, skala, szerokość i wysokość tablicy", BuildScreen);
-        AddSection("Tablica", "weekendy, widok roku, zaległe zadania, backlog", BuildBoard);
-        AddSection("Wygląd", "matowe szkło, przyciemnienie, kolor akcentu, animacje", BuildLook);
-        AddSection("Info", "wersja, instalacja i deinstalacja", BuildInstall);
+        AddSection(L.T("Ogólne"), L.T("język, autostart, zegar, alarmy, Notion, skrót klawiszowy"), BuildGeneral);
+        AddSection(L.T("Konta"), L.T("Praca i Prywatne: folder, kalendarze Google, Notion, kategorie, oznaczenia dni"), BuildAccounts, open: true);
+        AddSection(L.T("Ekran i rozmiar"), L.T("monitor, skala, szerokość i wysokość tablicy"), BuildScreen);
+        AddSection(L.T("Tablica"), L.T("weekendy, widok roku, zaległe zadania, backlog"), BuildBoard);
+        AddSection(L.T("Wygląd"), L.T("matowe szkło, przyciemnienie, kolor akcentu, animacje"), BuildLook);
+        AddSection(L.T("Info"), L.T("wersja, instalacja i deinstalacja"), BuildInstall);
 
         var footer = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 18, 0, 0) };
-        footer.Children.Add(Btn("Importuj z Notion…", "SecondaryButton", (_, _) => App.Instance.ImportNotion()));
-        footer.Children.Add(Btn("Gotowe", "PrimaryButton", (_, _) => Close()));
+        footer.Children.Add(Btn(L.T("Importuj z Notion…"), "SecondaryButton", (_, _) => App.Instance.ImportNotion()));
+        footer.Children.Add(Btn(L.T("Gotowe"), "PrimaryButton", (_, _) => Close()));
         _sections.Children.Add(footer);
 
         _statusTimer.Tick += (_, _) => UpdateStatus();
@@ -116,7 +116,7 @@ public sealed class SettingsWindow : DarkWindow
         }
         Paint();
         panel.Children.Add(switcher);
-        panel.Children.Add(Label("Każde konto ma osobne dane (zadania, archiwum, kategorie) w swoim folderze w chmurze i własne kalendarze Google. Na tablicy przełączasz je przyciskiem na środku górnego paska albo Ctrl+1 / Ctrl+2.", 11.5, "FgDim"));
+        panel.Children.Add(Label(L.T("Każde konto ma osobne dane (zadania, archiwum, kategorie) w swoim folderze w chmurze i własne kalendarze Google. Na tablicy przełączasz je przyciskiem na środku górnego paska albo Ctrl+1 / Ctrl+2."), 11.5, "FgDim"));
         panel.Children.Add(_accountBody);
         FillAccount(Paint);
         return panel;
@@ -143,18 +143,18 @@ public sealed class SettingsWindow : DarkWindow
         }
         name.LostKeyboardFocus += (_, _) => CommitName();
         name.KeyDown += (_, e) => { if (e.Key == Key.Enter) CommitName(); };
-        p.Children.Add(Pair("Nazwa konta", name));
+        p.Children.Add(Pair(L.T("Nazwa konta"), name));
 
         // folder
-        p.Children.Add(Sub("Folder danych"));
+        p.Children.Add(Sub(L.T("Folder danych")));
         p.Children.Add(FolderRow(id));
         _syncStatus = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0), Foreground = Ui.Res("FgFaint"), Tag = store };
         p.Children.Add(_syncStatus);
         UpdateStatus();
 
         // calendars
-        p.Children.Add(Sub("Kalendarze Google"));
-        p.Children.Add(Label("W Kalendarzu Google: Ustawienia → wybierz kalendarz → Integracja kalendarza → „Tajny adres w formacie iCal”. Dla konta Prywatne możesz podać kalendarz z prywatnego Gmaila. Adres zostaje tylko na tym komputerze.", 11, "FgFaint"));
+        p.Children.Add(Sub(L.T("Kalendarze Google")));
+        p.Children.Add(Label(L.T("W Kalendarzu Google: Ustawienia → wybierz kalendarz → Integracja kalendarza → „Tajny adres w formacie iCal”. Dla konta Prywatne możesz podać kalendarz z prywatnego Gmaila. Adres zostaje tylko na tym komputerze."), 11, "FgFaint"));
         var feeds = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
         p.Children.Add(feeds);
         void FillFeeds()
@@ -163,16 +163,16 @@ public sealed class SettingsWindow : DarkWindow
             foreach (var feed in acc.Calendars.ToList())
             {
                 var row = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
-                var remove = Btn("Usuń", "LinkButton", (_, _) => { acc.Calendars.Remove(feed); SettingsStore.Save(S); FillFeeds(); App.Instance.RefreshCalendars(); });
+                var remove = Btn(L.T("Usuń"), "LinkButton", (_, _) => { acc.Calendars.Remove(feed); SettingsStore.Save(S); FillFeeds(); App.Instance.RefreshCalendars(); });
                 DockPanel.SetDock(remove, Dock.Right);
                 row.Children.Add(remove);
-                var cb = new CheckBox { IsChecked = feed.Enabled, Content = $"{feed.Name}  ·  {(feed.Kind == "holidays" ? "święta" : "spotkania")}", ToolTip = feed.Kind == "holidays" ? feed.Url : "tajny adres iCal (ukryty)" };
+                var cb = new CheckBox { IsChecked = feed.Enabled, Content = $"{feed.Name}  ·  {(feed.Kind == "holidays" ? L.T("święta") : L.T("spotkania"))}", ToolTip = feed.Kind == "holidays" ? feed.Url : L.T("tajny adres iCal (ukryty)") };
                 cb.Checked += (_, _) => { feed.Enabled = true; SettingsStore.Save(S); App.Instance.RefreshCalendars(); };
                 cb.Unchecked += (_, _) => { feed.Enabled = false; SettingsStore.Save(S); App.Instance.RefreshCalendars(); };
                 row.Children.Add(cb);
                 feeds.Children.Add(row);
             }
-            if (acc.Calendars.Count == 0) feeds.Children.Add(Label("Brak kalendarzy.", 11.5, "FgFaint"));
+            if (acc.Calendars.Count == 0) feeds.Children.Add(Label(L.T("Brak kalendarzy."), 11.5, "FgFaint"));
         }
         FillFeeds();
         var add = new Grid { Margin = new Thickness(0, 8, 0, 0) };
@@ -180,17 +180,17 @@ public sealed class SettingsWindow : DarkWindow
         add.ColumnDefinitions.Add(new ColumnDefinition());
         add.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         add.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var feedName = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = id == "private" ? "Gmail" : "Praca", Margin = new Thickness(0, 0, 6, 0), ToolTip = "Nazwa kalendarza" };
+        var feedName = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = id == "private" ? "Gmail" : L.T("Praca"), Margin = new Thickness(0, 0, 6, 0), ToolTip = L.T("Nazwa kalendarza") };
         var feedUrl = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Margin = new Thickness(0, 0, 6, 0), ToolTip = "https://calendar.google.com/calendar/ical/…/basic.ics" };
         var kind = new ComboBox { MinWidth = 110 };
-        kind.Items.Add(new ComboBoxItem { Content = "Spotkania", Tag = "events" });
-        kind.Items.Add(new ComboBoxItem { Content = "Święta", Tag = "holidays" });
+        kind.Items.Add(new ComboBoxItem { Content = L.T("Spotkania"), Tag = "events" });
+        kind.Items.Add(new ComboBoxItem { Content = L.T("Święta"), Tag = "holidays" });
         kind.SelectedIndex = 0;
-        var addBtn = Btn("Dodaj", "SecondaryButton", (_, _) =>
+        var addBtn = Btn(L.T("Dodaj"), "SecondaryButton", (_, _) =>
         {
             var url = feedUrl.Text.Trim();
             if (!url.StartsWith("http", StringComparison.OrdinalIgnoreCase) && !url.StartsWith("webcal", StringComparison.OrdinalIgnoreCase)) { feedUrl.Focus(); return; }
-            acc.Calendars.Add(new CalendarFeed { Name = feedName.Text.Trim().Length > 0 ? feedName.Text.Trim() : "Kalendarz", Url = url, Kind = (string)((ComboBoxItem)kind.SelectedItem).Tag });
+            acc.Calendars.Add(new CalendarFeed { Name = feedName.Text.Trim().Length > 0 ? feedName.Text.Trim() : L.T("Kalendarz"), Url = url, Kind = (string)((ComboBoxItem)kind.SelectedItem).Tag });
             feedUrl.Text = "";
             SettingsStore.Save(S);
             FillFeeds();
@@ -205,7 +205,7 @@ public sealed class SettingsWindow : DarkWindow
         add.Children.Add(addBtn);
         p.Children.Add(add);
         var calRow = new DockPanel { Margin = new Thickness(0, 6, 0, 0) };
-        var refresh = Btn("Odśwież kalendarze", "LinkButton", (_, _) => App.Instance.RefreshCalendars());
+        var refresh = Btn(L.T("Odśwież kalendarze"), "LinkButton", (_, _) => App.Instance.RefreshCalendars());
         refresh.Margin = new Thickness(-7, 0, 0, 0);
         DockPanel.SetDock(refresh, Dock.Left);
         calRow.Children.Add(refresh);
@@ -219,16 +219,16 @@ public sealed class SettingsWindow : DarkWindow
         p.Children.Add(BuildNotion(acc, store));
 
         // categories (stored in this account's board.json, so they sync with its other computers)
-        p.Children.Add(Sub("Kategorie"));
-        p.Children.Add(Label("Etykieta [Nazwa] na początku zadania. Wybierasz ją prawym przyciskiem → Kategoria, klikając pod polem nowego zadania albo wpisując #nazwa.", 11, "FgFaint"));
+        p.Children.Add(Sub(L.T("Kategorie")));
+        p.Children.Add(Label(L.T("Etykieta [Nazwa] na początku zadania. Wybierasz ją prawym przyciskiem → Kategoria, klikając pod polem nowego zadania albo wpisując #nazwa."), 11, "FgFaint"));
         var cats = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
         p.Children.Add(cats);
         FillCategories(store, cats);
-        var addCat = Btn("+ Dodaj kategorię", "SecondaryButton", (_, _) =>
+        var addCat = Btn(L.T("+ Dodaj kategorię"), "SecondaryButton", (_, _) =>
         {
             var list = store.Categories.Select(x => new Category { Name = x.Name, Color = x.Color }).ToList();
             var used = list.Select(x => x.Color).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            list.Add(new Category { Name = "Nowa", Color = Category.Palette.FirstOrDefault(x => !used.Contains(x)) ?? Category.Palette[0] });
+            list.Add(new Category { Name = L.T("Nowa"), Color = Category.Palette.FirstOrDefault(x => !used.Contains(x)) ?? Category.Palette[0] });
             SaveCategories(store, list);
             FillCategories(store, cats, focusLast: true);
         });
@@ -237,16 +237,16 @@ public sealed class SettingsWindow : DarkWindow
         p.Children.Add(addCat);
 
         // day marks (HO, BŚU, Urlop …) – also per account, synced like the categories
-        p.Children.Add(Sub("Oznaczenia dni"));
-        p.Children.Add(Label("Krótki kod w nagłówku dnia, np. HO, BŚU, Urlop. Ustawiasz je prawym przyciskiem na dniu, także jako powtarzane (np. HO w każdy piątek albo urlop od–do). Liczy je widok roku i eksport CSV.", 11, "FgFaint"));
+        p.Children.Add(Sub(L.T("Oznaczenia dni")));
+        p.Children.Add(Label(L.T("Krótki kod w nagłówku dnia, np. HO, BŚU, Urlop. Ustawiasz je prawym przyciskiem na dniu, także jako powtarzane (np. HO w każdy piątek albo urlop od–do). Liczy je widok roku i eksport CSV."), 11, "FgFaint"));
         var marks = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
         p.Children.Add(marks);
         FillMarks(store, marks);
-        var addMark = Btn("+ Dodaj oznaczenie", "SecondaryButton", (_, _) =>
+        var addMark = Btn(L.T("+ Dodaj oznaczenie"), "SecondaryButton", (_, _) =>
         {
             var list = store.MarkTypes.Select(x => new MarkType { Code = x.Code, Label = x.Label, Color = x.Color }).ToList();
             var used = list.Select(x => x.Color).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            list.Add(new MarkType { Code = "NOWE", Label = "", Color = Category.Palette.FirstOrDefault(x => !used.Contains(x)) ?? Category.Palette[0] });
+            list.Add(new MarkType { Code = L.T("NOWE"), Label = "", Color = Category.Palette.FirstOrDefault(x => !used.Contains(x)) ?? Category.Palette[0] });
             store.SetMarkTypes(list);
             App.Board?.Rebuild();
             FillMarks(store, marks, focusLast: true);
@@ -261,10 +261,10 @@ public sealed class SettingsWindow : DarkWindow
         var box = new TextBox { IsReadOnly = true, Style = (Style)Application.Current.Resources["FieldBox"], Text = App.LayerFolder(layer) };
         var panel = new StackPanel();
         var row = new DockPanel();
-        var open = Btn("Otwórz", "SecondaryButton", (_, _) => GlassWindow.OpenUrl(App.LayerFolder(layer)));
-        var change = Btn("Zmień…", "SecondaryButton", (_, _) =>
+        var open = Btn(L.T("Otwórz"), "SecondaryButton", (_, _) => GlassWindow.OpenUrl(App.LayerFolder(layer)));
+        var change = Btn(L.T("Zmień…"), "SecondaryButton", (_, _) =>
         {
-            var dlg = new Microsoft.Win32.OpenFolderDialog { Title = $"Folder konta „{App.AccountName(layer)}”", InitialDirectory = Directory.Exists(box.Text) ? box.Text : "" };
+            var dlg = new Microsoft.Win32.OpenFolderDialog { Title = L.F("Folder konta „{0}”", App.AccountName(layer)), InitialDirectory = Directory.Exists(box.Text) ? box.Text : "" };
             if (dlg.ShowDialog(this) == true) UseFolder(layer, dlg.FolderName, box);
         });
         DockPanel.SetDock(open, Dock.Right);
@@ -283,8 +283,8 @@ public sealed class SettingsWindow : DarkWindow
             b.Margin = new Thickness(0, 0, 4, 0);
             quick.Children.Add(b);
         }
-        Quick("Google Drive", SettingsStore.GoogleDriveRoot(), "Zainstaluj „Google Drive for desktop” – pojawi się „Mój dysk”, który DeskWall wykryje sam.");
-        Quick("OneDrive", SettingsStore.OneDriveRoot(), "OneDrive nie jest skonfigurowany na tym komputerze.");
+        Quick("Google Drive", SettingsStore.GoogleDriveRoot(), L.T("Zainstaluj „Google Drive for desktop” – pojawi się „Mój dysk”, który DeskWall wykryje sam."));
+        Quick("OneDrive", SettingsStore.OneDriveRoot(), L.T("OneDrive nie jest skonfigurowany na tym komputerze."));
         panel.Children.Add(quick);
         return panel;
     }
@@ -300,7 +300,7 @@ public sealed class SettingsWindow : DarkWindow
         catch (Exception ex)
         {
             Log.Error("switch folder", ex);
-            MessageBox.Show(this, "Nie udało się użyć tego folderu:\n" + ex.Message, "DeskWall", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, L.T("Nie udało się użyć tego folderu:\n") + ex.Message, "DeskWall", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
@@ -321,7 +321,7 @@ public sealed class SettingsWindow : DarkWindow
             var row = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
             Color col;
             try { col = (Color)ColorConverter.ConvertFromString(list[i].Color); } catch { col = Colors.Gray; }
-            var swatch = new Border { Width = 22, Height = 22, CornerRadius = new CornerRadius(11), Background = new SolidColorBrush(col), Cursor = Cursors.Hand, Margin = new Thickness(0, 0, 10, 0), ToolTip = "Zmień kolor" };
+            var swatch = new Border { Width = 22, Height = 22, CornerRadius = new CornerRadius(11), Background = new SolidColorBrush(col), Cursor = Cursors.Hand, Margin = new Thickness(0, 0, 10, 0), ToolTip = L.T("Zmień kolor") };
             swatch.MouseLeftButtonUp += (_, _) => PickColor(swatch, c =>
             {
                 list[index].Color = c;
@@ -330,8 +330,8 @@ public sealed class SettingsWindow : DarkWindow
             });
             DockPanel.SetDock(swatch, Dock.Left);
             row.Children.Add(swatch);
-            var del = Btn("Usuń", "LinkButton", (_, _) => { list.RemoveAt(index); SaveCategories(store, list); FillCategories(store, cats); });
-            del.ToolTip = "Usuwa kategorię z listy (zadania zachowują swoją etykietę)";
+            var del = Btn(L.T("Usuń"), "LinkButton", (_, _) => { list.RemoveAt(index); SaveCategories(store, list); FillCategories(store, cats); });
+            del.ToolTip = L.T("Usuwa kategorię z listy (zadania zachowują swoją etykietę)");
             DockPanel.SetDock(del, Dock.Right);
             row.Children.Add(del);
             var name = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = list[i].Name, MaxLength = 24 };
@@ -355,21 +355,21 @@ public sealed class SettingsWindow : DarkWindow
     {
         var link = acc.Notion;
         var p = new StackPanel();
-        p.Children.Add(Label("Automatycznie wczytuje zadania z bazy Notion do backlogu tego konta – tylko odczyt, nic nie jest zmieniane w Notion. Używa Twojego osobistego tokenu (działa jak Twoje konto, bez admina): Notion → Ustawienia → Developers / „Personal access tokens” → New token. Token jest zaszyfrowany dla Twojego konta Windows i zostaje tylko na tym komputerze.", 11, "FgFaint"));
-        var open = Btn("Utwórz token w Notion ↗", "LinkButton", (_, _) => GlassWindow.OpenUrl("https://www.notion.so/developers/tokens"));
+        p.Children.Add(Label(L.T("Automatycznie wczytuje zadania z bazy Notion do backlogu tego konta – tylko odczyt, nic nie jest zmieniane w Notion. Używa Twojego osobistego tokenu (działa jak Twoje konto, bez admina): Notion → Ustawienia → Developers / „Personal access tokens” → New token. Token jest zaszyfrowany dla Twojego konta Windows i zostaje tylko na tym komputerze."), 11, "FgFaint"));
+        var open = Btn(L.T("Utwórz token w Notion ↗"), "LinkButton", (_, _) => GlassWindow.OpenUrl("https://www.notion.so/developers/tokens"));
         open.HorizontalAlignment = HorizontalAlignment.Left;
         open.Margin = new Thickness(-7, 4, 0, 4);
         p.Children.Add(open);
 
-        var db = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = link.Database, ToolTip = "Link do bazy: ••• przy widoku bazy → Copy link to view" };
+        var db = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = link.Database, ToolTip = L.T("Link do bazy: ••• przy widoku bazy → Copy link to view") };
         db.LostKeyboardFocus += (_, _) => { if (db.Text.Trim() != link.Database) { link.Database = db.Text.Trim(); SettingsStore.Save(S); } };
-        p.Children.Add(Pair("Link do bazy (••• → Copy link to view)", db));
+        p.Children.Add(Pair(L.T("Link do bazy (••• → Copy link to view)"), db));
 
         var tokenRow = new DockPanel();
         var token = new PasswordBox { Height = 34, Padding = new Thickness(8, 6, 8, 6), Background = Ui.Res("Field"), Foreground = Ui.Res("Fg"), BorderBrush = Ui.Res("FieldBorder"), CaretBrush = Ui.Res("Fg") };
         var tokenState = Label("", 11.5, "FgDim");
-        void ShowTokenState() => tokenState.Text = link.TokenProtected != null ? "Token zapisany (ukryty). Wklej nowy, żeby go zmienić." : "Brak tokenu.";
-        var clear = Btn("Usuń token", "LinkButton", (_, _) => { link.TokenProtected = null; SettingsStore.Save(S); ShowTokenState(); });
+        void ShowTokenState() => tokenState.Text = link.TokenProtected != null ? L.T("Token zapisany (ukryty). Wklej nowy, żeby go zmienić.") : L.T("Brak tokenu.");
+        var clear = Btn(L.T("Usuń token"), "LinkButton", (_, _) => { link.TokenProtected = null; SettingsStore.Save(S); ShowTokenState(); });
         DockPanel.SetDock(clear, Dock.Right);
         tokenRow.Children.Add(clear);
         tokenRow.Children.Add(token);
@@ -382,25 +382,25 @@ public sealed class SettingsWindow : DarkWindow
             ShowTokenState();
         };
         ShowTokenState();
-        p.Children.Add(Pair("Osobisty token", tokenRow));
+        p.Children.Add(Pair(L.T("Osobisty token"), tokenRow));
         p.Children.Add(tokenState);
 
         var every = new ComboBox { Width = 90, Margin = new Thickness(8, 0, 0, 0) };
         foreach (var m in new[] { 5, 10, 15, 30, 60 }) every.Items.Add(new ComboBoxItem { Content = $"{m} min", Tag = m });
         every.SelectedItem = every.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (int)i.Tag == link.Minutes) ?? every.Items[1];
         every.SelectionChanged += (_, _) => { if (every.SelectedItem is ComboBoxItem it) { link.Minutes = (int)it.Tag; SettingsStore.Save(S); } };
-        var auto = new CheckBox { Content = "Synchronizuj automatycznie co", IsChecked = link.Auto, VerticalAlignment = VerticalAlignment.Center };
+        var auto = new CheckBox { Content = L.T("Synchronizuj automatycznie co"), IsChecked = link.Auto, VerticalAlignment = VerticalAlignment.Center };
         auto.Checked += (_, _) => { link.Auto = true; SettingsStore.Save(S); };
         auto.Unchecked += (_, _) => { link.Auto = false; SettingsStore.Save(S); };
         var autoRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 4) };
         autoRow.Children.Add(auto);
         autoRow.Children.Add(every);
         p.Children.Add(autoRow);
-        var mine = new CheckBox { Content = "Tylko zadania przypisane do mnie (pole osoby zawiera moje konto)", IsChecked = link.OnlyMine, Margin = new Thickness(0, 4, 0, 4) };
+        var mine = new CheckBox { Content = L.T("Tylko zadania przypisane do mnie (pole osoby zawiera moje konto)"), IsChecked = link.OnlyMine, Margin = new Thickness(0, 4, 0, 4) };
         mine.Checked += (_, _) => { link.OnlyMine = true; SettingsStore.Save(S); };
         mine.Unchecked += (_, _) => { link.OnlyMine = false; SettingsStore.Save(S); };
         p.Children.Add(mine);
-        var done = new CheckBox { Content = "Zakończone w Notion oznaczaj jako zrobione", IsChecked = link.SyncDone, Margin = new Thickness(0, 4, 0, 4) };
+        var done = new CheckBox { Content = L.T("Zakończone w Notion oznaczaj jako zrobione"), IsChecked = link.SyncDone, Margin = new Thickness(0, 4, 0, 4) };
         done.Checked += (_, _) => { link.SyncDone = true; SettingsStore.Save(S); };
         done.Unchecked += (_, _) => { link.SyncDone = false; SettingsStore.Save(S); };
         p.Children.Add(done);
@@ -411,11 +411,11 @@ public sealed class SettingsWindow : DarkWindow
         {
             statuses.Children.Clear();
             var known = link.KnownStatuses ?? new();
-            if (known.Count == 0) { statuses.Children.Add(Label("Statusy pojawią się po pierwszej synchronizacji (domyślnie pomijane są zakończone).", 11, "FgFaint")); return; }
+            if (known.Count == 0) { statuses.Children.Add(Label(L.T("Statusy pojawią się po pierwszej synchronizacji (domyślnie pomijane są zakończone)."), 11, "FgFaint")); return; }
             var skip = link.SkipStatuses ?? known.Where(NotionImport.LooksDone).ToList();
             foreach (var s in known)
             {
-                var chip = new System.Windows.Controls.Primitives.ToggleButton { Content = s, Style = (Style)Application.Current.Resources["Chip"], IsChecked = !skip.Contains(s), Margin = new Thickness(0, 0, 6, 6), ToolTip = "Zaznaczone statusy są wczytywane" };
+                var chip = new System.Windows.Controls.Primitives.ToggleButton { Content = s, Style = (Style)Application.Current.Resources["Chip"], IsChecked = !skip.Contains(s), Margin = new Thickness(0, 0, 6, 6), ToolTip = L.T("Zaznaczone statusy są wczytywane") };
                 chip.Click += (_, _) =>
                 {
                     var now = link.SkipStatuses ?? known.Where(NotionImport.LooksDone).ToList();
@@ -427,17 +427,17 @@ public sealed class SettingsWindow : DarkWindow
             }
         }
         FillStatuses();
-        p.Children.Add(Pair("Wczytywane statusy", statuses));
+        p.Children.Add(Pair(L.T("Wczytywane statusy"), statuses));
 
         var syncRow = new DockPanel { Margin = new Thickness(0, 6, 0, 0) };
         var result = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Foreground = Ui.Res("FgFaint"), Margin = new Thickness(10, 0, 0, 0), Text = link.LastResult ?? "" };
         Button? now = null;
-        now = Btn("Synchronizuj teraz", "SecondaryButton", async (_, _) =>
+        now = Btn(L.T("Synchronizuj teraz"), "SecondaryButton", async (_, _) =>
         {
             link.Database = db.Text.Trim();
-            if (!link.Configured) { result.Text = "Podaj link do bazy i token."; return; }
+            if (!link.Configured) { result.Text = L.T("Podaj link do bazy i token."); return; }
             now!.IsEnabled = false;
-            result.Text = "Łączę z Notion…";
+            result.Text = L.T("Łączę z Notion…");
             var r = await NotionSync.Run(acc.Id);
             now.IsEnabled = true;
             result.Text = link.LastResult ?? (r.Error ?? "");
@@ -457,21 +457,21 @@ public sealed class SettingsWindow : DarkWindow
         var list = store.MarkTypes.Select(x => new MarkType { Code = x.Code, Label = x.Label, Color = x.Color }).ToList();
         void Save() { store.SetMarkTypes(list); App.Board?.Rebuild(); }
         TextBox? last = null;
-        if (list.Count == 0) host.Children.Add(Label("Brak oznaczeń dni na tym koncie.", 11.5, "FgFaint"));
+        if (list.Count == 0) host.Children.Add(Label(L.T("Brak oznaczeń dni na tym koncie."), 11.5, "FgFaint"));
         for (int i = 0; i < list.Count; i++)
         {
             int index = i;
             var row = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
-            var swatch = new Border { Width = 22, Height = 22, CornerRadius = new CornerRadius(5), Background = new SolidColorBrush(BoardWindow.ParseColor(list[i].Color)), Cursor = Cursors.Hand, Margin = new Thickness(0, 0, 10, 0), ToolTip = "Zmień kolor" };
+            var swatch = new Border { Width = 22, Height = 22, CornerRadius = new CornerRadius(5), Background = new SolidColorBrush(BoardWindow.ParseColor(list[i].Color)), Cursor = Cursors.Hand, Margin = new Thickness(0, 0, 10, 0), ToolTip = L.T("Zmień kolor") };
             swatch.MouseLeftButtonUp += (_, _) => PickColor(swatch, c => { list[index].Color = c; Save(); FillMarks(store, host); });
             DockPanel.SetDock(swatch, Dock.Left);
             row.Children.Add(swatch);
-            var del = Btn("Usuń", "LinkButton", (_, _) => { list.RemoveAt(index); Save(); FillMarks(store, host); });
-            del.ToolTip = "Usuwa oznaczenie z listy (dni już oznaczone zostają w danych)";
+            var del = Btn(L.T("Usuń"), "LinkButton", (_, _) => { list.RemoveAt(index); Save(); FillMarks(store, host); });
+            del.ToolTip = L.T("Usuwa oznaczenie z listy (dni już oznaczone zostają w danych)");
             DockPanel.SetDock(del, Dock.Right);
             row.Children.Add(del);
-            var code = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = list[i].Code, MaxLength = 8, Width = 90, Margin = new Thickness(0, 0, 6, 0), ToolTip = "Kod w nagłówku dnia" };
-            var label = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = list[i].Label, MaxLength = 40, ToolTip = "Opis (np. Home Office)" };
+            var code = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = list[i].Code, MaxLength = 8, Width = 90, Margin = new Thickness(0, 0, 6, 0), ToolTip = L.T("Kod w nagłówku dnia") };
+            var label = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = list[i].Label, MaxLength = 40, ToolTip = L.T("Opis (np. Home Office)") };
             void Commit()
             {
                 var c = code.Text.Trim().ToUpper(BoardWindow.Pl);
@@ -496,15 +496,15 @@ public sealed class SettingsWindow : DarkWindow
         var series = store.Data.MarkRules.Where(r => !r.Deleted).ToList();
         if (series.Count > 0)
         {
-            var t = Label("Powtarzane:", 11, "FgDim", FontWeights.SemiBold);
+            var t = Label(L.T("Powtarzane:"), 11, "FgDim", FontWeights.SemiBold);
             t.Margin = new Thickness(0, 8, 0, 2);
             host.Children.Add(t);
         }
         foreach (var r in series)
         {
             var row = new DockPanel { Margin = new Thickness(0, 1, 0, 1) };
-            var del = Btn("Usuń", "LinkButton", (_, _) => { r.Deleted = true; store.Changed(r); App.Board?.Rebuild(); FillMarks(store, host); });
-            var edit = Btn("Zmień…", "LinkButton", (_, _) => RepeatWindow.ForMark(store, r, r.StartDate));
+            var del = Btn(L.T("Usuń"), "LinkButton", (_, _) => { r.Deleted = true; store.Changed(r); App.Board?.Rebuild(); FillMarks(store, host); });
+            var edit = Btn(L.T("Zmień…"), "LinkButton", (_, _) => RepeatWindow.ForMark(store, r, r.StartDate));
             DockPanel.SetDock(del, Dock.Right);
             DockPanel.SetDock(edit, Dock.Right);
             row.Children.Add(del);
@@ -538,15 +538,15 @@ public sealed class SettingsWindow : DarkWindow
         if (_syncStatus?.Tag is not BoardStore st) return;
         string saved = st.LastSaved is { } s ? s.ToString("HH:mm:ss") : "—";
         string ext = st.LastExternalChange is { } x ? x.ToString("HH:mm:ss") : "—";
-        _syncStatus.Text = $"Ostatni zapis: {saved}   ·   zmiany z innego komputera: {ext}   ·   kopie dzienne w podfolderze backup";
+        _syncStatus.Text = L.F("Ostatni zapis: {0}   ·   zmiany z innego komputera: {1}   ·   kopie dzienne w podfolderze backup", saved, ext);
     }
 
     void UpdateCalStatus()
     {
         if (_calStatus == null) return;
         var when = CalendarService.LastFetch is { } t ? t.ToString("HH:mm") : "—";
-        _calStatus.Text = $"pobrano {when}  ·  wydarzeń: {CalendarService.Count(false)}, świąt: {CalendarService.Count(true)}"
-            + (CalendarService.LastError != null ? $"\nBłąd: {CalendarService.LastError}" : "");
+        _calStatus.Text = L.F("pobrano {0}  ·  wydarzeń: {1}, świąt: {2}", when, CalendarService.Count(false), CalendarService.Count(true))
+            + (CalendarService.LastError != null ? L.F("\nBłąd: {0}", CalendarService.LastError) : "");
     }
 
     // ---------- other sections ----------
@@ -562,41 +562,41 @@ public sealed class SettingsWindow : DarkWindow
         monCombo.SelectedIndex = Math.Max(0, idx >= 0 ? idx : monitors.FindIndex(m => m.Primary));
         monCombo.SelectionChanged += (_, _) => { if (monCombo.SelectedItem is ComboBoxItem it) { S.Monitor = (string)it.Tag; App.Instance.ApplySettings(); } };
         p.Children.Add(Pair("Monitor", monCombo));
-        p.Children.Add(SliderRow("Skala całości", 80, 220, S.UiScale * 100, v => S.UiScale = Math.Round(v) / 100, v => $"{v:0}%"));
-        p.Children.Add(SliderRow("Szerokość tablicy", 40, 100, S.WidthPercent, v => S.WidthPercent = v, v => $"{v:0}%"));
-        p.Children.Add(SliderRow("Wysokość tygodnia", 10, 40, S.WeekHeightPercent, v => S.WeekHeightPercent = v, v => $"{v:0}% ekranu"));
-        p.Children.Add(SliderRow("Położenie w pionie", 0, 100, S.VerticalPercent, v => S.VerticalPercent = v, v => $"{v:0}%"));
-        p.Children.Add(SliderRow("Rozmiar tekstu zadań", 10, 17, S.FontSize, v => S.FontSize = Math.Round(v * 2) / 2, v => $"{Math.Round(v * 2) / 2:0.0}"));
+        p.Children.Add(SliderRow(L.T("Skala całości"), 80, 220, S.UiScale * 100, v => S.UiScale = Math.Round(v) / 100, v => $"{v:0}%"));
+        p.Children.Add(SliderRow(L.T("Szerokość tablicy"), 40, 100, S.WidthPercent, v => S.WidthPercent = v, v => $"{v:0}%"));
+        p.Children.Add(SliderRow(L.T("Wysokość tygodnia"), 10, 40, S.WeekHeightPercent, v => S.WeekHeightPercent = v, v => L.F("{0:0}% ekranu", v)));
+        p.Children.Add(SliderRow(L.T("Położenie w pionie"), 0, 100, S.VerticalPercent, v => S.VerticalPercent = v, v => $"{v:0}%"));
+        p.Children.Add(SliderRow(L.T("Rozmiar tekstu zadań"), 10, 17, S.FontSize, v => S.FontSize = Math.Round(v * 2) / 2, v => $"{Math.Round(v * 2) / 2:0.0}"));
         return p;
     }
 
     FrameworkElement BuildBoard()
     {
         var p = new StackPanel();
-        p.Children.Add(Check("Pokazuj weekendy", S.ShowWeekends, v => S.ShowWeekends = v));
-        p.Children.Add(Check("Przycisk widoku roku (365 dni)", S.ShowYearButton, v => S.ShowYearButton = v));
-        p.Children.Add(Check("Automatycznie przenoś niezrobione zadania z minionych dni na dziś", S.AutoRollover, v => S.AutoRollover = v));
+        p.Children.Add(Check(L.T("Pokazuj weekendy"), S.ShowWeekends, v => S.ShowWeekends = v));
+        p.Children.Add(Check(L.T("Przycisk widoku roku (365 dni)"), S.ShowYearButton, v => S.ShowYearButton = v));
+        p.Children.Add(Check(L.T("Automatycznie przenoś niezrobione zadania z minionych dni na dziś"), S.AutoRollover, v => S.AutoRollover = v));
         var mode = new ComboBox { Width = 320, HorizontalAlignment = HorizontalAlignment.Left };
-        mode.Items.Add(new ComboBoxItem { Content = "Wysuwany po kliknięciu (na szerokość weekendu)", Tag = "drawer" });
-        mode.Items.Add(new ComboBoxItem { Content = "Przypięty z prawej strony", Tag = "pinned" });
+        mode.Items.Add(new ComboBoxItem { Content = L.T("Wysuwany po kliknięciu (na szerokość weekendu)"), Tag = "drawer" });
+        mode.Items.Add(new ComboBoxItem { Content = L.T("Przypięty z prawej strony"), Tag = "pinned" });
         mode.SelectedIndex = S.BacklogMode == "pinned" ? 1 : 0;
         mode.SelectionChanged += (_, _) => { if (mode.SelectedItem is ComboBoxItem it) { S.BacklogMode = (string)it.Tag; App.Instance.ApplySettings(); } };
-        p.Children.Add(Pair("Backlog i archiwum", mode));
-        p.Children.Add(SliderRow("Szerokość (przypięty)", 220, 560, S.BacklogWidth, v => S.BacklogWidth = v, v => $"{v:0} px"));
+        p.Children.Add(Pair(L.T("Backlog i archiwum"), mode));
+        p.Children.Add(SliderRow(L.T("Szerokość (przypięty)"), 220, 560, S.BacklogWidth, v => S.BacklogWidth = v, v => $"{v:0} px"));
         return p;
     }
 
     FrameworkElement BuildLook()
     {
         var p = new StackPanel();
-        p.Children.Add(Check("Matowe szkło (rozmyta tapeta pod tablicą)", S.Blur, v => S.Blur = v));
-        p.Children.Add(Check("Animacje", S.Animations, v => S.Animations = v));
-        p.Children.Add(SliderRow("Rozmycie", 0, 100, S.BlurStrength, v => S.BlurStrength = v, v => $"{v:0}"));
-        p.Children.Add(SliderRow("Przyciemnienie", 0, 95, S.TintOpacity * 100, v => S.TintOpacity = v / 100, v => $"{v:0}%"));
-        var refresh = Btn("Odśwież tapetę", "SecondaryButton", (_, _) => App.Instance.RefreshWallpaper());
+        p.Children.Add(Check(L.T("Matowe szkło (rozmyta tapeta pod tablicą)"), S.Blur, v => S.Blur = v));
+        p.Children.Add(Check(L.T("Animacje"), S.Animations, v => S.Animations = v));
+        p.Children.Add(SliderRow(L.T("Rozmycie"), 0, 100, S.BlurStrength, v => S.BlurStrength = v, v => $"{v:0}"));
+        p.Children.Add(SliderRow(L.T("Przyciemnienie"), 0, 95, S.TintOpacity * 100, v => S.TintOpacity = v / 100, v => $"{v:0}%"));
+        var refresh = Btn(L.T("Odśwież tapetę"), "SecondaryButton", (_, _) => App.Instance.RefreshWallpaper());
         refresh.HorizontalAlignment = HorizontalAlignment.Left;
         refresh.Margin = new Thickness(0, 4, 0, 8);
-        refresh.ToolTip = "Wczytaj tapetę ponownie, np. po zmianie przez pokaz slajdów albo Windows Spotlight";
+        refresh.ToolTip = L.T("Wczytaj tapetę ponownie, np. po zmianie przez pokaz slajdów albo Windows Spotlight");
         p.Children.Add(refresh);
 
         var swatches = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
@@ -606,7 +606,7 @@ public sealed class SettingsWindow : DarkWindow
             Width = 26, Height = 26, CornerRadius = new CornerRadius(13), Margin = new Thickness(0, 0, 10, 0), Cursor = Cursors.Hand,
             BorderBrush = Brushes.White, BorderThickness = new Thickness(S.Accent == "auto" ? 2 : 0),
             Background = new LinearGradientBrush(Color.FromRgb(0xF2, 0xA6, 0x5A), Color.FromRgb(0x5B, 0x8C, 0xFF), 45),
-            ToolTip = "Automatycznie z tapety",
+            ToolTip = L.T("Automatycznie z tapety"),
             Child = new TextBlock { Text = "A", FontWeight = FontWeights.Bold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
         };
         auto.MouseLeftButtonUp += (_, _) => { S.Accent = "auto"; Mark(auto); App.Instance.ApplySettings(); };
@@ -622,7 +622,7 @@ public sealed class SettingsWindow : DarkWindow
             sw.MouseLeftButtonUp += (_, _) => { S.Accent = hex; Mark(sw); App.Instance.ApplySettings(); };
             swatches.Children.Add(sw);
         }
-        p.Children.Add(Pair("Kolor akcentu", swatches));
+        p.Children.Add(Pair(L.T("Kolor akcentu"), swatches));
         return p;
     }
 
@@ -634,7 +634,7 @@ public sealed class SettingsWindow : DarkWindow
         lang.Items.Add(new ComboBoxItem { Content = "Polski", Tag = "pl" });
         lang.Items.Add(new ComboBoxItem { Content = "English", Tag = "en" });
         lang.SelectedIndex = S.Language == "en" ? 1 : 0;
-        var restart = Btn("Uruchom ponownie", "SecondaryButton", (_, _) => App.Instance.Restart());
+        var restart = Btn(L.T("Uruchom ponownie"), "SecondaryButton", (_, _) => App.Instance.Restart());
         restart.Visibility = Visibility.Collapsed;
         lang.SelectionChanged += (_, _) =>
         {
@@ -647,21 +647,21 @@ public sealed class SettingsWindow : DarkWindow
         langRow.Children.Add(lang);
         langRow.Children.Add(restart);
         p.Children.Add(Pair("Język / Language", langRow));
-        p.Children.Add(Check("Uruchamiaj razem z Windows", S.StartWithWindows, v => S.StartWithWindows = v));
-        p.Children.Add(Check("Pokazuj zegar z kalendarzem", S.ShowClock, v => S.ShowClock = v));
-        p.Children.Add(Check("Zegar 24-godzinny", S.Use24h, v => S.Use24h = v));
-        p.Children.Add(Check("Dźwięk alarmów", S.AlarmSound, v => S.AlarmSound = v));
-        p.Children.Add(Check("Otwieraj linki w aplikacji Notion (zamiast w przeglądarce)", S.OpenNotionInApp, v => S.OpenNotionInApp = v));
+        p.Children.Add(Check(L.T("Uruchamiaj razem z Windows"), S.StartWithWindows, v => S.StartWithWindows = v));
+        p.Children.Add(Check(L.T("Pokazuj zegar z kalendarzem"), S.ShowClock, v => S.ShowClock = v));
+        p.Children.Add(Check(L.T("Zegar 24-godzinny"), S.Use24h, v => S.Use24h = v));
+        p.Children.Add(Check(L.T("Dźwięk alarmów"), S.AlarmSound, v => S.AlarmSound = v));
+        p.Children.Add(Check(L.T("Otwieraj linki w aplikacji Notion (zamiast w przeglądarce)"), S.OpenNotionInApp, v => S.OpenNotionInApp = v));
         var hot = new ComboBox { Width = 320, HorizontalAlignment = HorizontalAlignment.Left };
-        foreach (var (key, label) in new[] { ("Ctrl+Shift+Space", "Ctrl + Shift + Spacja"), ("Ctrl+Alt+D", "Ctrl + Alt + D"), ("Ctrl+Alt+T", "Ctrl + Alt + T"), ("Win+Shift+D", "Win + Shift + D"), ("", "Wyłączony") })
+        foreach (var (key, label) in new[] { ("Ctrl+Shift+Space", L.T("Ctrl + Shift + Spacja")), ("Ctrl+Alt+D", "Ctrl + Alt + D"), ("Ctrl+Alt+T", "Ctrl + Alt + T"), ("Win+Shift+D", "Win + Shift + D"), ("", L.T("Wyłączony")) })
             hot.Items.Add(new ComboBoxItem { Content = label, Tag = key });
         hot.SelectedItem = hot.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == S.Hotkey) ?? hot.Items[0];
-        var warn = Label("Ten skrót jest zajęty przez inny program – wybierz inny.", 11.5, "FgDim");
+        var warn = Label(L.T("Ten skrót jest zajęty przez inny program – wybierz inny."), 11.5, "FgDim");
         warn.Foreground = new SolidColorBrush(Color.FromRgb(0xF2, 0xA6, 0x5A));
         void UpdateWarn() => warn.Visibility = App.Instance.HotkeyTaken ? Visibility.Visible : Visibility.Collapsed;
         hot.SelectionChanged += (_, _) => { if (hot.SelectedItem is ComboBoxItem it) { S.Hotkey = (string)it.Tag; App.Instance.ApplySettings(); UpdateWarn(); } };
         UpdateWarn();
-        p.Children.Add(Pair("Skrót: tablica na wierzch + nowe zadanie na dziś (Esc chowa)", hot));
+        p.Children.Add(Pair(L.T("Skrót: tablica na wierzch + nowe zadanie na dziś (Esc chowa)"), hot));
         p.Children.Add(warn);
         return p;
     }
@@ -671,16 +671,16 @@ public sealed class SettingsWindow : DarkWindow
         var p = new StackPanel();
         var installed = Installer.IsInstalled;
         p.Children.Add(Label(installed
-            ? $"DeskWall jest zainstalowany w {Installer.InstallDir}. Odinstalujesz go stąd albo w Ustawieniach Windows → Aplikacje."
-            : "Ta kopia nie jest zainstalowana. Instalacja kopiuje program do folderu użytkownika, dodaje skrót w menu Start i wpis w „Aplikacje i funkcje” (bez uprawnień administratora).", 11.5, "FgDim"));
+            ? L.F("DeskWall jest zainstalowany w {0}. Odinstalujesz go stąd albo w Ustawieniach Windows → Aplikacje.", Installer.InstallDir)
+            : L.T("Ta kopia nie jest zainstalowana. Instalacja kopiuje program do folderu użytkownika, dodaje skrót w menu Start i wpis w „Aplikacje i funkcje” (bez uprawnień administratora)."), 11.5, "FgDim"));
         var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
         var btn = installed
-            ? Btn("Odinstaluj…", "SecondaryButton", (_, _) => Installer.Uninstall(this))
-            : Btn("Zainstaluj w systemie", "PrimaryButton", (_, _) => Installer.InstallFromRunningCopy(this));
+            ? Btn(L.T("Odinstaluj…"), "SecondaryButton", (_, _) => Installer.Uninstall(this))
+            : Btn(L.T("Zainstaluj w systemie"), "PrimaryButton", (_, _) => Installer.InstallFromRunningCopy(this));
         btn.Margin = new Thickness(0);
         row.Children.Add(btn);
         p.Children.Add(row);
-        var ver = Label($"Wersja {Installer.Version}  ·  dane zostają w folderach kont, ustawienia w %APPDATA%\\DeskWall", 11, "FgFaint");
+        var ver = Label(L.F("Wersja {0}  ·  dane zostają w folderach kont, ustawienia w %APPDATA%\\DeskWall", Installer.Version), 11, "FgFaint");
         ver.Margin = new Thickness(0, 10, 0, 0);
         p.Children.Add(ver);
         return p;

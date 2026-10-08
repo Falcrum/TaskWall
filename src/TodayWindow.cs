@@ -68,11 +68,11 @@ public sealed class TodayWindow : Window
 
         // header: DZIŚ · śr 8 paź            [PRACA]  [TABLICA]
         var head = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
-        var account = new Button { Style = (Style)Application.Current.Resources["BarButton"], Content = App.AccountName(App.Settings.Layer).ToUpper(BoardWindow.Pl), ToolTip = "Przełącz konto" };
+        var account = new Button { Style = (Style)Application.Current.Resources["BarButton"], Content = L.Up(App.AccountName(App.Settings.Layer)), ToolTip = L.T("Przełącz konto") };
         account.Click += (_, _) => { App.Instance.SwitchLayer(App.Settings.Layer == "private" ? "work" : "private"); Fill(); };
-        var board = new Button { Style = (Style)Application.Current.Resources["BarButton"], Content = "TABLICA", ToolTip = "Pokaż tablicę na wierzchu" };
+        var board = new Button { Style = (Style)Application.Current.Resources["BarButton"], Content = L.T("TABLICA"), ToolTip = L.T("Pokaż tablicę na wierzchu") };
         board.Click += (_, _) => { Close(); App.Instance.SetBoardHidden(false); GlassWindow.Peek(true); App.Board?.Activate(); };
-        var alarm = new Button { Style = (Style)Application.Current.Resources["BarButton"], Content = "+ ALARM", ToolTip = "Nowy alarm o konkretnej godzinie" };
+        var alarm = new Button { Style = (Style)Application.Current.Resources["BarButton"], Content = "+ ALARM", ToolTip = L.T("Nowy alarm o konkretnej godzinie") };
         alarm.Click += (_, _) => { Close(); AlarmWindow.Edit(Store); };
         DockPanel.SetDock(board, Dock.Right);
         DockPanel.SetDock(account, Dock.Right);
@@ -81,7 +81,7 @@ public sealed class TodayWindow : Window
         head.Children.Add(account);
         head.Children.Add(alarm);
         var title = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
-        title.Inlines.Add(new Run("DZIŚ") { FontWeight = FontWeights.Bold, FontSize = 14 });
+        title.Inlines.Add(new Run(L.T("DZIŚ")) { FontWeight = FontWeights.Bold, FontSize = 14 });
         title.Inlines.Add(new Run("   " + today.ToString("ddd, d MMM", BoardWindow.Pl)) { Foreground = Ui.Res("FgDim"), FontSize = 12 });
         head.Children.Add(title);
         _body.Children.Add(head);
@@ -93,10 +93,10 @@ public sealed class TodayWindow : Window
         {
             var col = a.IsMeeting ? violet : amber;
             bool over = (a.IsMeeting ? a.EndAt(today) : a.At(today)) <= DateTime.Now;
-            var t = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 1, 0, 1), Cursor = Cursors.Hand, Opacity = over ? 0.45 : 1, ToolTip = "Kliknij, żeby zmienić" };
+            var t = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 1, 0, 1), Cursor = Cursors.Hand, Opacity = over ? 0.45 : 1, ToolTip = L.T("Kliknij, żeby zmienić") };
             t.Inlines.Add(new Run(a.IsMeeting ? "  " : "  ") { FontFamily = Ui.Font("IconFont"), FontSize = 10, Foreground = col });
             t.Inlines.Add(new Run((a.IsMeeting ? $"{a.Time}–{a.EndAt(today):HH:mm}" : a.Time) + "  ") { FontWeight = FontWeights.SemiBold, Foreground = col });
-            t.Inlines.Add(new Run(a.Text.Length > 0 ? a.Text : a.IsMeeting ? "Spotkanie" : "Alarm"));
+            t.Inlines.Add(new Run(a.Text.Length > 0 ? a.Text : a.IsMeeting ? L.T("Spotkanie") : "Alarm"));
             var alarmRef = a;
             t.MouseLeftButtonUp += (_, _) => { Close(); AlarmWindow.Edit(Store, alarmRef, today); };
             _body.Children.Add(t);
@@ -114,7 +114,7 @@ public sealed class TodayWindow : Window
         // tasks (scrolls when there are many)
         var tasks = Store.Data.Tasks.Where(t => t.Day == key && !t.Archived).Concat(Store.VirtualTasks(today)).OrderBy(t => t.Order).ToList();
         if (tasks.Count == 0)
-            _body.Children.Add(new TextBlock { Text = "Na dziś nic nie ma.", Foreground = Ui.Res("FgFaint"), Margin = new Thickness(0, 4, 0, 4) });
+            _body.Children.Add(new TextBlock { Text = L.T("Na dziś nic nie ma."), Foreground = Ui.Res("FgFaint"), Margin = new Thickness(0, 4, 0, 4) });
         var list = new StackPanel();
         _body.Children.Add(new ScrollViewer { Content = list, MaxHeight = 420, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
         foreach (var t in tasks)
@@ -152,7 +152,7 @@ public sealed class TodayWindow : Window
         var overdue = Store.Data.Tasks.Count(t => !t.Done && !t.Archived && t.Day != null && string.CompareOrdinal(t.Day, key) < 0);
         if (overdue > 0)
         {
-            var roll = new Button { Style = (Style)Application.Current.Resources["BarButton"], Content = $"⟲ ZALEGŁE: {overdue} → DZIŚ", HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(-8, 4, 0, 0) };
+            var roll = new Button { Style = (Style)Application.Current.Resources["BarButton"], Content = L.F("⟲ ZALEGŁE: {0} → DZIŚ", overdue), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(-8, 4, 0, 0) };
             roll.Foreground = new SolidColorBrush(Color.FromRgb(0xF2, 0xA6, 0x5A));
             roll.Click += (_, _) => { App.Board?.RollOverdue(); Fill(); };
             _body.Children.Add(roll);
@@ -161,7 +161,7 @@ public sealed class TodayWindow : Window
         // quick add (same smart parsing as on the board: "jutro …", "2h", "#art")
         var grid = new Grid { Margin = new Thickness(0, 10, 0, 0) };
         var box = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Padding = new Thickness(8, 5, 8, 5) };
-        var hint = new TextBlock { Text = "dodaj na dziś…  (jutro, 2h, #art)", Foreground = Ui.Res("FgFaint"), Margin = new Thickness(11, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
+        var hint = new TextBlock { Text = L.T("dodaj na dziś…  (jutro, 2h, #art)"), Foreground = Ui.Res("FgFaint"), Margin = new Thickness(11, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
         var preview = new TextBlock { FontSize = 11, Foreground = Ui.Res("AccentBrush"), Margin = new Thickness(2, 4, 0, 0) };
         box.TextChanged += (_, _) =>
         {

@@ -22,7 +22,10 @@ public partial class App : Application
     public static BoardStore StoreFor(string layer) => Instance.OpenLayer(layer);
     static readonly System.Collections.Generic.Dictionary<string, BoardStore> Stores = new();
     public static string LayerName(string layer) => AccountName(layer);
-    public static string AccountName(string layer) => Settings.AccountFor(layer).Name is { Length: > 0 } n ? n : layer == "private" ? "Prywatne" : "Praca";
+    /// <summary>The account's own name; the default names ("Praca" / "Prywatne") follow the UI language.</summary>
+    public static string AccountName(string layer) => Settings.AccountFor(layer).Name is { Length: > 0 } n
+        ? (n is "Praca" or "Prywatne" ? L.T(n) : n)
+        : L.T(layer == "private" ? "Prywatne" : "Praca");
     public static BoardWindow? Board { get; private set; }
 
     const int HotkeyId = 0xD35;
@@ -71,14 +74,14 @@ public partial class App : Application
             Log.Error("unhandled", a.Exception);
             if (_started) { a.Handled = true; return; }
             a.Handled = true;
-            MessageBox.Show("DeskWall nie mógł się uruchomić:\n" + a.Exception.Message + "\n\nSzczegóły: %APPDATA%\\DeskWall\\error.log", "DeskWall", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(L.T("DeskWall nie mógł się uruchomić:") + "\n" + a.Exception.Message + "\n\n" + L.T("Szczegóły:") + " %APPDATA%\\DeskWall\\error.log", "DeskWall", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown();
         };
         try { Start(); _started = true; }
         catch (Exception ex)
         {
             Log.Error("startup", ex);
-            MessageBox.Show("DeskWall nie mógł się uruchomić:\n" + ex.Message + "\n\nSzczegóły: %APPDATA%\\DeskWall\\error.log", "DeskWall", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(L.T("DeskWall nie mógł się uruchomić:") + "\n" + ex.Message + "\n\n" + L.T("Szczegóły:") + " %APPDATA%\\DeskWall\\error.log", "DeskWall", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown();
         }
     }
@@ -180,7 +183,7 @@ public partial class App : Application
                 ScheduleTrim();
             };
             frame.BeginAnimation(UIElement.OpacityProperty, fade);
-            _tray?.Balloon("DeskWall", "Tablica ukryta. Pokażesz ją z menu ikony w zasobniku albo skrótem " + Settings.Hotkey + ".");
+            _tray?.Balloon("DeskWall", L.F("Tablica ukryta. Pokażesz ją z menu ikony w zasobniku albo skrótem {0}.", Settings.Hotkey));
         }
         else
         {
@@ -241,7 +244,7 @@ public partial class App : Application
             s.Open(fallback);
             _pendingFolders[layer] = folder; // keep trying; once reachable, the fallback data is merged into it
             _folderRetry.Start();
-            Dispatcher.BeginInvoke(() => _tray?.Balloon("DeskWall", $"Folder „{LayerName(layer)}” jest niedostępny ({folder}). Zapisuję lokalnie i przeniosę dane, gdy się pojawi."));
+            Dispatcher.BeginInvoke(() => _tray?.Balloon("DeskWall", L.F("Folder „{0}” jest niedostępny ({1}). Zapisuję lokalnie i przeniosę dane, gdy się pojawi.", LayerName(layer), folder)));
         }
         s.ExternalChange += () => { if (ReferenceEquals(s, Store)) Board?.OnExternalChange(); };
         Stores[layer] = s;
@@ -508,8 +511,8 @@ public partial class App : Application
         {
             var dlg = new OpenFileDialog
             {
-                Title = "Wybierz eksport z Notion",
-                Filter = "Eksport Notion (*.csv;*.zip)|*.csv;*.zip|Wszystkie pliki|*.*",
+                Title = L.T("Wybierz eksport z Notion"),
+                Filter = L.T("Eksport Notion (*.csv;*.zip)|*.csv;*.zip|Wszystkie pliki|*.*"),
                 InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + "\\Downloads",
             };
             if (dlg.ShowDialog() != true) return;
@@ -521,12 +524,12 @@ public partial class App : Application
         catch (Exception ex)
         {
             Log.Error("notion import load", ex);
-            MessageBox.Show("Nie udało się wczytać pliku:\n" + ex.Message, "DeskWall", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(L.T("Nie udało się wczytać pliku:") + "\n" + ex.Message, "DeskWall", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         if (export.Table.Rows.Count == 0)
         {
-            MessageBox.Show("Plik nie zawiera żadnych wierszy.", "DeskWall");
+            MessageBox.Show(L.T("Plik nie zawiera żadnych wierszy."), "DeskWall");
             return;
         }
 
@@ -537,7 +540,7 @@ public partial class App : Application
             if (win.ShowDialog() == true)
             {
                 Board?.RevealBacklog();
-                _tray?.Balloon("DeskWall", $"Zaimportowano: {win.Imported}, zaktualizowano: {win.Updated}");
+                _tray?.Balloon("DeskWall", L.F("Zaimportowano: {0}, zaktualizowano: {1}", win.Imported, win.Updated));
             }
         }
         finally { _importOpen = false; ScheduleTrim(); }
@@ -568,7 +571,7 @@ public partial class App : Application
             var menu = new ContextMenu();
             void Add(string header, Action a)
             {
-                var mi = new MenuItem { Header = header };
+                var mi = new MenuItem { Header = L.T(header) };
                 mi.Click += (_, _) => a();
                 menu.Items.Add(mi);
             }
@@ -580,7 +583,7 @@ public partial class App : Application
                 Add("Synchronizuj Notion teraz", async () =>
                 {
                     var r = await NotionSync.Run(Settings.Layer);
-                    _tray?.Balloon("DeskWall – Notion", r.Error ?? $"Nowe: {r.Added}, zmienione: {r.Updated} (stron: {r.Total})");
+                    _tray?.Balloon("DeskWall – Notion", r.Error ?? L.F("Nowe: {0}, zmienione: {1} (stron: {2})", r.Added, r.Updated, r.Total));
                 });
             Add("Importuj z Notion (CSV/ZIP)…", () => ImportNotion());
             Add(Settings.Layer == "private" ? "Przełącz na: Praca" : "Przełącz na: Prywatne", () => SwitchLayer(Settings.Layer == "private" ? "work" : "private"));

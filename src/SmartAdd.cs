@@ -8,6 +8,7 @@ namespace DeskWall;
 
 /// <summary>
 /// "jutro Review enviro #art 2h" → day = tomorrow, text = "[ART] Review enviro", estimate = 2 h.
+/// English works too, whatever the UI language: "tomorrow", "on fri", "in 3 days", "next week", "2 hours", "30 mins".
 /// Date words are only taken from the start or the end of the text (so "pt" in the middle of a sentence stays text);
 /// hours (2h, 1,5h, 30 min, 1h30) and #categories are taken from anywhere.
 /// </summary>
@@ -27,9 +28,17 @@ static class SmartAdd
         ["pt"] = DayOfWeek.Friday, ["piątek"] = DayOfWeek.Friday, ["piatek"] = DayOfWeek.Friday,
         ["sob"] = DayOfWeek.Saturday, ["sobota"] = DayOfWeek.Saturday, ["sobotę"] = DayOfWeek.Saturday,
         ["nd"] = DayOfWeek.Sunday, ["niedz"] = DayOfWeek.Sunday, ["niedziela"] = DayOfWeek.Sunday, ["niedzielę"] = DayOfWeek.Sunday,
+        // English (both languages are always understood)
+        ["mon"] = DayOfWeek.Monday, ["monday"] = DayOfWeek.Monday,
+        ["tue"] = DayOfWeek.Tuesday, ["tues"] = DayOfWeek.Tuesday, ["tuesday"] = DayOfWeek.Tuesday,
+        ["wed"] = DayOfWeek.Wednesday, ["wednesday"] = DayOfWeek.Wednesday,
+        ["thu"] = DayOfWeek.Thursday, ["thur"] = DayOfWeek.Thursday, ["thurs"] = DayOfWeek.Thursday, ["thursday"] = DayOfWeek.Thursday,
+        ["fri"] = DayOfWeek.Friday, ["friday"] = DayOfWeek.Friday,
+        ["sat"] = DayOfWeek.Saturday, ["saturday"] = DayOfWeek.Saturday,
+        ["sun"] = DayOfWeek.Sunday, ["sunday"] = DayOfWeek.Sunday,
     };
 
-    static readonly Regex Hours = new(@"(?<![\w#])(?:(\d+)\s*h\s*(\d{1,2})\s*(?:m|min)?|(\d+(?:[.,]\d+)?)\s*(?:h|godz\.?|godziny|godzin)|(\d+)\s*(?:min|minut))(?!\w)", RegexOptions.IgnoreCase);
+    static readonly Regex Hours = new(@"(?<![\w#])(?:(\d+)\s*h\s*(\d{1,2})\s*(?:m|min|mins)?|(\d+(?:[.,]\d+)?)\s*(?:h|hr|hrs|hour|hours|godz\.?|godziny|godzin)|(\d+)\s*(?:min|mins|minut|minute|minutes))(?!\w)", RegexOptions.IgnoreCase);
     static readonly Regex Hash = new(@"(?<!\w)#([\p{L}\p{N}_\-]{1,24})", RegexOptions.IgnoreCase);
     static readonly Regex DateNum = new(@"^(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?$");
 
@@ -103,29 +112,44 @@ static class SmartAdd
         var first = W(0);
         switch (first)
         {
-            case "dziś": case "dzis": case "dzisiaj": day = now; return 1;
-            case "jutro": day = now.AddDays(1); return 1;
+            case "dziś": case "dzis": case "dzisiaj": case "today": day = now; return 1;
+            case "jutro": case "tomorrow": case "tmrw": day = now.AddDays(1); return 1;
             case "pojutrze": day = now.AddDays(2); return 1;
+        }
+        // "day after tomorrow"
+        if (w.Count >= 3 && (atEnd ? W(2) == "day" && W(1) == "after" && first == "tomorrow" : first == "day" && W(1) == "after" && W(2) == "tomorrow"))
+        {
+            day = now.AddDays(2);
+            return 3;
+        }
+        // "next week" = Monday of next week
+        if (w.Count >= 2 && (atEnd ? W(1) == "next" && first == "week" : first == "next" && W(1) == "week"))
+        {
+            day = now.AddDays(7 - ((int)now.DayOfWeek + 6) % 7);
+            return 2;
         }
         if (Weekdays.TryGetValue(first, out var dow))
         {
             int delta = ((int)dow - (int)now.DayOfWeek + 7) % 7;
             day = now.AddDays(delta);
-            return 1;
+            // "… on fri" at the end takes the "on" too
+            return atEnd && w.Count >= 2 && W(1) == "on" ? 2 : 1;
         }
-        if (w.Count >= 2 && (first is "w" or "we" or "na") && Weekdays.TryGetValue(W(1), out var dow2) && !atEnd)
+        if (w.Count >= 2 && (first is "w" or "we" or "na" or "on") && Weekdays.TryGetValue(W(1), out var dow2) && !atEnd)
         {
             day = now.AddDays(((int)dow2 - (int)now.DayOfWeek + 7) % 7);
             return 2;
         }
-        // "za 3 dni", "za tydzień" (reading order, so only at the start)
-        if (!atEnd && first == "za" && w.Count >= 2)
+        // "za 3 dni", "za tydzień", "in 3 days", "in a week" (reading order, so only at the start)
+        if (!atEnd && first is "za" or "in" && w.Count >= 2)
         {
-            if (W(1) is "tydzień" or "tydzien") { day = now.AddDays(7); return 2; }
-            if (w.Count >= 3 && int.TryParse(W(1), out var n) && W(2) is "dni" or "dzień" or "dzien") { day = now.AddDays(n); return 3; }
+            if (W(1) is "tydzień" or "tydzien" or "week") { day = now.AddDays(7); return 2; }
+            if (w.Count >= 3 && W(1) is "a" or "1" && W(2) == "week") { day = now.AddDays(7); return 3; }
+            if (w.Count >= 3 && int.TryParse(W(1), out var n) && W(2) is "dni" or "dzień" or "dzien" or "days" or "day") { day = now.AddDays(n); return 3; }
         }
-        if (atEnd && w.Count >= 3 && W(2) == "za" && int.TryParse(W(1), out var n2) && first is "dni" or "dzień" or "dzien") { day = now.AddDays(n2); return 3; }
-        if (atEnd && w.Count >= 2 && W(1) == "za" && first is "tydzień" or "tydzien") { day = now.AddDays(7); return 2; }
+        if (atEnd && w.Count >= 3 && W(2) is "za" or "in" && int.TryParse(W(1), out var n2) && first is "dni" or "dzień" or "dzien" or "days" or "day") { day = now.AddDays(n2); return 3; }
+        if (atEnd && w.Count >= 3 && W(2) == "in" && W(1) is "a" or "1" && first == "week") { day = now.AddDays(7); return 3; }
+        if (atEnd && w.Count >= 2 && W(1) is "za" or "in" && first is "tydzień" or "tydzien" or "week") { day = now.AddDays(7); return 2; }
         // 12.10 / 12.10.2026
         var dm = DateNum.Match(first);
         if (dm.Success)
@@ -149,7 +173,7 @@ static class SmartAdd
         var parts = new List<string>();
         if (r.Day is { } d)
         {
-            var rel = d == DateTime.Today ? "dziś" : d == DateTime.Today.AddDays(1) ? "jutro" : null;
+            var rel = d == DateTime.Today ? L.T("dziś") : d == DateTime.Today.AddDays(1) ? L.T("jutro") : null;
             parts.Add((rel != null ? rel + ", " : "") + d.ToString("ddd d MMM", BoardWindow.Pl));
         }
         if (r.Estimate is { } h) parts.Add(h.ToString("0.#", BoardWindow.Pl) + "h");

@@ -57,7 +57,7 @@ static class Installer
     /// <summary>"Zainstaluj w systemie" from the settings of a portable copy.</summary>
     public static void InstallFromRunningCopy(Window owner)
     {
-        if (MessageBox.Show(owner, $"Zainstalować DeskWall {Version} w {InstallDir}?\nTa kopia zostanie zamknięta i uruchomi się zainstalowana.", "DeskWall",
+        if (MessageBox.Show(owner, L.F("Zainstalować DeskWall {0} w {1}?\nTa kopia zostanie zamknięta i uruchomi się zainstalowana.", Version, InstallDir), "DeskWall",
                 MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
         try
         {
@@ -70,7 +70,7 @@ static class Installer
 
     static void Install(bool autostart)
     {
-        var source = Environment.ProcessPath ?? throw new InvalidOperationException("Nie znam ścieżki programu.");
+        var source = Environment.ProcessPath ?? throw new InvalidOperationException(L.T("Nie znam ścieżki programu."));
         StopOtherInstances();
         Directory.CreateDirectory(InstallDir);
         if (!string.Equals(source, InstalledExe, StringComparison.OrdinalIgnoreCase))
@@ -130,7 +130,7 @@ static class Installer
             if (Directory.Exists(InstallDir))
                 Process.Start(new ProcessStartInfo("cmd.exe", $"/c timeout /t 3 /nobreak >nul & rmdir /s /q \"{InstallDir}\"")
                 { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden });
-            if (!quiet) MessageBox.Show("DeskWall został odinstalowany.", "DeskWall", MessageBoxButton.OK, MessageBoxImage.Information);
+            if (!quiet) MessageBox.Show(L.T("DeskWall został odinstalowany."), "DeskWall", MessageBoxButton.OK, MessageBoxImage.Information);
             if (owner != null) Application.Current.Shutdown();
         }
         catch (Exception ex) { Fail(owner, ex); }
@@ -166,27 +166,27 @@ static class Installer
 
         public UninstallWindow()
         {
-            Title = "DeskWall – odinstalowanie";
+            Title = L.T("DeskWall – odinstalowanie");
             Width = 560;
             SizeToContent = SizeToContent.Height;
             ResizeMode = ResizeMode.NoResize;
             Topmost = true;
             var p = new StackPanel { Margin = new Thickness(24, 20, 24, 20) };
             Content = p;
-            p.Children.Add(Label("Odinstalować DeskWall?", 18, "Fg", FontWeights.SemiBold));
-            p.Children.Add(Label("Program, skrót w menu Start, autostart i wpis w „Aplikacje i funkcje” zostaną usunięte. Zaznacz, czy usunąć też zapisane dane:", 12, "FgDim"));
+            p.Children.Add(Label(L.T("Odinstalować DeskWall?"), 18, "Fg", FontWeights.SemiBold));
+            p.Children.Add(Label(L.T("Program, skrót w menu Start, autostart i wpis w „Aplikacje i funkcje” zostaną usunięte. Zaznacz, czy usunąć też zapisane dane:"), 12, "FgDim"));
 
-            var settings = new CheckBox { Margin = new Thickness(0, 14, 0, 0), Content = new TextBlock { Text = @"Ustawienia tego komputera (%APPDATA%\DeskWall:wygląd, konta, adresy kalendarzy, token Notion, pamięć podręczna, logi)", TextWrapping = TextWrapping.Wrap } };
+            var settings = new CheckBox { Margin = new Thickness(0, 14, 0, 0), Content = new TextBlock { Text = L.T(@"Ustawienia tego komputera (%APPDATA%\DeskWall:wygląd, konta, adresy kalendarzy, token Notion, pamięć podręczna, logi)"), TextWrapping = TextWrapping.Wrap } };
             p.Children.Add(settings);
 
             var folders = DataFolders().Where(Directory.Exists).ToArray();
             var data = new CheckBox { Margin = new Thickness(0, 10, 0, 0), IsEnabled = folders.Length > 0 };
-            data.Content = new TextBlock { Text = "Wszystkie zapisane zadania, alarmy, oznaczenia i kopie zapasowe", TextWrapping = TextWrapping.Wrap };
+            data.Content = new TextBlock { Text = L.T("Wszystkie zapisane zadania, alarmy, oznaczenia i kopie zapasowe"), TextWrapping = TextWrapping.Wrap };
             p.Children.Add(data);
-            var where = Label(folders.Length > 0 ? "Foldery: " + string.Join("\n", folders) : "Brak folderów z danymi.", 11, "FgFaint");
+            var where = Label(folders.Length > 0 ? L.T("Foldery: ") + string.Join("\n", folders) : L.T("Brak folderów z danymi."), 11, "FgFaint");
             where.Margin = new Thickness(26, 2, 0, 0);
             p.Children.Add(where);
-            var warn = Label("Uwaga: foldery w chmurze (Google Drive / OneDrive) synchronizują usunięcie – dane znikną też na innych komputerach. Tego nie da się cofnąć (poza koszem usługi w chmurze).", 11.5, "Fg");
+            var warn = Label(L.T("Uwaga: foldery w chmurze (Google Drive / OneDrive) synchronizują usunięcie – dane znikną też na innych komputerach. Tego nie da się cofnąć (poza koszem usługi w chmurze)."), 11.5, "Fg");
             warn.Foreground = new SolidColorBrush(Color.FromRgb(0xF2, 0x6D, 0x6D));
             warn.Margin = new Thickness(26, 6, 0, 0);
             warn.Visibility = Visibility.Collapsed;
@@ -195,12 +195,12 @@ static class Installer
             data.Unchecked += (_, _) => warn.Visibility = Visibility.Collapsed;
 
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 18, 0, 0) };
-            buttons.Children.Add(Btn("Anuluj", "SecondaryButton", (_, _) => { DialogResult = false; }));
-            buttons.Children.Add(Btn("Odinstaluj", "PrimaryButton", (_, _) =>
+            buttons.Children.Add(Btn(L.T("Anuluj"), "SecondaryButton", (_, _) => { DialogResult = false; }));
+            buttons.Children.Add(Btn(L.T("Odinstaluj"), "PrimaryButton", (_, _) =>
             {
                 RemoveSettings = settings.IsChecked == true;
                 RemoveData = data.IsChecked == true;
-                if (RemoveData && MessageBox.Show(this, "Na pewno usunąć wszystkie zadania i kopie zapasowe z folderów kont?\nTej operacji nie można cofnąć.", "DeskWall",
+                if (RemoveData && MessageBox.Show(this, L.T("Na pewno usunąć wszystkie zadania i kopie zapasowe z folderów kont?\nTej operacji nie można cofnąć."), "DeskWall",
                         MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
                 DialogResult = true;
             }));
@@ -221,7 +221,7 @@ static class Installer
     static void CreateShortcut(string lnk, string target)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(lnk)!);
-        var type = Type.GetTypeFromProgID("WScript.Shell") ?? throw new InvalidOperationException("Brak WScript.Shell");
+        var type = Type.GetTypeFromProgID("WScript.Shell") ?? throw new InvalidOperationException(L.T("Brak WScript.Shell"));
         dynamic shell = Activator.CreateInstance(type)!;
         try
         {
@@ -229,7 +229,7 @@ static class Installer
             sc.TargetPath = target;
             sc.WorkingDirectory = Path.GetDirectoryName(target);
             sc.IconLocation = target + ",0";
-            sc.Description = "DeskWall – tablica zadań na pulpicie";
+            sc.Description = L.T("DeskWall – tablica zadań na pulpicie");
             sc.Save();
             System.Runtime.InteropServices.Marshal.FinalReleaseComObject(sc);
         }
@@ -239,8 +239,8 @@ static class Installer
     static void Fail(Window? owner, Exception ex)
     {
         Log.Error("installer", ex);
-        if (owner != null) MessageBox.Show(owner, "Nie udało się: " + ex.Message, "DeskWall", MessageBoxButton.OK, MessageBoxImage.Warning);
-        else MessageBox.Show("Nie udało się: " + ex.Message, "DeskWall", MessageBoxButton.OK, MessageBoxImage.Warning);
+        if (owner != null) MessageBox.Show(owner, L.T("Nie udało się: ") + ex.Message, "DeskWall", MessageBoxButton.OK, MessageBoxImage.Warning);
+        else MessageBox.Show(L.T("Nie udało się: ") + ex.Message, "DeskWall", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     /// <summary>The small dark setup dialog shown by DeskWall-Setup.exe.</summary>
@@ -248,23 +248,23 @@ static class Installer
     {
         public SetupWindow()
         {
-            Title = "DeskWall – instalacja";
+            Title = L.T("DeskWall – instalacja");
             Width = 520;
             SizeToContent = SizeToContent.Height;
             ResizeMode = ResizeMode.NoResize;
             var p = new StackPanel { Margin = new Thickness(24, 20, 24, 20) };
             Content = p;
             p.Children.Add(Label($"DeskWall {Version}", 20, "Fg", FontWeights.SemiBold));
-            p.Children.Add(Label("Tablica zadań na pulpicie: tydzień, miesiąc i rok, backlog z Notion, kalendarz Google, synchronizacja przez chmurę.", 12, "FgDim"));
-            var where = Label($"Zostanie zainstalowany w {InstallDir} (tylko dla Ciebie, bez uprawnień administratora), ze skrótem w menu Start i wpisem w „Aplikacje i funkcje”." +
-                              (IsInstalled ? "\nWykryto wcześniejszą instalację – zostanie zaktualizowana, ustawienia i dane zostają." : ""), 11.5, "FgFaint");
+            p.Children.Add(Label(L.T("Tablica zadań na pulpicie: tydzień, miesiąc i rok, backlog z Notion, kalendarz Google, synchronizacja przez chmurę."), 12, "FgDim"));
+            var where = Label(L.F("Zostanie zainstalowany w {0} (tylko dla Ciebie, bez uprawnień administratora), ze skrótem w menu Start i wpisem w „Aplikacje i funkcje”.", InstallDir) +
+                              (IsInstalled ? L.T("\nWykryto wcześniejszą instalację – zostanie zaktualizowana, ustawienia i dane zostają.") : ""), 11.5, "FgFaint");
             where.Margin = new Thickness(0, 12, 0, 12);
             p.Children.Add(where);
-            var autostart = new CheckBox { Content = "Uruchamiaj razem z Windows", IsChecked = true, Margin = new Thickness(0, 0, 0, 16) };
+            var autostart = new CheckBox { Content = L.T("Uruchamiaj razem z Windows"), IsChecked = true, Margin = new Thickness(0, 0, 0, 16) };
             p.Children.Add(autostart);
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-            buttons.Children.Add(Btn("Anuluj", "SecondaryButton", (_, _) => Close()));
-            buttons.Children.Add(Btn(IsInstalled ? "Aktualizuj" : "Zainstaluj", "PrimaryButton", (_, _) =>
+            buttons.Children.Add(Btn(L.T("Anuluj"), "SecondaryButton", (_, _) => Close()));
+            buttons.Children.Add(Btn(IsInstalled ? L.T("Aktualizuj") : L.T("Zainstaluj"), "PrimaryButton", (_, _) =>
             {
                 try
                 {

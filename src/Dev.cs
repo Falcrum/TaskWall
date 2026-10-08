@@ -207,6 +207,12 @@ static class Dev
             Check("smart add: za 3 dni + 30 min", sd.Day == wed.AddDays(3) && sd.Estimate == 0.5 && sd.Text == "oddać raport");
             var se = SmartAdd.Parse("jutro", cats, wed);
             Check("smart add: a lone date word stays a task", se.Day == null && se.Text == "jutro");
+            var sf = SmartAdd.Parse("Review enviro on fri 2 hours #art", cats, wed);
+            Check("smart add (en): on fri + 2 hours + #art", sf.Day == new DateTime(2026, 10, 9) && sf.Estimate == 2 && sf.Text == "[ART] Review enviro");
+            var sg = SmartAdd.Parse("in 3 days send report 30 mins", cats, wed);
+            var sh = SmartAdd.Parse("next week planning", cats, wed);
+            Check("smart add (en): in 3 days + 30 mins / next week = Monday", sg.Day == wed.AddDays(3) && sg.Estimate == 0.5 && sg.Text == "send report"
+                && sh.Day == new DateTime(2026, 10, 12) && sh.Text == "planning" && SmartAdd.ParseDay("tomorrow", wed) == wed.AddDays(1));
 
             // alarms
             var noon = new DateTime(2026, 10, 7, 12, 0, 30); // Wednesday
@@ -249,6 +255,12 @@ static class Dev
                 && AlarmService.ParseMeeting("Daily o 10", 0.5, out var ms2, out var me2, out var mr2) && ms2 == new TimeSpan(10, 0, 0) && me2 == new TimeSpan(10, 30, 0) && mr2 == "Daily"
                 && AlarmService.ParseMeeting("Review 9:30–10", null, out var ms3, out var me3, out _) && ms3 == new TimeSpan(9, 30, 0) && me3 == new TimeSpan(10, 0, 0)
                 && !AlarmService.ParseMeeting("Sprint planning", null, out _, out _, out _));
+            Check("meeting / alarm (en): from 10 to 11:30 / at 10 + 30 min / in 20 min / at 7 / 7pm / 2 hours",
+                AlarmService.ParseMeeting("Sprint from 10 to 11:30", null, out var es1, out var ee1, out var er1) && es1 == new TimeSpan(10, 0, 0) && ee1 == new TimeSpan(11, 30, 0) && er1 == "Sprint"
+                && AlarmService.ParseMeeting("Daily at 10", 0.5, out var es2, out var ee2, out var er2) && es2 == new TimeSpan(10, 0, 0) && ee2 == new TimeSpan(10, 30, 0) && er2 == "Daily"
+                && AlarmService.ParseTime("in 20 min").Delay == TimeSpan.FromMinutes(20) && AlarmService.ParseTime("in 2 hours").Delay == TimeSpan.FromHours(2)
+                && AlarmService.ParseTime("at 7").Time == new TimeSpan(7, 0, 0) && AlarmService.ParseTime("7pm").Time == new TimeSpan(19, 0, 0)
+                && AlarmService.ParseDuration("45 mins") == TimeSpan.FromMinutes(45) && AlarmService.ParseDuration("2 hours") == TimeSpan.FromHours(2));
             var meet = new Alarm { Kind = "meeting", Day = "2026-10-07", Time = "10:00", End = "11:30", Remind = 10, Armed = noon.AddHours(-5) };
             Check("meeting: reminder 10 min before, 1,5 h counted", AlarmService.Due(meet, new DateTime(2026, 10, 7, 9, 50, 20)) == new DateTime(2026, 10, 7, 9, 50, 0)
                 && meet.Hours == 1.5 && AlarmService.Due(new Alarm { Kind = "meeting", Day = "2026-10-07", Time = "10:00", Armed = noon.AddHours(-5) }, noon) == null);

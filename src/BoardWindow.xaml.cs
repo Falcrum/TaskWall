@@ -174,7 +174,7 @@ public partial class BoardWindow : GlassWindow
     {
         if (!quiet)
         {
-            SyncText.Text = "↻ zsynchronizowano";
+            SyncText.Text = L.T("↻ zsynchronizowano");
             _syncFlash.Stop();
             _syncFlash.Start();
         }
@@ -255,7 +255,7 @@ public partial class BoardWindow : GlassWindow
     {
         var overdue = Overdue().Count;
         OverdueButton.Visibility = overdue > 0 && _view != ViewMode.Year ? Visibility.Visible : Visibility.Collapsed;
-        OverdueButton.Content = $"⟲ ZALEGŁE: {overdue} → DZIŚ";
+        OverdueButton.Content = L.F("⟲ ZALEGŁE: {0} → DZIŚ", overdue);
         OverdueButton.Foreground = B(Color.FromRgb(0xF2, 0xA6, 0x5A));
 
         YearButton.Visibility = S.ShowYearButton ? Visibility.Visible : Visibility.Collapsed;
@@ -283,7 +283,7 @@ public partial class BoardWindow : GlassWindow
                 RangeText.Inlines.Add(new Run(_year.ToString()) { FontWeight = FontWeights.Bold });
                 break;
             case ViewMode.Day:
-                RangeText.Inlines.Add(new Run($"T {WeekNo(_dayDate)}") { FontWeight = FontWeights.Bold });
+                RangeText.Inlines.Add(new Run(L.F("T {0}", WeekNo(_dayDate))) { FontWeight = FontWeights.Bold });
                 RangeText.Inlines.Add(new Run("   |   ") { Foreground = Res("FgFaint") });
                 RangeText.Inlines.Add(new Run(AlarmWindow.DayTitle(_dayDate)) { FontWeight = FontWeights.SemiBold, Foreground = Res("FgDim") });
                 break;
@@ -291,7 +291,7 @@ public partial class BoardWindow : GlassWindow
             {
                 var first = Monday(_monthFirst);
                 var last = first.AddDays(7 * MonthRows() - 1);
-                RangeText.Inlines.Add(new Run($"T {WeekNo(first)}–{WeekNo(last)}") { FontWeight = FontWeights.Bold });
+                RangeText.Inlines.Add(new Run(L.F("T {0}–{1}", WeekNo(first), WeekNo(last))) { FontWeight = FontWeights.Bold });
                 RangeText.Inlines.Add(new Run("   |   ") { Foreground = Res("FgFaint") });
                 RangeText.Inlines.Add(new Run(_monthFirst.ToString("MMMM yyyy", Pl).ToUpper(Pl)) { FontWeight = FontWeights.SemiBold, Foreground = Res("FgDim") });
                 break;
@@ -302,7 +302,7 @@ public partial class BoardWindow : GlassWindow
                 var first = FirstMonday;
                 var last = first.AddDays(7 * WeekCount - 1);
                 var fmt = first.Year == DateTime.Today.Year && last.Year == DateTime.Today.Year ? "d MMM" : "d MMM yyyy";
-                RangeText.Inlines.Add(new Run(WeekCount == 2 ? $"T {WeekNo(first)}–{WeekNo(first.AddDays(7))}" : $"T {WeekNo(first)}") { FontWeight = FontWeights.Bold });
+                RangeText.Inlines.Add(new Run(WeekCount == 2 ? L.F("T {0}–{1}", WeekNo(first), WeekNo(first.AddDays(7))) : L.F("T {0}", WeekNo(first))) { FontWeight = FontWeights.Bold });
                 RangeText.Inlines.Add(new Run("   |   ") { Foreground = Res("FgFaint") });
                 RangeText.Inlines.Add(new Run($"{first.ToString(fmt, Pl)} – {last.ToString(fmt, Pl)}".ToUpper(Pl)) { FontWeight = FontWeights.SemiBold, Foreground = Res("FgDim") });
                 break;
@@ -402,7 +402,7 @@ public partial class BoardWindow : GlassWindow
                 Padding = new Thickness(5, 0, 5, 1),
                 Margin = new Thickness(7, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
-                ToolTip = (markInfo?.Label ?? mark) + (Store.SeriesMark(key) == mark ? "  ·  powtarzane" : ""),
+                ToolTip = (markInfo?.Label ?? mark) + (Store.SeriesMark(key) == mark ? L.T("  ·  powtarzane") : ""),
                 Child = new TextBlock { Text = mark, FontSize = 9.5, FontWeight = FontWeights.Bold, Foreground = Brushes.White },
             });
         left.Children.Add(nameRow);
@@ -410,7 +410,7 @@ public partial class BoardWindow : GlassWindow
         {
             var dateText = new TextBlock { FontSize = 10.5, FontWeight = isToday ? FontWeights.Bold : FontWeights.Normal, Foreground = dateColor };
             dateText.Inlines.Add(new Run(date.Day == 1 || (firstCol && firstRow) ? date.ToString("d MMM", Pl) : date.Day.ToString()));
-            if (firstCol) dateText.Inlines.Add(new Run($"  ·  tydz. {WeekNo(date)}") { Foreground = Res("FgFaint"), FontWeight = FontWeights.Normal });
+            if (firstCol) dateText.Inlines.Add(new Run(L.F("  ·  tydz. {0}", WeekNo(date))) { Foreground = Res("FgFaint"), FontWeight = FontWeights.Normal });
             left.Children.Add(dateText);
         }
         if (holidayNames.Count > 0)
@@ -419,7 +419,7 @@ public partial class BoardWindow : GlassWindow
                 Text = string.Join(" · ", holidayNames.Distinct()),
                 FontSize = 10, TextTrimming = TextTrimming.CharacterEllipsis,
                 Foreground = dayOff != null ? B(A(WeekendRed, 0xD0)) : Res("FgFaint"),
-                ToolTip = string.Join("\n", holidayNames.Distinct()) + (dayOff != null ? "\n(dzień ustawowo wolny)" : ""),
+                ToolTip = string.Join("\n", holidayNames.Distinct()) + (dayOff != null ? "\n" + L.T("(dzień ustawowo wolny)") : ""),
             });
         header.Children.Add(left);
 
@@ -434,7 +434,7 @@ public partial class BoardWindow : GlassWindow
             {
                 Text = $"{done}/{total}", FontSize = 10, FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Right,
                 Foreground = done == total ? Res("AccentBrush") : Res("FgDim"),
-                ToolTip = $"Zrobione {done} z {total}" + (archivedDone > 0 ? $" (w tym {archivedDone} w archiwum)" : ""),
+                ToolTip = L.F("Zrobione {0} z {1}", done, total) + (archivedDone > 0 ? L.F(" (w tym {0} w archiwum)", archivedDone) : ""),
             });
         if (hours > 0 || meetingHours > 0)
         {
@@ -444,7 +444,7 @@ public partial class BoardWindow : GlassWindow
                 Text = hours > 0 ? Hours(hours) : "",
                 FontSize = 10, HorizontalAlignment = HorizontalAlignment.Right,
                 Foreground = hours + meetingHours > 8 ? B(Color.FromRgb(0xF2, 0xA6, 0x5A)) : Res("FgDim"),
-                ToolTip = $"Zadania: {Hours(hours)} (zostało {Hours(left_)})" + (meetingHours > 0 ? $"\nSpotkania: {Hours(meetingHours)}" : ""),
+                ToolTip = L.F("Zadania: {0} (zostało {1})", Hours(hours), Hours(left_)) + (meetingHours > 0 ? "\n" + L.F("Spotkania: {0}", Hours(meetingHours)) : ""),
             });
         }
         header.Children.Add(right);
@@ -461,7 +461,7 @@ public partial class BoardWindow : GlassWindow
                 CornerRadius = new CornerRadius(1.5),
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Background = isToday ? Res("AccentBrush") : B(Color.FromArgb(0x60, 0xFF, 0xFF, 0xFF)),
-                ToolTip = $"Zrobione {done} z {total}",
+                ToolTip = L.F("Zrobione {0} z {1}", done, total),
             };
             double frac = (double)done / total;
             bool known = _progress.TryGetValue(key, out var before);
@@ -538,7 +538,7 @@ public partial class BoardWindow : GlassWindow
         {
             ev.Handled = true;
             var menu = new ContextMenu();
-            var add = new MenuItem { Header = "Dodaj jako zadanie [Meeting]" };
+            var add = new MenuItem { Header = L.T("Dodaj jako zadanie [Meeting]") };
             add.Click += (_, _) =>
             {
                 var siblings = Store.Data.Tasks.Where(x => x.Day == dayKey);
@@ -567,7 +567,7 @@ public partial class BoardWindow : GlassWindow
         var at = a.At(date);
         var color = a.IsMeeting ? MeetingColor : AlarmColor;
         bool past = (a.IsMeeting ? a.EndAt(date) : at) <= DateTime.Now;
-        var what = a.IsMeeting ? "Spotkanie" : "Alarm";
+        var what = a.IsMeeting ? L.T("Spotkanie") : L.T("Alarm");
         var time = a.IsMeeting ? $"{a.Time}–{a.EndAt(date):HH:mm}" : a.Time;
         var row = new Border
         {
@@ -580,8 +580,8 @@ public partial class BoardWindow : GlassWindow
             Opacity = past ? 0.45 : 1,
             Cursor = Cursors.Hand,
             ToolTip = $"{what} {time}" + (a.Once ? "" : $"  ·  {a.RepeatLabel.ToLower(Pl)}")
-                + (a.IsMeeting && a.Remind is { } m ? $"\nprzypomnienie {(m == 0 ? "o czasie" : $"{m} min wcześniej")}" : "")
-                + (past ? "" : $"\n{AlarmService.Until(at)}") + "\nKliknij, żeby zmienić",
+                + (a.IsMeeting && a.Remind is { } m ? "\n" + L.F("przypomnienie {0}", m == 0 ? L.T("o czasie") : L.F("{0} min wcześniej", m)) : "")
+                + (past ? "" : $"\n{AlarmService.Until(at)}") + "\n" + L.T("Kliknij, żeby zmienić"),
         };
         var tb = new TextBlock { TextWrapping = compact ? TextWrapping.NoWrap : TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = Math.Max(9.5, S.FontSize - (compact ? 2 : 1)) };
         tb.Inlines.Add(new Run(a.IsMeeting ? "  " : "  ") { FontFamily = (FontFamily)FindResource("IconFont"), FontSize = Math.Max(8, S.FontSize - 4), Foreground = B(color) });
@@ -594,16 +594,16 @@ public partial class BoardWindow : GlassWindow
         {
             e.Handled = true;
             var menu = new ContextMenu();
-            var edit = new MenuItem { Header = a.IsMeeting ? "Zmień spotkanie…" : "Zmień alarm…" };
+            var edit = new MenuItem { Header = a.IsMeeting ? L.T("Zmień spotkanie…") : L.T("Zmień alarm…") };
             edit.Click += (_, _) => AlarmWindow.Edit(Store, a, date);
             menu.Items.Add(edit);
             if (!a.Once)
             {
-                var skip = new MenuItem { Header = "Usuń tylko ten dzień" };
+                var skip = new MenuItem { Header = L.T("Usuń tylko ten dzień") };
                 skip.Click += (_, _) => { (a.Skips ??= new()).Add(DayKey(date)); Store.Changed(a); AlarmService.Reschedule(); };
                 menu.Items.Add(skip);
             }
-            var del = new MenuItem { Header = a.Once ? "Usuń" : "Usuń całą serię" };
+            var del = new MenuItem { Header = a.Once ? L.T("Usuń") : L.T("Usuń całą serię") };
             del.Click += (_, _) => { Store.DeleteAlarm(a); AlarmService.Reschedule(); };
             menu.Items.Add(del);
             menu.PlacementTarget = row;
@@ -617,7 +617,7 @@ public partial class BoardWindow : GlassWindow
         var menu = new ContextMenu();
         var mark = Store.DayMark(key);
         var series = Store.MarkRuleOn(date);
-        menu.Items.Add(new MenuItem { Header = date.ToString("dddd, d MMMM", Pl) + $"  ·  tydz. {WeekNo(date)}", IsEnabled = false });
+        menu.Items.Add(new MenuItem { Header = date.ToString("dddd, d MMMM", Pl) + L.F("  ·  tydz. {0}", WeekNo(date)), IsEnabled = false });
         menu.Items.Add(new Separator());
         foreach (var m in Store.MarkTypes)
         {
@@ -628,35 +628,35 @@ public partial class BoardWindow : GlassWindow
         }
         if (Store.MarkTypes.Count > 0)
         {
-            var clear = new MenuItem { Header = "     Usuń oznaczenie" + (series != null && mark == series.Text ? " (tylko ten dzień)" : ""), IsEnabled = mark != null };
+            var clear = new MenuItem { Header = "     " + L.T("Usuń oznaczenie") + (series != null && mark == series.Text ? L.T(" (tylko ten dzień)") : ""), IsEnabled = mark != null };
             clear.Click += (_, _) => Do(() => Store.SetDayMark(key, null));
             menu.Items.Add(clear);
             if (series != null)
             {
-                var edit = new MenuItem { Header = $"     Seria „{series.Text}”: {series.Summary}…" };
+                var edit = new MenuItem { Header = "     " + L.F("Seria „{0}”: {1}…", series.Text, series.Summary) };
                 edit.Click += (_, _) => RepeatWindow.ForMark(Store, series, date);
                 menu.Items.Add(edit);
             }
-            var repeat = new MenuItem { Header = "     Powtarzaj oznaczenie…" };
+            var repeat = new MenuItem { Header = "     " + L.T("Powtarzaj oznaczenie…") };
             repeat.Click += (_, _) => RepeatWindow.ForMark(Store, null, date, mark);
             menu.Items.Add(repeat);
         }
         else
         {
-            var setup = new MenuItem { Header = "Oznaczenia dni (np. Urlop): dodaj w ustawieniach…" };
+            var setup = new MenuItem { Header = L.T("Oznaczenia dni (np. Urlop): dodaj w ustawieniach…") };
             setup.Click += (_, _) => App.Instance.ShowSettings();
             menu.Items.Add(setup);
         }
         menu.Items.Add(new Separator());
-        var add = new MenuItem { Header = "Dodaj zadanie" };
+        var add = new MenuItem { Header = L.T("Dodaj zadanie") };
         add.Click += (_, _) => { _addingKey = key; Rebuild(); };
         menu.Items.Add(add);
-        var alarm = new MenuItem { Header = "Dodaj alarm…" };
+        var alarm = new MenuItem { Header = L.T("Dodaj alarm…") };
         alarm.Click += (_, _) => AlarmWindow.Edit(Store, null, date);
         menu.Items.Add(alarm);
         if (_view == ViewMode.Month)
         {
-            var open = new MenuItem { Header = "Pokaż ten tydzień" };
+            var open = new MenuItem { Header = L.T("Pokaż ten tydzień") };
             open.Click += (_, _) => JumpTo(date);
             menu.Items.Add(open);
         }
@@ -725,7 +725,7 @@ public partial class BoardWindow : GlassWindow
             Margin = new Thickness(0, Math.Max(0, (fs * 1.33 - cs) / 2), compact ? 6 : 8, 0),
             VerticalAlignment = VerticalAlignment.Top,
             Cursor = Cursors.Hand,
-            ToolTip = (t.Done ? "Oznacz jako niezrobione" : "Oznacz jako zrobione") + (t.Priority != null ? $"\nPriorytet: {t.Priority}" : ""),
+            ToolTip = (t.Done ? L.T("Oznacz jako niezrobione") : L.T("Oznacz jako zrobione")) + (t.Priority != null ? "\n" + L.F("Priorytet: {0}", t.Priority) : ""),
         };
         if (t.Done)
         {
@@ -781,17 +781,17 @@ public partial class BoardWindow : GlassWindow
         {
             text.Inlines.Add(new Run("  ") { FontFamily = (FontFamily)FindResource("IconFont"), FontSize = Math.Max(8, fs - 4), Foreground = Res("AccentBrush") });
             text.Cursor = Cursors.Hand;
-            text.ToolTip = "Kliknij, aby otworzyć w Notion" + (t.Status != null ? $"\nStatus: {t.Status}" : "");
+            text.ToolTip = L.T("Kliknij, aby otworzyć w Notion") +(t.Status != null ? $"\nStatus: {t.Status}" : "");
         }
         if (t.RuleId != null && Store.Rule(t.RuleId) is { } rule)
-            text.ToolTip = (text.ToolTip is string s0 ? s0 + "\n" : "") + "Seria: " + RecurringRule.Patterns.FirstOrDefault(p => p.Code == rule.Pattern).Label;
+            text.ToolTip = (text.ToolTip is string s0 ? s0 + "\n" : "") + L.T("Seria: ") + RecurringRule.Patterns.FirstOrDefault(p => p.Code == rule.Pattern).Label;
         if (t.Checklist is { Count: > 0 } cl)
         {
             int cd = cl.Count(x => x.Done);
             var chip = new Border
             {
                 CornerRadius = new CornerRadius(4), Padding = new Thickness(4, 0, 4, 1), Margin = new Thickness(6, 0, 0, 0), Cursor = Cursors.Hand,
-                Background = B(Color.FromArgb(0x1E, 0xFF, 0xFF, 0xFF)), ToolTip = _expanded.Contains(t.Id) ? "Zwiń listę" : "Rozwiń listę",
+                Background = B(Color.FromArgb(0x1E, 0xFF, 0xFF, 0xFF)), ToolTip = _expanded.Contains(t.Id) ? L.T("Zwiń listę") : L.T("Rozwiń listę"),
                 Child = new TextBlock { Text = $"☑ {cd}/{cl.Count}", FontSize = Math.Max(8.5, fs - 2.5), Foreground = cd == cl.Count ? Res("AccentBrush") : Res("FgDim") },
             };
             chip.PreviewMouseLeftButtonDown += (_, e) => e.Handled = true;
@@ -845,7 +845,7 @@ public partial class BoardWindow : GlassWindow
             Padding = new Thickness(4, 3, 4, 3),
             VerticalAlignment = VerticalAlignment.Top,
             Visibility = Visibility.Hidden,
-            ToolTip = t.IsVirtual ? "Pomiń to wystąpienie serii" : "Archiwizuj (albo kliknij kółkiem myszy)",
+            ToolTip = t.IsVirtual ? L.T("Pomiń to wystąpienie serii") : L.T("Archiwizuj (albo kliknij kółkiem myszy)"),
         };
         Grid.SetColumn(del, 3);
         del.Click += (_, _) => ArchiveRow(t, wrapper);
@@ -922,7 +922,7 @@ public partial class BoardWindow : GlassWindow
             var label = new TextBlock { Text = item.Text, TextWrapping = TextWrapping.Wrap, FontSize = Math.Max(9.5, fs - 1.5), Foreground = Res("FgDim"), Cursor = Cursors.Hand };
             if (item.Done) { label.TextDecorations = TextDecorations.Strikethrough; label.Opacity = 0.6; }
             Grid.SetColumn(label, 1);
-            var del = new Button { Style = (Style)FindResource("IconButton"), Content = "", FontSize = 7, Padding = new Thickness(3, 2, 3, 2), Visibility = Visibility.Hidden, ToolTip = "Usuń punkt" };
+            var del = new Button { Style = (Style)FindResource("IconButton"), Content = "", FontSize = 7, Padding = new Thickness(3, 2, 3, 2), Visibility = Visibility.Hidden, ToolTip = L.T("Usuń punkt") };
             Grid.SetColumn(del, 2);
             del.Click += (_, _) => Edit(l => l.RemoveAt(index));
             MouseButtonEventHandler toggle = (_, e) => { e.Handled = true; Edit(l => l[index].Done = !l[index].Done); };
@@ -969,7 +969,7 @@ public partial class BoardWindow : GlassWindow
             input.LostKeyboardFocus += (_, _) => Finish(false);
             FocusBox(input);
         }
-        var addLabel = new TextBlock { Text = "+  punkt", FontSize = Math.Max(9.5, fs - 2), Foreground = Res("FgFaint"), Cursor = Cursors.IBeam, Margin = new Thickness(1, 0, 0, 0) };
+        var addLabel = new TextBlock { Text = L.T("+  punkt"), FontSize = Math.Max(9.5, fs - 2), Foreground = Res("FgFaint"), Cursor = Cursors.IBeam, Margin = new Thickness(1, 0, 0, 0) };
         addHost.Child = addLabel;
         addHost.MouseLeftButtonDown += (_, e) => e.Handled = true; // not a drag / edit of the task
         addHost.MouseLeftButtonUp += (_, e) => { e.Handled = true; if (addHost.Child is TextBlock) OpenAdd(); };
@@ -1089,13 +1089,13 @@ public partial class BoardWindow : GlassWindow
         }
         var label = new TextBlock
         {
-            Text = key == BacklogKey ? "+  dodaj do backlogu" : compact ? "+" : "+  dodaj zadanie",
+            Text = key == BacklogKey ? L.T("+  dodaj do backlogu") : compact ? "+" : L.T("+  dodaj zadanie"),
             Foreground = Res("FgFaint"),
             FontSize = Math.Max(10, S.FontSize - 1),
             Cursor = Cursors.IBeam,
             Padding = new Thickness(1, compact ? 0 : 2, 0, 2),
             Opacity = date.HasValue && date < DateTime.Today ? 0.6 : 1,
-            ToolTip = compact ? "Dodaj zadanie" : null,
+            ToolTip = compact ? L.T("Dodaj zadanie") : null,
         };
         host.MouseEnter += (_, _) => label.Foreground = Res("FgDim");
         host.MouseLeave += (_, _) => label.Foreground = Res("FgFaint");
@@ -1119,7 +1119,7 @@ public partial class BoardWindow : GlassWindow
         _addPrefix = null;
         var hint = new TextBlock
         {
-            Text = "nowe zadanie…  ([Meeting], [ART]…)", Foreground = Res("FgFaint"), FontSize = S.FontSize,
+            Text = L.T("nowe zadanie…  ([Meeting], [ART]…)"), Foreground = Res("FgFaint"), FontSize = S.FontSize,
             Margin = new Thickness(9, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false,
             Visibility = box.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed,
         };
@@ -1132,12 +1132,12 @@ public partial class BoardWindow : GlassWindow
             var desc = SmartAdd.Describe(p);
             if (TaskItem.Tags(p.Text, out var rest).Contains(TaskItem.MeetingTag))
                 desc = AlarmService.ParseMeeting(rest, p.Estimate, out var f, out var t, out _)
-                    ? $"→ spotkanie {f:hh\\:mm}–{t:hh\\:mm}" + (p.Day is { } d ? $", {d.ToString("ddd d MMM", Pl)}" : "")
-                    : "→ dopisz godziny, np. 14-15:30 (albo kliknij Meeting)";
+                    ? L.F("→ spotkanie {0:hh\\:mm}–{1:hh\\:mm}", f, t) + (p.Day is { } d ? $", {d.ToString("ddd d MMM", Pl)}" : "")
+                    : L.T("→ dopisz godziny, np. 14-15:30 (albo kliknij Meeting)");
             preview.Text = desc;
             preview.Visibility = desc.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         };
-        hint.Text = key == BacklogKey ? "nowe zadanie…  (jutro, pt, 12.10, 2h, #art)" : "nowe zadanie…  (2h, #art, jutro…)";
+        hint.Text = key == BacklogKey ? L.T("nowe zadanie…  (jutro, pt, 12.10, 2h, #art)") : L.T("nowe zadanie…  (2h, #art, jutro…)");
         grid.Children.Add(box);
         grid.Children.Add(hint);
         host.Children.Add(preview);
@@ -1208,7 +1208,7 @@ public partial class BoardWindow : GlassWindow
                 change = () => Store.Add(t);
                 if (parsed.Day != null && day != key) // went to another day: say where, and show that week if it's off-screen
                 {
-                    SyncText.Text = $"dodano: {parsed.Day.Value.ToString("ddd d MMM", Pl)}";
+                    SyncText.Text = L.F("dodano: {0}", parsed.Day.Value.ToString("ddd d MMM", Pl));
                     _syncFlash.Stop();
                     _syncFlash.Start();
                 }

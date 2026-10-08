@@ -48,7 +48,7 @@ public sealed class ClockWindow : GlassWindow
         _chevron.FontFamily = Ui.Font("IconFont");
         _chevron.Foreground = Ui.Res("Fg");
 
-        var handle = new Grid { Width = 56, Height = 16, Background = Brushes.Transparent, Cursor = Cursors.Hand, Margin = new Thickness(0, 3, 0, 0), ToolTip = "Kalendarz" };
+        var handle = new Grid { Width = 56, Height = 16, Background = Brushes.Transparent, Cursor = Cursors.Hand, Margin = new Thickness(0, 3, 0, 0), ToolTip = L.T("Kalendarz") };
         _dash.HorizontalAlignment = HorizontalAlignment.Center;
         _dash.VerticalAlignment = VerticalAlignment.Center;
         handle.Children.Add(_dash);
@@ -86,9 +86,8 @@ public sealed class ClockWindow : GlassWindow
     {
         var now = DateTime.Now;
         var time = App.Settings.Use24h ? now.ToString("HH:mm") : now.ToString("h:mm", CultureInfo.InvariantCulture);
-        // CZWARTEK 8 PAŹDZIERNIK (month in the nominative, like a wall calendar)
-        var c = BoardWindow.Pl;
-        var date = $"{c.DateTimeFormat.GetDayName(now.DayOfWeek)} {now.Day} {c.DateTimeFormat.MonthNames[now.Month - 1]}".ToUpper(c);
+        // CZWARTEK 8 PAŹDZIERNIK / THURSDAY 8 OCTOBER (month in the nominative, like a wall calendar)
+        var date = L.LongDay(now);
         if (time + date == _shown) return;
         _shown = time + date;
         _time.Text = time;
@@ -141,8 +140,8 @@ public sealed class ClockWindow : GlassWindow
         for (int r = 0; r < weeks; r++) grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(30) });
         void Put(UIElement e, int row, int col) { Grid.SetRow(e, row); Grid.SetColumn(e, col); grid.Children.Add(e); }
 
-        Put(new TextBlock { Text = "tc", FontSize = 9, Foreground = Ui.Res("FgFaint"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, ToolTip = "Tydzień roku" }, 0, 0);
-        string[] names = { "P", "W", "Ś", "C", "P", "S", "N" };
+        Put(new TextBlock { Text = L.En ? "wk" : "tc", FontSize = 9, Foreground = Ui.Res("FgFaint"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, ToolTip = L.T("Tydzień roku") }, 0, 0);
+        string[] names = L.En ? new[] { "M", "T", "W", "T", "F", "S", "S" } : new[] { "P", "W", "Ś", "C", "P", "S", "N" };
         for (int i = 0; i < 7; i++)
             Put(new TextBlock { Text = names[i], FontSize = 10, FontWeight = FontWeights.SemiBold, Foreground = i >= 5 ? weekendRed : Ui.Res("FgFaint"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }, 0, i + 1);
 
@@ -203,7 +202,7 @@ public sealed class ClockWindow : GlassWindow
                 Background = new SolidColorBrush(Color.FromArgb(0x16, accent.R, accent.G, accent.B)),
                 Margin = new Thickness(-1, 1, -1, 1),
                 IsHitTestVisible = false,
-                ToolTip = "Okres widoczny na tablicy",
+                ToolTip = L.T("Okres widoczny na tablicy"),
             };
             Grid.SetRow(frame, r0 + 1);
             Grid.SetRowSpan(frame, r1 - r0 + 1);
@@ -211,7 +210,7 @@ public sealed class ClockWindow : GlassWindow
             grid.Children.Insert(0, frame); // behind the numbers
         }
 
-        var footer = new Button { Style = (Style)Application.Current.Resources["LinkButton"], Content = "DZIŚ", HorizontalAlignment = HorizontalAlignment.Center, FontSize = 11, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 4, 0, 0) };
+        var footer = new Button { Style = (Style)Application.Current.Resources["LinkButton"], Content = L.T("DZIŚ"), HorizontalAlignment = HorizontalAlignment.Center, FontSize = 11, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 4, 0, 0) };
         footer.Click += (_, _) => Pick(DateTime.Today);
 
         var dock = new DockPanel();
