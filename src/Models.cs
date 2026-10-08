@@ -35,6 +35,8 @@ public sealed class TaskItem
     public string? Url { get; set; }
     public string? Status { get; set; }
     public string? Priority { get; set; }
+    /// <summary>Title as last read from Notion (sync renames the task only while its text still matches it).</summary>
+    public string? NotionTitle { get; set; }
 
     [JsonIgnore] public bool IsBacklog => Day == null;
     [JsonIgnore] public bool HasLink => !string.IsNullOrEmpty(Url);
@@ -57,7 +59,7 @@ public sealed class TaskItem
     {
         Text = o.Text; Done = o.Done; Day = o.Day; Order = o.Order; Modified = o.Modified; Estimate = o.Estimate;
         Archived = o.Archived; ArchivedAt = o.ArchivedAt; RuleId = o.RuleId; RuleDay = o.RuleDay;
-        NotionId = o.NotionId; Url = o.Url; Status = o.Status; Priority = o.Priority;
+        NotionId = o.NotionId; Url = o.Url; Status = o.Status; Priority = o.Priority; NotionTitle = o.NotionTitle;
         Checklist = CopyList(o.Checklist);
     }
 
@@ -423,6 +425,29 @@ public sealed class Account
     public string Name { get; set; } = "Praca";
     public string Folder { get; set; } = "";
     public List<CalendarFeed> Calendars { get; set; } = new();
+    public NotionLink Notion { get; set; } = new();
+}
+
+/// <summary>Automatic read-only sync of one Notion database into the account's backlog (personal access token).</summary>
+public sealed class NotionLink
+{
+    /// <summary>Link to the database (or its id).</summary>
+    public string Database { get; set; } = "";
+    /// <summary>The token, encrypted for this Windows user (DPAPI) – never stored in plain text or in the cloud folder.</summary>
+    public string? TokenProtected { get; set; }
+    public bool Auto { get; set; } = true;
+    public int Minutes { get; set; } = 10;
+    /// <summary>Only pages where a person property contains me.</summary>
+    public bool OnlyMine { get; set; }
+    /// <summary>Statuses that are not imported (still updated when already on the board).</summary>
+    public List<string>? SkipStatuses { get; set; }
+    /// <summary>A page done in Notion ticks its task off.</summary>
+    public bool SyncDone { get; set; } = true;
+    public DateTime? LastSync { get; set; }
+    public string? LastResult { get; set; }
+    /// <summary>Statuses seen in the database at the last sync (for the settings).</summary>
+    public List<string>? KnownStatuses { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public bool Configured => Database.Length > 0 && TokenProtected != null;
 }
 
 /// <summary>Per-computer settings (stored locally, not in the cloud folder).</summary>

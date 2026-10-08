@@ -214,6 +214,10 @@ public sealed class SettingsWindow : DarkWindow
         p.Children.Add(calRow);
         UpdateCalStatus();
 
+        // Notion: automatic read-only sync of one database into this account's backlog
+        p.Children.Add(Sub("Notion"));
+        p.Children.Add(BuildNotion(acc, store));
+
         // categories (stored in this account's board.json, so they sync with its other computers)
         p.Children.Add(Sub("Kategorie"));
         p.Children.Add(Label("Etykieta [Nazwa] na początku zadania. Wybierasz ją prawym przyciskiem → Kategoria, klikając pod polem nowego zadania albo wpisując #nazwa.", 11, "FgFaint"));
@@ -345,6 +349,106 @@ public sealed class SettingsWindow : DarkWindow
             last = name;
         }
         if (focusLast && last != null) last.Loaded += (_, _) => { last.Focus(); last.SelectAll(); };
+    }
+
+    FrameworkElement BuildNotion(Account acc, BoardStore store)
+    {
+        var link = acc.Notion;
+        var p = new StackPanel();
+        p.Children.Add(Label("Automatycznie wczytuje zadania z bazy Notion do backlogu tego konta – tylko odczyt, nic nie jest zmieniane w Notion. Używa Twojego osobistego tokenu (działa jak Twoje konto, bez admina): Notion → Ustawienia → Developers / „Personal access tokens” → New token. Token jest zaszyfrowany dla Twojego konta Windows i zostaje tylko na tym komputerze.", 11, "FgFaint"));
+        var open = Btn("Utwórz token w Notion ↗", "LinkButton", (_, _) => GlassWindow.OpenUrl("https://www.notion.so/developers/tokens"));
+        open.HorizontalAlignment = HorizontalAlignment.Left;
+        open.Margin = new Thickness(-7, 4, 0, 4);
+        p.Children.Add(open);
+
+        var db = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = link.Database, ToolTip = "Link do bazy: ••• przy widoku bazy → Copy link to view" };
+        db.LostKeyboardFocus += (_, _) => { if (db.Text.Trim() != link.Database) { link.Database = db.Text.Trim(); SettingsStore.Save(S); } };
+        p.Children.Add(Pair("Link do bazy (••• → Copy link to view)", db));
+
+        var tokenRow = new DockPanel();
+        var token = new PasswordBox { Height = 34, Padding = new Thickness(8, 6, 8, 6), Background = Ui.Res("Field"), Foreground = Ui.Res("Fg"), BorderBrush = Ui.Res("FieldBorder"), CaretBrush = Ui.Res("Fg") };
+        var tokenState = Label("", 11.5, "FgDim");
+        void ShowTokenState() => tokenState.Text = link.TokenProtected != null ? "Token zapisany (ukryty). Wklej nowy, żeby go zmienić." : "Brak tokenu.";
+        var clear = Btn("Usuń token", "LinkButton", (_, _) => { link.TokenProtected = null; SettingsStore.Save(S); ShowTokenState(); });
+        DockPanel.SetDock(clear, Dock.Right);
+        tokenRow.Children.Add(clear);
+        tokenRow.Children.Add(token);
+        token.PasswordChanged += (_, _) =>
+        {
+            if (token.Password.Trim().Length < 20) return;
+            link.TokenProtected = NotionSync.Protect(token.Password);
+            token.Clear();
+            SettingsStore.Save(S);
+            ShowTokenState();
+        };
+        ShowTokenState();
+        p.Children.Add(Pair("Osobisty token", tokenRow));
+        p.Children.Add(tokenState);
+
+        var every = new ComboBox { Width = 90, Margin = new Thickness(8, 0, 0, 0) };
+        foreach (var m in new[] { 5, 10, 15, 30, 60 }) every.Items.Add(new ComboBoxItem { Content = $"{m} min", Tag = m });
+        every.SelectedItem = every.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (int)i.Tag == link.Minutes) ?? every.Items[1];
+        every.SelectionChanged += (_, _) => { if (every.SelectedItem is ComboBoxItem it) { link.Minutes = (int)it.Tag; SettingsStore.Save(S); } };
+        var auto = new CheckBox { Content = "Synchronizuj automatycznie co", IsChecked = link.Auto, VerticalAlignment = VerticalAlignment.Center };
+        auto.Checked += (_, _) => { link.Auto = true; SettingsStore.Save(S); };
+        auto.Unchecked += (_, _) => { link.Auto = false; SettingsStore.Save(S); };
+        var autoRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 4) };
+        autoRow.Children.Add(auto);
+        autoRow.Children.Add(every);
+        p.Children.Add(autoRow);
+        var mine = new CheckBox { Content = "Tylko zadania przypisane do mnie (pole osoby zawiera moje konto)", IsChecked = link.OnlyMine, Margin = new Thickness(0, 4, 0, 4) };
+        mine.Checked += (_, _) => { link.OnlyMine = true; SettingsStore.Save(S); };
+        mine.Unchecked += (_, _) => { link.OnlyMine = false; SettingsStore.Save(S); };
+        p.Children.Add(mine);
+        var done = new CheckBox { Content = "Zakończone w Notion oznaczaj jako zrobione", IsChecked = link.SyncDone, Margin = new Thickness(0, 4, 0, 4) };
+        done.Checked += (_, _) => { link.SyncDone = true; SettingsStore.Save(S); };
+        done.Unchecked += (_, _) => { link.SyncDone = false; SettingsStore.Save(S); };
+        p.Children.Add(done);
+
+        // statuses that are not imported (known after the first sync)
+        var statuses = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
+        void FillStatuses()
+        {
+            statuses.Children.Clear();
+            var known = link.KnownStatuses ?? new();
+            if (known.Count == 0) { statuses.Children.Add(Label("Statusy pojawią się po pierwszej synchronizacji (domyślnie pomijane są zakończone).", 11, "FgFaint")); return; }
+            var skip = link.SkipStatuses ?? known.Where(NotionImport.LooksDone).ToList();
+            foreach (var s in known)
+            {
+                var chip = new System.Windows.Controls.Primitives.ToggleButton { Content = s, Style = (Style)Application.Current.Resources["Chip"], IsChecked = !skip.Contains(s), Margin = new Thickness(0, 0, 6, 6), ToolTip = "Zaznaczone statusy są wczytywane" };
+                chip.Click += (_, _) =>
+                {
+                    var now = link.SkipStatuses ?? known.Where(NotionImport.LooksDone).ToList();
+                    if (chip.IsChecked == true) now.Remove(s); else if (!now.Contains(s)) now.Add(s);
+                    link.SkipStatuses = now;
+                    SettingsStore.Save(S);
+                };
+                statuses.Children.Add(chip);
+            }
+        }
+        FillStatuses();
+        p.Children.Add(Pair("Wczytywane statusy", statuses));
+
+        var syncRow = new DockPanel { Margin = new Thickness(0, 6, 0, 0) };
+        var result = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Foreground = Ui.Res("FgFaint"), Margin = new Thickness(10, 0, 0, 0), Text = link.LastResult ?? "" };
+        Button? now = null;
+        now = Btn("Synchronizuj teraz", "SecondaryButton", async (_, _) =>
+        {
+            link.Database = db.Text.Trim();
+            if (!link.Configured) { result.Text = "Podaj link do bazy i token."; return; }
+            now!.IsEnabled = false;
+            result.Text = "Łączę z Notion…";
+            var r = await NotionSync.Run(acc.Id);
+            now.IsEnabled = true;
+            result.Text = link.LastResult ?? (r.Error ?? "");
+            FillStatuses();
+        });
+        now.Margin = new Thickness(0);
+        DockPanel.SetDock(now, Dock.Left);
+        syncRow.Children.Add(now);
+        syncRow.Children.Add(result);
+        p.Children.Add(syncRow);
+        return p;
     }
 
     void FillMarks(BoardStore store, StackPanel host, bool focusLast = false)

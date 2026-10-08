@@ -42,6 +42,7 @@ public partial class App : Application
     readonly DispatcherTimer _glassTimer = new() { Interval = TimeSpan.FromMilliseconds(120) };
     readonly DispatcherTimer _trimTimer = new() { Interval = TimeSpan.FromSeconds(3) };
     readonly DispatcherTimer _calendarTimer = new() { Interval = TimeSpan.FromMinutes(30) };
+    readonly DispatcherTimer _notionTimer = new() { Interval = TimeSpan.FromMinutes(1) };
 
     bool _started;
     readonly DispatcherTimer _folderRetry = new() { Interval = TimeSpan.FromSeconds(30) };
@@ -137,6 +138,10 @@ public partial class App : Application
             }
             AlarmService.Changed += () => Board?.OnExternalChange(quiet: true);
             AlarmService.Start();
+            // Notion: each account with a token syncs on its own interval (first run right after start-up)
+            _notionTimer.Tick += (_, _) => NotionSync.Tick();
+            _notionTimer.Start();
+            NotionSync.Tick();
         }, DispatcherPriority.ApplicationIdle);
         Dev.AfterStartup();
     }
@@ -557,6 +562,12 @@ public partial class App : Application
             Add("Dziś…", ToggleToday);
             Add("Nowy alarm…", () => AlarmWindow.Edit(Store));
             Add("Ustawienia…", ShowSettings);
+            if (Settings.AccountFor(Settings.Layer).Notion.Configured)
+                Add("Synchronizuj Notion teraz", async () =>
+                {
+                    var r = await NotionSync.Run(Settings.Layer);
+                    _tray?.Balloon("DeskWall – Notion", r.Error ?? $"Nowe: {r.Added}, zmienione: {r.Updated} (stron: {r.Total})");
+                });
             Add("Importuj z Notion (CSV/ZIP)…", () => ImportNotion());
             Add(Settings.Layer == "private" ? "Przełącz na: Praca" : "Przełącz na: Prywatne", () => SwitchLayer(Settings.Layer == "private" ? "work" : "private"));
             Add("Archiwum…", () => Board?.ShowArchive());

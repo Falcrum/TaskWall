@@ -255,6 +255,33 @@ static class Dev
             Check("dropped Notion title: '(9+)', ' | Notion', tag at the end → front",
                 ExternalDrop.CleanTitle("(9+) Woda w Tuathan | Notion") == "Woda w Tuathan" && ExternalDrop.KnownTags("[vfx] Woda") == "[VFX] Woda" && ExternalDrop.KnownTags("Woda #art") == "[ART] Woda");
 
+            // Notion API sync (offline: a page as the API returns it)
+            const string pageJson = """
+            {"object":"page","id":"1111aaaa-2222-bbbb-3333-cccc4444dddd","url":"https://www.notion.so/Woda-1111aaaa2222bbbb3333cccc4444dddd","in_trash":false,
+             "properties":{"Name":{"id":"title","type":"title","title":[{"plain_text":"[vfx] Woda"},{"plain_text":" w Tuathan"}]},
+               "Status":{"id":"s","type":"status","status":{"name":"W trakcie"}},
+               "Priorytet":{"id":"p","type":"select","select":{"name":"Wysoki"}},
+               "Estymacja":{"id":"e","type":"number","number":2.5},
+               "Osoba":{"id":"o","type":"people","people":[{"object":"user","id":"me-1"}]}}}
+            """;
+            using (var pj = System.Text.Json.JsonDocument.Parse(pageJson))
+            {
+                var page = NotionSync.ParsePage(pj.RootElement)!;
+                Check("notion: page parsed (title parts, status, priority, estimate, people)", page.Title == "[vfx] Woda w Tuathan" && page.Status == "W trakcie"
+                    && page.Priority == "Wysoki" && page.Estimate == 2.5 && page.People.Single() == "me-1" && page.Id == "1111aaaa2222bbbb3333cccc4444dddd");
+                var ns = new BoardStore("work");
+                ns.Open(Path.Combine(dir, "notion"));
+                var nlink = new NotionLink { OnlyMine = true };
+                var r1 = NotionSync.Apply(ns, nlink, new() { page, page with { Id = "x2", Title = "Cudze", People = new() { "other" } }, page with { Id = "x3", Title = "Stare", Status = "Done" } }, "me-1");
+                var nt = ns.Data.Tasks.Single();
+                Check("notion: only mine, done skipped, added to backlog with link", r1.Added == 1 && nt.IsBacklog && nt.Text == "[VFX] Woda w Tuathan" && nt.Url!.Contains("1111aaaa"));
+                nt.Text = "[VFX] Woda w Tuathan";
+                var r2 = NotionSync.Apply(ns, nlink, new() { page with { Title = "[vfx] Woda w Tuathan v2", Status = "Done" } }, "me-1");
+                Check("notion: rename followed, done in Notion ticks the task", r2.Updated == 1 && nt.Text == "[VFX] Woda w Tuathan v2" && nt.Done && ns.Data.Tasks.Count == 1);
+            }
+            var sealedToken = NotionSync.Protect("ntn_test_token_1234567890");
+            Check("notion: token encrypted (DPAPI), not stored in plain text", sealedToken != null && !sealedToken.Contains("ntn_test"));
+
             // checklist copies are independent; Notion link title from the slug
             var withList = new TaskItem { Text = "x", Checklist = new() { new CheckItem { Text = "a" } } };
             var cloned = withList.Clone();
