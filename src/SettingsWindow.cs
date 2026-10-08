@@ -629,6 +629,24 @@ public sealed class SettingsWindow : DarkWindow
     FrameworkElement BuildGeneral()
     {
         var p = new StackPanel();
+        // language: applied after a restart (all windows are built in it)
+        var lang = new ComboBox { Width = 200 };
+        lang.Items.Add(new ComboBoxItem { Content = "Polski", Tag = "pl" });
+        lang.Items.Add(new ComboBoxItem { Content = "English", Tag = "en" });
+        lang.SelectedIndex = S.Language == "en" ? 1 : 0;
+        var restart = Btn("Uruchom ponownie", "SecondaryButton", (_, _) => App.Instance.Restart());
+        restart.Visibility = Visibility.Collapsed;
+        lang.SelectionChanged += (_, _) =>
+        {
+            if (lang.SelectedItem is not ComboBoxItem it) return;
+            S.Language = (string)it.Tag;
+            SettingsStore.Save(S);
+            restart.Visibility = S.Language == (L.En ? "en" : "pl") ? Visibility.Collapsed : Visibility.Visible;
+        };
+        var langRow = new StackPanel { Orientation = Orientation.Horizontal };
+        langRow.Children.Add(lang);
+        langRow.Children.Add(restart);
+        p.Children.Add(Pair("Język / Language", langRow));
         p.Children.Add(Check("Uruchamiaj razem z Windows", S.StartWithWindows, v => S.StartWithWindows = v));
         p.Children.Add(Check("Pokazuj zegar z kalendarzem", S.ShowClock, v => S.ShowClock = v));
         p.Children.Add(Check("Zegar 24-godzinny", S.Use24h, v => S.Use24h = v));

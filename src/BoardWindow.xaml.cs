@@ -19,7 +19,8 @@ public enum ViewMode { Day, Week1, Week2, Month, Year }
 /// Backlog, search, top bar and keyboard live in BoardWindow.Features.cs.</summary>
 public partial class BoardWindow : GlassWindow
 {
-    public static readonly CultureInfo Pl = new("pl-PL");
+    /// <summary>UI culture (Polish or English, see <see cref="L"/>).</summary>
+    public static CultureInfo Pl => L.Culture;
     const string BacklogKey = "backlog";
     const string DragFormat = "DeskWallTask";
     static readonly Color WeekendRed = Color.FromRgb(0xF2, 0x6D, 0x6D);
@@ -60,6 +61,7 @@ public partial class BoardWindow : GlassWindow
     {
         MakeOpaque(); // GPU-rendered window; corners are cut by a region and filled with the wallpaper
         InitializeComponent();
+        L.Tree(this); // static XAML texts → English when chosen
         AdoptXamlContent();
         _dayTimer.Tick += (_, _) =>
         {

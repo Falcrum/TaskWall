@@ -53,6 +53,7 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        try { L.Set(SettingsStore.Load().Language); } catch { /* Polish */ }
         // installer switches (DeskWall-Setup.exe, --install, --uninstall) run before anything else
         try { if (Installer.HandleCommandLine()) { Shutdown(); return; } }
         catch (Exception ex) { Log.Error("installer", ex); Shutdown(); return; }
@@ -144,6 +145,19 @@ public partial class App : Application
             NotionSync.Tick();
         }, DispatcherPriority.ApplicationIdle);
         Dev.AfterStartup();
+    }
+
+    /// <summary>Starts a fresh copy (it waits for this one to exit) – e.g. after changing the language.</summary>
+    public void Restart()
+    {
+        foreach (var s in Stores.Values) try { s.SaveNow(); } catch { }
+        var all = Environment.GetCommandLineArgs().Skip(1).ToList();
+        int w = all.IndexOf("--wait-for");
+        if (w >= 0) all.RemoveRange(w, Math.Min(2, all.Count - w));
+        var args = string.Join(" ", all.Select(a => a.Contains(' ') ? $"\"{a}\"" : a));
+        if (Environment.ProcessPath is { } exe)
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe, $"{args} --wait-for {Environment.ProcessId}") { UseShellExecute = false });
+        Shutdown();
     }
 
     /// <summary>Hides the whole board (the clock follows its own setting); the tray icon / hotkey bring it back.</summary>
