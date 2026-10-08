@@ -42,6 +42,9 @@ static class Dev
         else if (open == "month") App.Current.Dispatcher.BeginInvoke(() => App.Board?.ShowMonth(), DispatcherPriority.ApplicationIdle);
         else if (open?.StartsWith("search=") == true) App.Current.Dispatcher.BeginInvoke(() => App.Board?.ShowSearch(open["search=".Length..]), DispatcherPriority.ApplicationIdle);
         else if (open == "year") App.Board?.ShowYear();
+        else if (open == "meeting") App.Current.Dispatcher.BeginInvoke(() => AlarmWindow.Edit(App.Store, null, DateTime.Today, meeting: true, title: "Sprint planning"), DispatcherPriority.ApplicationIdle);
+        else if (open == "day") App.Current.Dispatcher.BeginInvoke(() => App.Board?.ShowDay(), DispatcherPriority.ApplicationIdle);
+        else if (open == "repeat-mark") App.Current.Dispatcher.BeginInvoke(() => RepeatWindow.ForMark(App.Store, null, DateTime.Today, "HO"), DispatcherPriority.ApplicationIdle);
         else if (open == "alarm") App.Current.Dispatcher.BeginInvoke(() => AlarmWindow.Edit(App.Store, null, DateTime.Today.AddDays(1)), DispatcherPriority.ApplicationIdle);
         else if (open == "ring-soon") // a real alarm for the next full minute (goes through the timer)
             App.Current.Dispatcher.BeginInvoke(() =>
@@ -224,6 +227,33 @@ static class Dev
             var alMerged = BoardStore.Merge(new BoardData { Alarms = { alA } }, new BoardData { Alarms = { alB } }).Alarms.Single();
             Check("alarm: merge keeps the newer edit and 'already rang'", alMerged.Text == "B" && alMerged.Rang == "2026-10-07 12:00");
             Check("smart day: jutro / 14.10", SmartAdd.ParseDay("jutro", wed) == wed.AddDays(1) && SmartAdd.ParseDay("14.10", wed) == new DateTime(2026, 10, 14) && SmartAdd.ParseDay("xyz", wed) == null);
+
+            // series: every 2 weeks on Mon+Fri within a period, every 3 days, yearly
+            var twoWeeks = new RecurringRule { Pattern = "weekly", Interval = 2, Weekdays = new() { 1, 5 }, Start = "2026-10-05", End = "2026-11-06" };
+            Check("series: every 2 weeks Mon+Fri, until a day", twoWeeks.Occurs(new DateTime(2026, 10, 5)) && twoWeeks.Occurs(new DateTime(2026, 10, 9))
+                && !twoWeeks.Occurs(new DateTime(2026, 10, 12)) && twoWeeks.Occurs(new DateTime(2026, 10, 19)) && !twoWeeks.Occurs(new DateTime(2026, 11, 16)) && !twoWeeks.Occurs(new DateTime(2026, 10, 6)));
+            var every3 = new RecurringRule { Pattern = "daily", Interval = 3, Start = "2026-10-01" };
+            var yearly = new RecurringRule { Pattern = "yearly", Start = "2024-02-29" };
+            Check("series: every 3 days / yearly (29 Feb → 28 Feb)", every3.Occurs(new DateTime(2026, 10, 4)) && !every3.Occurs(new DateTime(2026, 10, 5))
+                && yearly.Occurs(new DateTime(2026, 2, 28)) && !yearly.Occurs(new DateTime(2026, 3, 1)));
+            var markStore = new BoardStore("work");
+            markStore.Open(Path.Combine(dir, "marks"));
+            markStore.AddMarkRule(new RecurringRule { Text = "HO", Pattern = "weekly", Weekdays = new() { 5 }, Start = "2026-10-02" });
+            markStore.SetDayMark("2026-10-16", null);
+            markStore.SetDayMark("2026-10-21", "BŚU");
+            Check("repeating mark + removed by hand on one day + a mark by hand", markStore.DayMark("2026-10-09") == "HO" && markStore.DayMark("2026-10-16") == null
+                && markStore.DayMark("2026-10-21") == "BŚU" && markStore.DayMark("2026-10-22") == null);
+            Check("private account starts without HO/BŚU", new BoardStore("private").MarkTypes.Count == 0 && markStore.MarkTypes.Any(m => m.Code == "HO"));
+            Check("meeting: 14-15:30 / o 10 + 30 min / 9:30–10",
+                AlarmService.ParseMeeting("14-15:30 Sprint", null, out var ms1, out var me1, out var mr1) && ms1 == new TimeSpan(14, 0, 0) && me1 == new TimeSpan(15, 30, 0) && mr1 == "Sprint"
+                && AlarmService.ParseMeeting("Daily o 10", 0.5, out var ms2, out var me2, out var mr2) && ms2 == new TimeSpan(10, 0, 0) && me2 == new TimeSpan(10, 30, 0) && mr2 == "Daily"
+                && AlarmService.ParseMeeting("Review 9:30–10", null, out var ms3, out var me3, out _) && ms3 == new TimeSpan(9, 30, 0) && me3 == new TimeSpan(10, 0, 0)
+                && !AlarmService.ParseMeeting("Sprint planning", null, out _, out _, out _));
+            var meet = new Alarm { Kind = "meeting", Day = "2026-10-07", Time = "10:00", End = "11:30", Remind = 10, Armed = noon.AddHours(-5) };
+            Check("meeting: reminder 10 min before, 1,5 h counted", AlarmService.Due(meet, new DateTime(2026, 10, 7, 9, 50, 20)) == new DateTime(2026, 10, 7, 9, 50, 0)
+                && meet.Hours == 1.5 && AlarmService.Due(new Alarm { Kind = "meeting", Day = "2026-10-07", Time = "10:00", Armed = noon.AddHours(-5) }, noon) == null);
+            Check("dropped Notion title: '(9+)', ' | Notion', tag at the end → front",
+                ExternalDrop.CleanTitle("(9+) Woda w Tuathan | Notion") == "Woda w Tuathan" && ExternalDrop.KnownTags("[vfx] Woda") == "[VFX] Woda" && ExternalDrop.KnownTags("Woda #art") == "[ART] Woda");
 
             // checklist copies are independent; Notion link title from the slug
             var withList = new TaskItem { Text = "x", Checklist = new() { new CheckItem { Text = "a" } } };

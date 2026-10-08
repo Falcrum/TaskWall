@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using Microsoft.Win32;
 
 namespace DeskWall;
@@ -12,7 +13,7 @@ namespace DeskWall;
 /// Per-user installer built into the exe (no admin rights, no extra tools):
 ///   DeskWall-Setup.exe (or --install)  → copies itself to %LOCALAPPDATA%\Programs\DeskWall, Start-menu shortcut,
 ///                                        entry in "Apps &amp; features", optional autostart, starts the installed copy.
-///   --uninstall (from "Apps &amp; features") → removes program, shortcut, entries; data folders are never touched.
+///   --uninstall (from "Apps &amp; features") → removes program, shortcut, entries; settings / data only when ticked.
 /// </summary>
 static class Installer
 {
@@ -108,19 +109,23 @@ static class Installer
     public static void Uninstall(Window? owner)
     {
         bool quiet = Environment.GetCommandLineArgs().Contains("--quiet");
-        if (!quiet && MessageBox.Show("Odinstalować DeskWall?\n\nZadania zostają w folderach kont (np. na Google Drive) – nic z nich nie jest usuwane.", "DeskWall",
-                MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-        bool removeSettings = !quiet && MessageBox.Show("Usunąć też ustawienia tego komputera (%APPDATA%\\DeskWall)?\nWybierz „Nie”, jeśli zainstalujesz DeskWall ponownie.", "DeskWall",
-                MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
+        bool removeSettings = false, removeData = false;
+        if (!quiet)
+        {
+            var dlg = new UninstallWindow { Owner = owner?.IsVisible == true ? owner : null };
+            if (dlg.ShowDialog() != true) return;
+            removeSettings = dlg.RemoveSettings;
+            removeData = dlg.RemoveData;
+        }
         try
         {
             StopOtherInstances();
             using (var run = Registry.CurrentUser.OpenSubKey(RunKey, writable: true)) run?.DeleteValue("DeskWall", false);
             Registry.CurrentUser.DeleteSubKeyTree(UninstallKey, false);
             if (File.Exists(ShortcutPath)) File.Delete(ShortcutPath);
+            if (removeData) foreach (var folder in DataFolders()) DeleteData(folder);
             if (removeSettings && Directory.Exists(SettingsStore.Dir))
-                foreach (var f in new[] { "settings.json", "settings.json.bad", "calendar-cache.json", "error.log" })
-                    try { File.Delete(Path.Combine(SettingsStore.Dir, f)); } catch { }
+                try { Directory.Delete(SettingsStore.Dir, true); } catch (Exception ex) { Log.Error("remove settings", ex); }
             // the running exe can't delete itself: a hidden shell removes the folder a moment after we exit
             if (Directory.Exists(InstallDir))
                 Process.Start(new ProcessStartInfo("cmd.exe", $"/c timeout /t 3 /nobreak >nul & rmdir /s /q \"{InstallDir}\"")
@@ -129,6 +134,78 @@ static class Installer
             if (owner != null) Application.Current.Shutdown();
         }
         catch (Exception ex) { Fail(owner, ex); }
+    }
+
+    /// <summary>Data folders of all accounts (from this computer's settings).</summary>
+    static string[] DataFolders()
+    {
+        var s = SettingsStore.Load();
+        return s.Accounts.Select(a => a.Folder).Append(s.DataFolder).Append(s.PrivateFolder)
+            .Append(Path.Combine(SettingsStore.Dir, "work")).Append(Path.Combine(SettingsStore.Dir, "private")) // local fallbacks
+            .Where(f => !string.IsNullOrWhiteSpace(f)).Select(f => Path.GetFullPath(f!)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    /// <summary>Only DeskWall's own files (board*.json, backups); the folder goes too when nothing else is left in it.</summary>
+    static void DeleteData(string folder)
+    {
+        try
+        {
+            if (!Directory.Exists(folder)) return;
+            foreach (var f in Directory.GetFiles(folder, "board*.json*").Concat(Directory.GetFiles(folder, "unreadable-board-*.bak")))
+                File.Delete(f);
+            var backup = Path.Combine(folder, "backup");
+            if (Directory.Exists(backup)) Directory.Delete(backup, true);
+            if (!Directory.EnumerateFileSystemEntries(folder).Any()) Directory.Delete(folder);
+        }
+        catch (Exception ex) { Log.Error("remove data " + folder, ex); }
+    }
+
+    sealed class UninstallWindow : DarkWindow
+    {
+        public bool RemoveSettings, RemoveData;
+
+        public UninstallWindow()
+        {
+            Title = "DeskWall – odinstalowanie";
+            Width = 560;
+            SizeToContent = SizeToContent.Height;
+            ResizeMode = ResizeMode.NoResize;
+            Topmost = true;
+            var p = new StackPanel { Margin = new Thickness(24, 20, 24, 20) };
+            Content = p;
+            p.Children.Add(Label("Odinstalować DeskWall?", 18, "Fg", FontWeights.SemiBold));
+            p.Children.Add(Label("Program, skrót w menu Start, autostart i wpis w „Aplikacje i funkcje” zostaną usunięte. Zaznacz, czy usunąć też zapisane dane:", 12, "FgDim"));
+
+            var settings = new CheckBox { Margin = new Thickness(0, 14, 0, 0), Content = new TextBlock { Text = @"Ustawienia tego komputera (%APPDATA%\DeskWall:wygląd, konta, adresy kalendarzy, token Notion, pamięć podręczna, logi)", TextWrapping = TextWrapping.Wrap } };
+            p.Children.Add(settings);
+
+            var folders = DataFolders().Where(Directory.Exists).ToArray();
+            var data = new CheckBox { Margin = new Thickness(0, 10, 0, 0), IsEnabled = folders.Length > 0 };
+            data.Content = new TextBlock { Text = "Wszystkie zapisane zadania, alarmy, oznaczenia i kopie zapasowe", TextWrapping = TextWrapping.Wrap };
+            p.Children.Add(data);
+            var where = Label(folders.Length > 0 ? "Foldery: " + string.Join("\n", folders) : "Brak folderów z danymi.", 11, "FgFaint");
+            where.Margin = new Thickness(26, 2, 0, 0);
+            p.Children.Add(where);
+            var warn = Label("Uwaga: foldery w chmurze (Google Drive / OneDrive) synchronizują usunięcie – dane znikną też na innych komputerach. Tego nie da się cofnąć (poza koszem usługi w chmurze).", 11.5, "Fg");
+            warn.Foreground = new SolidColorBrush(Color.FromRgb(0xF2, 0x6D, 0x6D));
+            warn.Margin = new Thickness(26, 6, 0, 0);
+            warn.Visibility = Visibility.Collapsed;
+            p.Children.Add(warn);
+            data.Checked += (_, _) => warn.Visibility = Visibility.Visible;
+            data.Unchecked += (_, _) => warn.Visibility = Visibility.Collapsed;
+
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 18, 0, 0) };
+            buttons.Children.Add(Btn("Anuluj", "SecondaryButton", (_, _) => { DialogResult = false; }));
+            buttons.Children.Add(Btn("Odinstaluj", "PrimaryButton", (_, _) =>
+            {
+                RemoveSettings = settings.IsChecked == true;
+                RemoveData = data.IsChecked == true;
+                if (RemoveData && MessageBox.Show(this, "Na pewno usunąć wszystkie zadania i kopie zapasowe z folderów kont?\nTej operacji nie można cofnąć.", "DeskWall",
+                        MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+                DialogResult = true;
+            }));
+            p.Children.Add(buttons);
+        }
     }
 
     static void StopOtherInstances()

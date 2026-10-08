@@ -33,12 +33,12 @@ public sealed class SettingsWindow : DarkWindow
         ResizeMode = ResizeMode.CanResize;
         Content = new ScrollViewer { Content = _sections, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
 
-        AddSection("Konta", "Praca i Prywatne: folder danych, kalendarze Google, kategorie", BuildAccounts, open: true);
+        AddSection("Ogólne", "język, autostart, zegar, alarmy, Notion, skrót klawiszowy", BuildGeneral);
+        AddSection("Konta", "Praca i Prywatne: folder, kalendarze Google, Notion, kategorie, oznaczenia dni", BuildAccounts, open: true);
         AddSection("Ekran i rozmiar", "monitor, skala, szerokość i wysokość tablicy", BuildScreen);
         AddSection("Tablica", "weekendy, widok roku, zaległe zadania, backlog", BuildBoard);
         AddSection("Wygląd", "matowe szkło, przyciemnienie, kolor akcentu, animacje", BuildLook);
-        AddSection("Ogólne", "autostart, zegar, Notion, skrót klawiszowy", BuildGeneral);
-        AddSection("Instalacja", "instalacja w systemie, odinstalowanie, wersja", BuildInstall);
+        AddSection("Info", "wersja, instalacja i deinstalacja", BuildInstall);
 
         var footer = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 18, 0, 0) };
         footer.Children.Add(Btn("Importuj z Notion…", "SecondaryButton", (_, _) => App.Instance.ImportNotion()));
@@ -231,6 +231,25 @@ public sealed class SettingsWindow : DarkWindow
         addCat.HorizontalAlignment = HorizontalAlignment.Left;
         addCat.Margin = new Thickness(0, 6, 0, 0);
         p.Children.Add(addCat);
+
+        // day marks (HO, BŚU, Urlop …) – also per account, synced like the categories
+        p.Children.Add(Sub("Oznaczenia dni"));
+        p.Children.Add(Label("Krótki kod w nagłówku dnia, np. HO, BŚU, Urlop. Ustawiasz je prawym przyciskiem na dniu, także jako powtarzane (np. HO w każdy piątek albo urlop od–do). Liczy je widok roku i eksport CSV.", 11, "FgFaint"));
+        var marks = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
+        p.Children.Add(marks);
+        FillMarks(store, marks);
+        var addMark = Btn("+ Dodaj oznaczenie", "SecondaryButton", (_, _) =>
+        {
+            var list = store.MarkTypes.Select(x => new MarkType { Code = x.Code, Label = x.Label, Color = x.Color }).ToList();
+            var used = list.Select(x => x.Color).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            list.Add(new MarkType { Code = "NOWE", Label = "", Color = Category.Palette.FirstOrDefault(x => !used.Contains(x)) ?? Category.Palette[0] });
+            store.SetMarkTypes(list);
+            App.Board?.Rebuild();
+            FillMarks(store, marks, focusLast: true);
+        });
+        addMark.HorizontalAlignment = HorizontalAlignment.Left;
+        addMark.Margin = new Thickness(0, 6, 0, 0);
+        p.Children.Add(addMark);
     }
 
     FrameworkElement FolderRow(string layer)
@@ -324,6 +343,70 @@ public sealed class SettingsWindow : DarkWindow
             row.Children.Add(name);
             cats.Children.Add(row);
             last = name;
+        }
+        if (focusLast && last != null) last.Loaded += (_, _) => { last.Focus(); last.SelectAll(); };
+    }
+
+    void FillMarks(BoardStore store, StackPanel host, bool focusLast = false)
+    {
+        host.Children.Clear();
+        var list = store.MarkTypes.Select(x => new MarkType { Code = x.Code, Label = x.Label, Color = x.Color }).ToList();
+        void Save() { store.SetMarkTypes(list); App.Board?.Rebuild(); }
+        TextBox? last = null;
+        if (list.Count == 0) host.Children.Add(Label("Brak oznaczeń dni na tym koncie.", 11.5, "FgFaint"));
+        for (int i = 0; i < list.Count; i++)
+        {
+            int index = i;
+            var row = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
+            var swatch = new Border { Width = 22, Height = 22, CornerRadius = new CornerRadius(5), Background = new SolidColorBrush(BoardWindow.ParseColor(list[i].Color)), Cursor = Cursors.Hand, Margin = new Thickness(0, 0, 10, 0), ToolTip = "Zmień kolor" };
+            swatch.MouseLeftButtonUp += (_, _) => PickColor(swatch, c => { list[index].Color = c; Save(); FillMarks(store, host); });
+            DockPanel.SetDock(swatch, Dock.Left);
+            row.Children.Add(swatch);
+            var del = Btn("Usuń", "LinkButton", (_, _) => { list.RemoveAt(index); Save(); FillMarks(store, host); });
+            del.ToolTip = "Usuwa oznaczenie z listy (dni już oznaczone zostają w danych)";
+            DockPanel.SetDock(del, Dock.Right);
+            row.Children.Add(del);
+            var code = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = list[i].Code, MaxLength = 8, Width = 90, Margin = new Thickness(0, 0, 6, 0), ToolTip = "Kod w nagłówku dnia" };
+            var label = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = list[i].Label, MaxLength = 40, ToolTip = "Opis (np. Home Office)" };
+            void Commit()
+            {
+                var c = code.Text.Trim().ToUpper(BoardWindow.Pl);
+                var l = label.Text.Trim();
+                if (c.Length == 0) { code.Text = list[index].Code; return; }
+                if (c == list[index].Code && l == list[index].Label) return;
+                list[index].Code = c;
+                list[index].Label = l;
+                Save();
+            }
+            code.LostKeyboardFocus += (_, _) => Commit();
+            label.LostKeyboardFocus += (_, _) => Commit();
+            code.KeyDown += (_, e) => { if (e.Key == Key.Enter) Commit(); };
+            label.KeyDown += (_, e) => { if (e.Key == Key.Enter) Commit(); };
+            DockPanel.SetDock(code, Dock.Left);
+            row.Children.Add(code);
+            row.Children.Add(label);
+            host.Children.Add(row);
+            last = code;
+        }
+        // repeating marks of this account
+        var series = store.Data.MarkRules.Where(r => !r.Deleted).ToList();
+        if (series.Count > 0)
+        {
+            var t = Label("Powtarzane:", 11, "FgDim", FontWeights.SemiBold);
+            t.Margin = new Thickness(0, 8, 0, 2);
+            host.Children.Add(t);
+        }
+        foreach (var r in series)
+        {
+            var row = new DockPanel { Margin = new Thickness(0, 1, 0, 1) };
+            var del = Btn("Usuń", "LinkButton", (_, _) => { r.Deleted = true; store.Changed(r); App.Board?.Rebuild(); FillMarks(store, host); });
+            var edit = Btn("Zmień…", "LinkButton", (_, _) => RepeatWindow.ForMark(store, r, r.StartDate));
+            DockPanel.SetDock(del, Dock.Right);
+            DockPanel.SetDock(edit, Dock.Right);
+            row.Children.Add(del);
+            row.Children.Add(edit);
+            row.Children.Add(new TextBlock { Text = $"{r.Text}  ·  {r.Summary}", Foreground = Ui.Res("Fg"), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
+            host.Children.Add(row);
         }
         if (focusLast && last != null) last.Loaded += (_, _) => { last.Focus(); last.SelectAll(); };
     }

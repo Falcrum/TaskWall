@@ -20,7 +20,7 @@ public sealed class RepeatWindow : DarkWindow
     readonly RecurringRule? _rule;
     readonly TaskItem? _task;
     readonly ComboBox _mark = new() { Width = 260, HorizontalAlignment = HorizontalAlignment.Left };
-    readonly ComboBox _pattern = new() { Width = 170 };
+    readonly ComboBox _pattern = new() { Width = 190 };
     readonly TextBox _interval = new() { Style = (Style)Application.Current.Resources["FieldBox"], Width = 54, Text = "1", Margin = new Thickness(10, 0, 6, 0) };
     readonly TextBlock _unit = Label("", 12.5, "FgDim");
     readonly StackPanel _intervalRow = new() { Orientation = Orientation.Horizontal };
@@ -32,7 +32,7 @@ public sealed class RepeatWindow : DarkWindow
     readonly List<(ToggleButton Button, int Day)> _dayButtons = new();
 
     static readonly (string Code, string Label)[] Patterns =
-        { ("daily", "Co dzień / co N dni"), ("weekdays", "W dni robocze"), ("weekly", "Co tydzień / co N tygodni"), ("monthly", "Co miesiąc / co N miesięcy"), ("yearly", "Co rok") };
+        { ("daily", "Dni"), ("weekdays", "W dni robocze"), ("weekly", "Tygodnie"), ("monthly", "Miesiące"), ("yearly", "Lata") };
 
     RepeatWindow(BoardStore store, RecurringRule? rule, TaskItem? task, DateTime day, string? mark)
     {

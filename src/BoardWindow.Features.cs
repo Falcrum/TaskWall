@@ -57,6 +57,7 @@ public partial class BoardWindow
     }
 
     public void ShowMonth() => SetView(ViewMode.Month);
+    public void ShowDay() => SetView(ViewMode.Day);
 
     /// <summary>The period on screen: the day, the weeks, the month or the year.</summary>
     (DateTime From, DateTime To, string Name) VisiblePeriod() => _view switch
