@@ -255,7 +255,8 @@ public partial class BoardWindow : GlassWindow
     {
         var overdue = Overdue().Count;
         OverdueButton.Visibility = overdue > 0 && _view != ViewMode.Year ? Visibility.Visible : Visibility.Collapsed;
-        OverdueButton.Content = L.F("⟲ ZALEGŁE: {0} → DZIŚ", overdue);
+        OverdueButton.Content = L.F("↷ KONTYNUUJ DZIŚ ({0})", overdue);
+        OverdueButton.ToolTip = L.F("Niezrobione zadania z minionych dni ({0}) przejdą na dziś. W dniach, w których były, zostaną jako wyszarzone „↷ 1/3” – widać, że praca trwała kilka dni.", overdue);
         OverdueButton.Foreground = B(Color.FromRgb(0xF2, 0xA6, 0x5A));
 
         YearButton.Visibility = S.ShowYearButton ? Visibility.Visible : Visibility.Collapsed;
@@ -311,6 +312,40 @@ public partial class BoardWindow : GlassWindow
     }
 
     /// <summary>Week view (1–2 rows) or month view (5–6 compact rows).</summary>
+    // multi-day tasks: per week row, each one gets a lane, so it sits in the same line on all its days
+    readonly Dictionary<int, Dictionary<string, int>> _lanes = new();
+
+    /// <summary>All days of a multi-day task (earlier days it was worked on + its current day), sorted; null = a one-day task.</summary>
+    static List<string>? SpanDays(TaskItem t)
+    {
+        if (t.WorkedDays is not { Count: > 0 } w || t.Day == null) return null;
+        var all = new List<string>(w) { t.Day };
+        all = all.Distinct().ToList();
+        all.Sort(StringComparer.Ordinal);
+        return all.Count > 1 ? all : null;
+    }
+
+    void AssignLanes(DateTime first, int weeks, int days)
+    {
+        _lanes.Clear();
+        var spans = Store.Data.Tasks.Select(t => (t, days: SpanDays(t))).Where(x => x.days != null).ToList();
+        for (int w = 0; w < weeks; w++)
+        {
+            var keys = Enumerable.Range(0, days).Select(c => DayKey(first.AddDays(w * 7 + c))).ToList();
+            var lanes = new Dictionary<string, int>();
+            var used = new List<HashSet<string>>(); // lane → days taken
+            foreach (var (t, sd) in spans.Select(x => (x.t, x.days!.Where(keys.Contains).ToHashSet())).Where(x => x.Item2.Count > 0)
+                         .OrderBy(x => x.Item2.Min(StringComparer.Ordinal), StringComparer.Ordinal).ThenBy(x => x.t.Order))
+            {
+                int lane = used.FindIndex(u => !u.Overlaps(sd));
+                if (lane < 0) { lane = used.Count; used.Add(new HashSet<string>()); }
+                used[lane].UnionWith(sd);
+                lanes[t.Id] = lane;
+            }
+            _lanes[w] = lanes;
+        }
+    }
+
     void BuildGrid()
     {
         WeeksGrid.Children.Clear();
@@ -325,19 +360,21 @@ public partial class BoardWindow : GlassWindow
         var byDay = TasksByDay();
         var archivedDone = Store.Data.Tasks.Where(t => t.Archived && t.Done && t.Day != null).GroupBy(t => t.Day!).ToDictionary(g => g.Key, g => g.Count());
         var first = single ? _dayDate : FirstMonday;
+        Grid.SetIsSharedSizeScope(WeeksGrid, true); // lanes of multi-day tasks line up across the days of a week
+        AssignLanes(first, WeekCount, days);
         for (int w = 0; w < WeekCount; w++)
             for (int c = 0; c < days; c++)
             {
                 var date = first.AddDays(w * 7 + c);
                 archivedDone.TryGetValue(DayKey(date), out var arch);
-                var cell = BuildDay(date, DayTasks(date, byDay), arch, c == 0, w == 0, month, month && date.Month != _monthFirst.Month);
+                var cell = BuildDay(date, DayTasks(date, byDay), arch, c == 0, w == 0, month, month && date.Month != _monthFirst.Month, w);
                 Grid.SetRow(cell, w);
                 Grid.SetColumn(cell, c);
                 WeeksGrid.Children.Add(cell);
             }
     }
 
-    FrameworkElement BuildDay(DateTime date, List<TaskItem> tasks, int archivedDone, bool firstCol, bool firstRow, bool compact, bool outside)
+    FrameworkElement BuildDay(DateTime date, List<TaskItem> tasks, int archivedDone, bool firstCol, bool firstRow, bool compact, bool outside, int week = 0)
     {
         var key = DayKey(date);
         bool isToday = date == DateTime.Today;
@@ -486,10 +523,32 @@ public partial class BoardWindow : GlassWindow
         var timed = Store.Alarms.Where(a => a.Occurs(date)).Select(a => (at: a.TimeOfDay, el: BuildAlarmRow(a, date, compact)))
             .Concat(events.Where(e => !e.IsHoliday).Select(e => (at: e.AllDay ? TimeSpan.Zero : e.Start.TimeOfDay, el: BuildEventRow(e, key, compact))))
             .OrderBy(x => x.at);
-        foreach (var (_, el) in timed) panel.Children.Add(el);
-        foreach (var t in tasks) panel.Children.Add(BuildTaskRow(t, false, compact));
-        // unfinished tasks that moved on to a later day: shown here as "continued" (the work did happen here)
-        foreach (var t in Store.Data.Tasks.Where(t => t.WorkedDays != null && t.WorkedDays.Contains(key)).OrderBy(t => t.Order)) panel.Children.Add(BuildContinuedRow(t, compact));
+        // multi-day tasks of this day (the active one and the days it continued through) go right under the timed ones,
+        // each in its week lane; timed block + lanes share their heights across the week, so a task stays in one line
+        var lanes = _lanes.TryGetValue(week, out var lw) ? lw : new Dictionary<string, int>();
+        var spanHere = Store.Data.Tasks.Where(t => lanes.ContainsKey(t.Id))
+            .Select(t => (t, days: SpanDays(t)!)).Where(x => x.days.Contains(key)).ToList();
+        var spanIds = spanHere.Where(x => x.t.Day == key && !x.t.Archived).Select(x => x.t.Id).ToHashSet();
+        if (spanHere.Count > 0)
+        {
+            var block = new Grid();
+            block.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto, SharedSizeGroup = $"W{week}T" });
+            var timedPanel = new StackPanel();
+            foreach (var (_, el) in timed) timedPanel.Children.Add(el);
+            block.Children.Add(timedPanel);
+            int maxLane = spanHere.Max(x => lanes[x.t.Id]);
+            for (int l = 0; l <= maxLane; l++) block.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto, SharedSizeGroup = $"W{week}L{l}" });
+            foreach (var (t, days) in spanHere)
+            {
+                var span = (days.IndexOf(key) + 1, days.Count);
+                var el = t.Day == key && !t.Archived ? BuildTaskRow(t, false, compact, span) : BuildContinuedRow(t, span, compact);
+                Grid.SetRow(el, lanes[t.Id] + 1);
+                block.Children.Add(el);
+            }
+            panel.Children.Add(block);
+        }
+        else foreach (var (_, el) in timed) panel.Children.Add(el);
+        foreach (var t in tasks.Where(t => !spanIds.Contains(t.Id))) panel.Children.Add(BuildTaskRow(t, false, compact));
         panel.Children.Add(BuildAddRow(key, date, compact));
         _panels[key] = panel;
 
@@ -616,27 +675,90 @@ public partial class BoardWindow : GlassWindow
         return row;
     }
 
-    /// <summary>A task that was on this day unfinished and moved on: dimmed, with where it went (click = go there).</summary>
-    FrameworkElement BuildContinuedRow(TaskItem t, bool compact)
+    /// <summary>
+    /// A multi-day task on one of its earlier days: greyed (not struck through – that means done), "↷ 1/3", in the same
+    /// lane as on its other days. Right click: when it started / take this day out.
+    /// </summary>
+    FrameworkElement BuildContinuedRow(TaskItem t, (int Index, int Total) span, bool compact)
     {
-        var where = t.Archived ? L.T("w archiwum") : t.Day == null ? "backlog" : ParseKey(t.Day).ToString("ddd d MMM", Pl);
-        var row = new Border
+        double fs = compact ? Math.Max(9.5, S.FontSize - 1.5) : S.FontSize;
+        var grid = new Grid { Margin = new Thickness(0, 0, 0, compact ? 1 : 3), Opacity = 0.45, Background = Brushes.Transparent, Cursor = Cursors.Hand };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition());
+        double cs = compact ? 12 : 14;
+        grid.Children.Add(new Border
         {
-            Padding = new Thickness(2, compact ? 0 : 2, 4, compact ? 0 : 2), Margin = new Thickness(0, 0, 0, 1), Opacity = 0.5, Cursor = Cursors.Hand, Background = Brushes.Transparent,
-            ToolTip = L.F("Kontynuowane: zadanie było tu w toku i przeszło dalej ({0}){1}", where, t.Done ? " – " + L.T("zrobione") : ""),
-        };
-        var tb = new TextBlock { TextWrapping = compact ? TextWrapping.NoWrap : TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = Math.Max(9.5, S.FontSize - (compact ? 2 : 1)), FontStyle = FontStyles.Italic };
-        tb.Inlines.Add(new Run("↷  ") { Foreground = Res("AccentBrush"), FontStyle = FontStyles.Normal });
-        TaskItem.Tags(t.Text, out var rest);
-        tb.Inlines.Add(new Run(rest.Length > 0 ? rest : t.Text) { Foreground = Res("FgDim") });
-        tb.Inlines.Add(new Run("  → " + where) { Foreground = Res("FgFaint"), FontStyle = FontStyles.Normal });
-        row.Child = tb;
-        row.MouseLeftButtonUp += (_, e) =>
+            Width = cs, Height = cs, CornerRadius = new CornerRadius(cs / 2), BorderThickness = new Thickness(1.3), BorderBrush = Res("FgDim"),
+            Margin = new Thickness(0, Math.Max(0, (fs * 1.33 - cs) / 2), compact ? 6 : 8, 0), VerticalAlignment = VerticalAlignment.Top,
+        });
+        var text = new TextBlock { TextWrapping = compact ? TextWrapping.NoWrap : TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = fs, Foreground = Res("Fg") };
+        text.Inlines.Add(new Run($"↷ {span.Index}/{span.Total}  ") { FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush") });
+        var tags = TaskItem.Tags(t.Text, out var rest);
+        foreach (var tag in tags) text.Inlines.Add(new Run(tag + "  ") { FontWeight = FontWeights.Bold, FontSize = Math.Max(8.5, fs - 3), Foreground = B(TagColor(tag)) });
+        text.Inlines.Add(new Run(tags.Count > 0 ? rest : t.Text));
+        Grid.SetColumn(text, 1);
+        grid.Children.Add(text);
+        var where = t.Archived ? L.T("w archiwum") : ParseKey(t.Day!).ToString("dddd d MMM", Pl);
+        grid.ToolTip = L.F("Zadanie wielodniowe: dzień {0} z {1}. Teraz: {2}{3}", span.Index, span.Total, where, t.Done ? " – " + L.T("zrobione") : "");
+        grid.MouseLeftButtonUp += (_, e) =>
         {
             e.Handled = true;
             if (t.Day != null && !t.Archived) { _flashId = t.Id; JumpTo(ParseKey(t.Day)); }
         };
-        return row;
+        grid.MouseRightButtonUp += (_, e) =>
+        {
+            e.Handled = true;
+            var menu = new ContextMenu();
+            menu.Items.Add(StartedMenu(t));
+            menu.PlacementTarget = grid;
+            menu.IsOpen = true;
+        };
+        return grid;
+    }
+
+    /// <summary>
+    /// "Rozpoczęte…": when work on the task began – every workday from then until its day becomes part of it
+    /// (or "only its own day": no history, e.g. taken from the backlog and not touched yet).
+    /// </summary>
+    MenuItem StartedMenu(TaskItem t)
+    {
+        var item = new MenuItem { Header = L.T("Rozpoczęte…") };
+        if (t.Day == null) { item.IsEnabled = false; return item; }
+        var day = ParseKey(t.Day);
+        var first = SpanDays(t)?[0];
+        void Add(string header, Action change)
+        {
+            var mi = new MenuItem { Header = header };
+            mi.Click += (_, _) => Do(() => { var real = Store.Materialize(t); change(); Store.Changed(real); });
+            item.Items.Add(mi);
+        }
+        Add((first == null ? "✓  " : "     ") + L.F("Tylko {0} (bez wcześniejszych dni)", day.ToString("ddd d MMM", Pl)), () => Store.Materialize(t).WorkedDays = null);
+        item.Items.Add(new Separator());
+        // the last two weeks of workdays before the task's day
+        var d = day.AddDays(-1);
+        for (int n = 0; n < 10; d = d.AddDays(-1))
+        {
+            if (IsWeekend(d) || PolishHolidays.DayOff(d) != null) continue;
+            n++;
+            var from = d;
+            var span = WorkdaysBetween(from, day);
+            Add((first == DayKey(from) ? "✓  " : "     ") + L.F("od {0}  ({1} dni)", from.ToString("ddd d MMM", Pl), span.Count + 1), () =>
+            {
+                var real = Store.Materialize(t);
+                var keep = real.WorkedDays?.Where(k => string.CompareOrdinal(k, DayKey(from)) >= 0) ?? Enumerable.Empty<string>(); // weekend days worked on stay
+                real.WorkedDays = span.Select(DayKey).Concat(keep).Distinct().OrderBy(k => k, StringComparer.Ordinal).ToList();
+            });
+        }
+        return item;
+    }
+
+    /// <summary>Workdays (no weekends / public holidays) from <paramref name="from"/> up to the day before <paramref name="to"/>.</summary>
+    static List<DateTime> WorkdaysBetween(DateTime from, DateTime to)
+    {
+        var list = new List<DateTime>();
+        for (var d = from.Date; d < to.Date; d = d.AddDays(1))
+            if (!IsWeekend(d) && PolishHolidays.DayOff(d) == null) list.Add(d);
+        return list;
     }
 
     ContextMenu BuildDayMenu(string key, DateTime date)
@@ -720,7 +842,7 @@ public partial class BoardWindow : GlassWindow
 
     // ---------- task row ----------
 
-    FrameworkElement BuildTaskRow(TaskItem t, bool inBacklog, bool compact = false)
+    FrameworkElement BuildTaskRow(TaskItem t, bool inBacklog, bool compact = false, (int Index, int Total)? span = null)
     {
         var wrapper = new Border
         {
@@ -785,6 +907,8 @@ public partial class BoardWindow : GlassWindow
         Grid.SetColumn(content, 1);
         var text = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Res("Fg"), FontSize = fs };
         var tags = TaskItem.Tags(t.Text, out var rest);
+        if (span is { } sp) // a multi-day task on its current day: "↷ 3/3"
+            text.Inlines.Add(new Run($"↷ {sp.Index}/{sp.Total}  ") { FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush"), ToolTip = L.F("Zadanie wielodniowe: dzień {0} z {1}", sp.Index, sp.Total) });
         if (t.Time != null) // planned hours ("14-16" typed with the task)
             text.Inlines.Add(new Run((t.End != null ? $"{t.Time}–{t.End}" : t.Time) + "  ") { FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush") });
         foreach (var tag in tags)

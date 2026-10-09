@@ -152,7 +152,7 @@ public sealed class TodayWindow : Window
         var overdue = Store.Data.Tasks.Count(t => !t.Done && !t.Archived && t.Day != null && string.CompareOrdinal(t.Day, key) < 0);
         if (overdue > 0)
         {
-            var roll = new Button { Style = (Style)Application.Current.Resources["BarButton"], Content = L.F("⟲ ZALEGŁE: {0} → DZIŚ", overdue), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(-8, 4, 0, 0) };
+            var roll = new Button { Style = (Style)Application.Current.Resources["BarButton"], Content = L.F("↷ KONTYNUUJ DZIŚ ({0})", overdue), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(-8, 4, 0, 0) };
             roll.Foreground = new SolidColorBrush(Color.FromRgb(0xF2, 0xA6, 0x5A));
             roll.Click += (_, _) => { App.Board?.RollOverdue(); Fill(); };
             _body.Children.Add(roll);

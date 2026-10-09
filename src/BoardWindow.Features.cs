@@ -593,6 +593,7 @@ public partial class BoardWindow
                 rep.Items.Add(Item(L.T("Usuń serię (wykonane zostają)"), () => Do(() => { rule.Deleted = true; Store.Changed(rule); })));
             }
             menu.Items.Add(rep);
+            menu.Items.Add(StartedMenu(t));
         }
 
         bool hasList = t.Checklist is { Count: > 0 };

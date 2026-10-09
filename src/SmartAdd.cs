@@ -38,6 +38,16 @@ static class SmartAdd
         ["sun"] = DayOfWeek.Sunday, ["sunday"] = DayOfWeek.Sunday,
     };
 
+    // short English words that are also ordinary words ("Sat down…", "sun") count only with the English UI
+    static readonly HashSet<string> EnglishOnly = new(StringComparer.OrdinalIgnoreCase) { "sat", "sun", "mon", "wed" };
+
+    static bool Weekday(string word, out DayOfWeek dow)
+    {
+        dow = default;
+        if (!L.En && EnglishOnly.Contains(word)) return false;
+        return Weekdays.TryGetValue(word, out dow);
+    }
+
     static readonly Regex Hours = new(@"(?<![\w#])(?:(\d+)\s*h\s*(\d{1,2})\s*(?:m|min|mins)?|(\d+(?:[.,]\d+)?)\s*(?:h|hr|hrs|hour|hours|godz\.?|godziny|godzin)|(\d+)\s*(?:min|mins|minut|minute|minutes))(?!\w)", RegexOptions.IgnoreCase);
     static readonly Regex Hash = new(@"(?<!\w)#([\p{L}\p{N}_\-]{1,24})", RegexOptions.IgnoreCase);
     static readonly Regex DateNum = new(@"^(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?$");
@@ -174,14 +184,14 @@ static class SmartAdd
             day = now.AddDays(7 - ((int)now.DayOfWeek + 6) % 7);
             return 2;
         }
-        if (Weekdays.TryGetValue(first, out var dow))
+        if (Weekday(first, out var dow))
         {
             int delta = ((int)dow - (int)now.DayOfWeek + 7) % 7;
             day = now.AddDays(delta);
             // "… on fri" at the end takes the "on" too
             return atEnd && w.Count >= 2 && W(1) == "on" ? 2 : 1;
         }
-        if (w.Count >= 2 && (first is "w" or "we" or "na" or "on") && Weekdays.TryGetValue(W(1), out var dow2) && !atEnd)
+        if (w.Count >= 2 && (first is "w" or "we" or "na" or "on") && Weekday(W(1), out var dow2) && !atEnd)
         {
             day = now.AddDays(((int)dow2 - (int)now.DayOfWeek + 7) % 7);
             return 2;
