@@ -68,6 +68,9 @@ static class YearView
 
         var byDay = data.Tasks.Where(t => t.Day != null && t.Day.StartsWith(year.ToString()))
             .GroupBy(t => t.Day!).ToDictionary(g => g.Key, g => g.ToList());
+        // unfinished tasks that moved on: the day was worked on, not finished
+        var continued = data.Tasks.Where(t => t.WorkedDays != null).SelectMany(t => t.WorkedDays!).Where(d => d.StartsWith(year.ToString()))
+            .GroupBy(d => d).ToDictionary(g => g.Key, g => g.Count());
 
         var dock = new DockPanel { Margin = new Thickness(2, 0, 2, 0) };
 
@@ -169,7 +172,7 @@ static class YearView
                 int row = ((int)date.DayOfWeek + 6) % 7;
                 var key = BoardWindow.DayKey(date);
                 byDay.TryGetValue(key, out var tasks);
-                int total = tasks?.Count ?? 0, done = tasks?.Count(t => t.Done) ?? 0;
+                int total = (tasks?.Count ?? 0) + (continued.TryGetValue(key, out var cont) ? cont : 0), done = tasks?.Count(t => t.Done) ?? 0; // continued = worked on, not finished that day
                 var mark = markOf.TryGetValue(key, out var mk2) ? mk2 : null;
                 bool past = date <= today;
                 var dayOff = PolishHolidays.DayOff(date);

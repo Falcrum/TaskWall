@@ -10,7 +10,7 @@
     <AssemblyName>TaskWall</AssemblyName>
     <RootNamespace>TaskWall</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.8.0</Version>
+    <Version>0.9.0</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <Product>TaskWall</Product>
     <!-- smaller memory footprint for a tray-style app -->

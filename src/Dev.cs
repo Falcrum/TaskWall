@@ -43,6 +43,7 @@ static class Dev
         else if (open?.StartsWith("search=") == true) App.Current.Dispatcher.BeginInvoke(() => App.Board?.ShowSearch(open["search=".Length..]), DispatcherPriority.ApplicationIdle);
         else if (open == "year") App.Board?.ShowYear();
         else if (open == "meeting") App.Current.Dispatcher.BeginInvoke(() => AlarmWindow.Edit(App.Store, null, DateTime.Today, meeting: true, title: "Sprint planning"), DispatcherPriority.ApplicationIdle);
+        else if (open == "help") App.Current.Dispatcher.BeginInvoke(HelpWindow.ShowHelp, DispatcherPriority.ApplicationIdle);
         else if (open == "day") App.Current.Dispatcher.BeginInvoke(() => App.Board?.ShowDay(), DispatcherPriority.ApplicationIdle);
         else if (open == "repeat-mark") App.Current.Dispatcher.BeginInvoke(() => RepeatWindow.ForMark(App.Store, null, DateTime.Today, "HO"), DispatcherPriority.ApplicationIdle);
         else if (open == "alarm") App.Current.Dispatcher.BeginInvoke(() => AlarmWindow.Edit(App.Store, null, DateTime.Today.AddDays(1)), DispatcherPriority.ApplicationIdle);
@@ -104,6 +105,8 @@ static class Dev
         DeleteDC(mem);
         ReleaseDC(IntPtr.Zero, screen);
     }
+
+    static bool Do(Action a) { a(); return true; }
 
     /// <summary>--selftest &lt;file&gt;: exercises the data layer in a temp folder and writes PASS/FAIL lines.</summary>
     public static void SelfTest(string outFile)
@@ -305,6 +308,20 @@ static class Dev
             Check("clear: tasks + series gone (tombstoned), meetings gone, alarms kept",
                 clearStore.Data.Tasks.Count == 0 && clearStore.Data.Deleted.Count == 2 && !clearStore.VirtualTasks(new DateTime(2026, 10, 9)).Any()
                 && clearStore.Alarms.Count() == 1 && !clearStore.Alarms.Single().IsMeeting);
+            // task hours, priority, "continued", checklist progress
+            var st = SmartAdd.Parse("jutro Raport 14-16 !! #art", cats, wed);
+            Check("smart add: hours 14-16 (= 2h estimate), !! priority, category, day",
+                st.Day == wed.AddDays(1) && st.Time == new TimeSpan(14, 0, 0) && st.End == new TimeSpan(16, 0, 0) && st.Estimate == 2 && st.Priority == SmartAdd.PriorityName(2) && st.Text == "[ART] Raport");
+            var st2 = SmartAdd.Parse("Odcinki 3-4 o 9:30 !!!", cats, wed);
+            Check("smart add: a bare '3-4' stays text, 'o 9:30' is the start, !!! high",
+                st2.Text == "Odcinki 3-4" && st2.Time == new TimeSpan(9, 30, 0) && st2.End == null && st2.Priority == SmartAdd.PriorityName(3));
+            Check("smart add: a meeting keeps its own times", SmartAdd.Parse("[Meeting] 14-15 Sprint", cats, wed).Text.Contains("14-15"));
+            var carried = new TaskItem { Text = "długie", Day = "2026-10-05" };
+            carried.NoteMove("2026-10-05", "2026-10-06", "2026-10-08");
+            carried.NoteMove("2026-10-06", "2026-10-08", "2026-10-08");
+            Check("continued: past days kept when moving forward, dropped when moving back",
+                carried.WorkedDays!.SequenceEqual(new[] { "2026-10-05", "2026-10-06" }) && Do(() => carried.NoteMove("2026-10-08", "2026-10-06", "2026-10-08")) && carried.WorkedDays!.SequenceEqual(new[] { "2026-10-05" }));
+            Check("progress: checklist counts as part of a task", new TaskItem { Checklist = new() { new() { Done = true }, new(), new(), new() { Done = true } } }.Progress == 0.5);
             var sealedToken = NotionSync.Protect("ntn_test_token_1234567890");
             Check("notion: token encrypted (DPAPI), not stored in plain text", sealedToken != null && !sealedToken.Contains("ntn_test"));
 

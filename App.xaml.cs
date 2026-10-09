@@ -146,7 +146,7 @@ public partial class App : Application
             // Notion: each account with a token syncs on its own interval (first run right after start-up)
             _notionTimer.Tick += (_, _) => NotionSync.Tick();
             _notionTimer.Start();
-            NotionSync.Tick();
+            NotionSync.Tick(startup: true); // always on start, then on each account's interval
         }, DispatcherPriority.ApplicationIdle);
         Dev.AfterStartup();
     }
@@ -578,6 +578,7 @@ public partial class App : Application
             }
             Add(Settings.BoardHidden ? "Pokaż tablicę" : "Ukryj tablicę", () => SetBoardHidden(!Settings.BoardHidden));
             Add("Dziś…", ToggleToday);
+            Add("Komendy i skróty…", HelpWindow.ShowHelp);
             Add("Nowy alarm…", () => AlarmWindow.Edit(Store));
             Add("Ustawienia…", ShowSettings);
             if (Settings.AccountFor(Settings.Layer).Notion.Configured)

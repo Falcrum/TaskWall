@@ -87,7 +87,7 @@ static partial class L
         ("→ spotkanie {0:hh\\:mm}–{1:hh\\:mm}", "→ meeting {0:hh\\:mm}–{1:hh\\:mm}"),
         ("→ dopisz godziny, np. 14-15:30 (albo kliknij Meeting)", "→ add the hours, e.g. 14-15:30 (or click Meeting)"),
         ("nowe zadanie…  (jutro, pt, 12.10, 2h, #art)", "new task…  (tomorrow, fri, 12.10, 2h, #art)"),
-        ("nowe zadanie…  (2h, #art, jutro…)", "new task…  (2h, #art, tomorrow…)"),
+        ("nowe zadanie…  (2h, 14-16, !!, #art · F1 = komendy)", "new task…  (2h, 14-16, !!, #art · F1 = commands)"),
         ("dodano: {0}", "added: {0}"),
     };
 }

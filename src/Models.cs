@@ -25,6 +25,24 @@ public sealed class TaskItem
 
     /// <summary>Sub-tasks (null = none).</summary>
     public List<CheckItem>? Checklist { get; set; }
+    /// <summary>Planned hours (HH:mm), e.g. "14-16" typed with the task.</summary>
+    public string? Time { get; set; }
+    public string? End { get; set; }
+    /// <summary>Earlier days the unfinished task was planned on before it moved on – shown there as "continued", so the board doesn't pretend it took one day.</summary>
+    public List<string>? WorkedDays { get; set; }
+
+    /// <summary>Checklist progress 0..1 (done task = 1).</summary>
+    [JsonIgnore] public double Progress => Done ? 1 : Checklist is { Count: > 0 } c ? (double)c.Count(x => x.Done) / c.Count : 0;
+
+    /// <summary>Moving an unfinished task forward from a past day leaves that day in its history; moving it back takes it out.</summary>
+    public void NoteMove(string? from, string? to, string today)
+    {
+        if (to != null && WorkedDays != null) WorkedDays.RemoveAll(d => string.CompareOrdinal(d, to) >= 0);
+        if (Done || from == null || to == null || string.CompareOrdinal(from, today) >= 0 || string.CompareOrdinal(to, from) <= 0) return;
+        WorkedDays ??= new();
+        if (!WorkedDays.Contains(from)) WorkedDays.Add(from);
+        WorkedDays.Sort(StringComparer.Ordinal);
+    }
 
     /// <summary>Recurring series this task came from, and the occurrence day it replaces.</summary>
     public string? RuleId { get; set; }
@@ -49,6 +67,7 @@ public sealed class TaskItem
     {
         var c = (TaskItem)MemberwiseClone();
         c.Checklist = CopyList(Checklist); // never share the list between two tasks
+        c.WorkedDays = WorkedDays == null ? null : new List<string>(WorkedDays);
         return c;
     }
 
@@ -61,6 +80,7 @@ public sealed class TaskItem
         Archived = o.Archived; ArchivedAt = o.ArchivedAt; RuleId = o.RuleId; RuleDay = o.RuleDay;
         NotionId = o.NotionId; Url = o.Url; Status = o.Status; Priority = o.Priority; NotionTitle = o.NotionTitle;
         Checklist = CopyList(o.Checklist);
+        Time = o.Time; End = o.End; WorkedDays = o.WorkedDays == null ? null : new List<string>(o.WorkedDays);
     }
 
     static readonly Regex TagRx = new(@"^\s*\[([^\[\]]{1,24})\]");
@@ -441,7 +461,7 @@ public sealed class NotionLink
     /// <summary>The token, encrypted for this Windows user (DPAPI) – never stored in plain text or in the cloud folder.</summary>
     public string? TokenProtected { get; set; }
     public bool Auto { get; set; } = true;
-    public int Minutes { get; set; } = 10;
+    public int Minutes { get; set; } = 60;
     /// <summary>Only pages where a person property contains me.</summary>
     public bool OnlyMine { get; set; }
     /// <summary>Use the filter and sorts of the view from the link ("Copy link to view": …?v=…).</summary>

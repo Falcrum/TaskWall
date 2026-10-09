@@ -354,13 +354,13 @@ static class NotionSync
     }
 
     /// <summary>Accounts with automatic sync whose interval has passed (called by the app's timer).</summary>
-    public static async void Tick()
+    public static async void Tick(bool startup = false)
     {
         foreach (var acc in App.Settings.Accounts)
         {
             var l = acc.Notion;
             if (!l.Configured || !l.Auto) continue;
-            if (l.LastSync is { } last && DateTime.Now - last < TimeSpan.FromMinutes(Math.Max(2, l.Minutes))) continue;
+            if (!startup && l.LastSync is { } last && DateTime.Now - last < TimeSpan.FromMinutes(Math.Max(2, l.Minutes))) continue;
             await Run(acc.Id);
         }
     }

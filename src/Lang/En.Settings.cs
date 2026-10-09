@@ -5,6 +5,7 @@ static partial class L
     /// <summary>Polish → English (Settings).</summary>
     static readonly (string Pl, string En)[] Settings =
     {
+        ("Synchronizuj przy starcie programu i co", "Sync when the app starts and every"),
         ("Rozpoznano bazę i widok ✓ – wczytane będą tylko zadania pasujące do filtrów tego widoku{0}.", "Database and view recognised ✓ – only tasks matching this view's filters will be loaded{0}."),
         ("Rozpoznano bazę, ale link nie ma widoku (…?v=…) – wczytana byłaby cała baza. Skopiuj link do widoku z filtrami, np. „Dla mnie”.", "Database recognised, but the link has no view (…?v=…) – the whole database would be loaded. Copy the link of a filtered view, e.g. “Assigned to me”."),
         ("Używaj filtrów i sortowania widoku z linku (zalecane)", "Use the filters and sorting of the view in the link (recommended)"),

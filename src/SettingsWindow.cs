@@ -439,10 +439,10 @@ public sealed class SettingsWindow : DarkWindow
         p.Children.Add(tokenState);
 
         var every = new ComboBox { Width = 90, Margin = new Thickness(8, 0, 0, 0) };
-        foreach (var m in new[] { 5, 10, 15, 30, 60 }) every.Items.Add(new ComboBoxItem { Content = $"{m} min", Tag = m });
+        foreach (var m in new[] { 5, 10, 15, 30, 60, 120, 240 }) every.Items.Add(new ComboBoxItem { Content = m < 60 ? $"{m} min" : $"{m / 60} h", Tag = m });
         every.SelectedItem = every.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (int)i.Tag == link.Minutes) ?? every.Items[1];
         every.SelectionChanged += (_, _) => { if (every.SelectedItem is ComboBoxItem it) { link.Minutes = (int)it.Tag; SettingsStore.Save(S); } };
-        var auto = new CheckBox { Content = L.T("Synchronizuj automatycznie co"), IsChecked = link.Auto, VerticalAlignment = VerticalAlignment.Center };
+        var auto = new CheckBox { Content = L.T("Synchronizuj przy starcie programu i co"), IsChecked = link.Auto, VerticalAlignment = VerticalAlignment.Center };
         auto.Checked += (_, _) => { link.Auto = true; SettingsStore.Save(S); };
         auto.Unchecked += (_, _) => { link.Auto = false; SettingsStore.Save(S); };
         var autoRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 4) };

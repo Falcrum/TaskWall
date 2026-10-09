@@ -14,7 +14,7 @@ namespace TaskWall;
 /// </summary>
 static class SmartAdd
 {
-    public sealed record Result(string Text, DateTime? Day, double? Estimate, List<string> Categories)
+    public sealed record Result(string Text, DateTime? Day, double? Estimate, List<string> Categories, TimeSpan? Time = null, TimeSpan? End = null, string? Priority = null)
     {
         public bool HasAny => Day != null || Estimate != null || Categories.Count > 0;
     }
@@ -42,6 +42,48 @@ static class SmartAdd
     static readonly Regex Hash = new(@"(?<!\w)#([\p{L}\p{N}_\-]{1,24})", RegexOptions.IgnoreCase);
     static readonly Regex DateNum = new(@"^(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?$");
 
+    // "14-16", "9:30–11", "od 14 do 16", "from 9 to 11" → planned hours; "o 10" / "at 10" / "10:30" → start time
+    static readonly Regex TimeRange = new(@"(?<![\w:.,])((?:od|from|o|at|godz\.?)\s*)?(\d{1,2})(?::(\d{2}))?\s*(?:-|–|—|\s(?:do|to)\s)\s*(\d{1,2})(?::(\d{2}))?(?![\w:.,])", RegexOptions.IgnoreCase);
+    static readonly Regex TimeSingle = new(@"(?<![\w:.,])(?:(?:o|at|godz\.?)\s+(\d{1,2})(?::(\d{2}))?|(\d{1,2}):(\d{2}))(?![\w:.,])", RegexOptions.IgnoreCase);
+    // "!!!" high, "!!" medium, "!" low priority (a word of its own)
+    static readonly Regex Bang = new(@"(?<!\S)(!{1,3})(?!\S)");
+    static readonly Regex MeetingWord = new(@"\[meeting\]|#meeting", RegexOptions.IgnoreCase);
+
+    public static string PriorityName(int level) => level switch { 3 => L.T("Wysoki"), 2 => L.T("Średni"), _ => L.T("Niski") };
+
+    /// <summary>Time and priority commands (left out for meetings, which read their own times).</summary>
+    static string TakeTimeAndPriority(string text, out TimeSpan? time, out TimeSpan? end, out string? priority)
+    {
+        time = end = null;
+        priority = null;
+        var b = Bang.Match(text);
+        if (b.Success) { priority = PriorityName(b.Groups[1].Length); text = Remove(text, b); }
+        if (MeetingWord.IsMatch(text)) return text;
+        var r = TimeRange.Match(text);
+        if (r.Success)
+        {
+            int h1 = int.Parse(r.Groups[2].Value), h2 = int.Parse(r.Groups[4].Value);
+            int m1 = r.Groups[3].Success ? int.Parse(r.Groups[3].Value) : 0, m2 = r.Groups[5].Success ? int.Parse(r.Groups[5].Value) : 0;
+            // a bare "3-4" is too often something else ("odcinki 3-4"): without minutes or "od/from" only daytime hours count
+            bool bare = !r.Groups[1].Success && !r.Groups[3].Success && !r.Groups[5].Success;
+            var s = new TimeSpan(h1, m1, 0);
+            var e = new TimeSpan(h2, m2, 0);
+            if (h1 <= 23 && h2 <= 23 && m1 <= 59 && m2 <= 59 && e > s && (!bare || h1 >= 6))
+            {
+                time = s; end = e;
+                return Remove(text, r);
+            }
+        }
+        var one = TimeSingle.Match(text);
+        if (one.Success)
+        {
+            int h = int.Parse(one.Groups[1].Success ? one.Groups[1].Value : one.Groups[3].Value);
+            int m = one.Groups[2].Success ? int.Parse(one.Groups[2].Value) : one.Groups[4].Success ? int.Parse(one.Groups[4].Value) : 0;
+            if (h <= 23 && m <= 59) { time = new TimeSpan(h, m, 0); return Remove(text, one); }
+        }
+        return text;
+    }
+
     public static Result Parse(string input, IReadOnlyList<Category> categories, DateTime? today = null)
     {
         var now = (today ?? DateTime.Today).Date;
@@ -49,6 +91,8 @@ static class SmartAdd
         DateTime? day = null;
         double? estimate = null;
         var cats = new List<string>();
+
+        text = TakeTimeAndPriority(text, out var time, out var end, out var priority).Trim();
 
         // estimate (first one wins)
         var hm = Hours.Match(text);
@@ -89,7 +133,9 @@ static class SmartAdd
         text = Regex.Replace(text, @"\s{2,}", " ").Trim(' ', ',', '-', '–');
         var existing = TaskItem.Tags(text, out _);
         var prefix = string.Concat(cats.Where(c => !existing.Contains(c.ToUpperInvariant())).Distinct().Select(c => $"[{c}] "));
-        return new Result((prefix + text).Trim(), day, estimate, cats);
+        // "14-16" without an estimate: the planned hours are the estimate
+        if (estimate == null && time is { } ts && end is { } te) estimate = Math.Round((te - ts).TotalHours, 2);
+        return new Result((prefix + text).Trim(), day, estimate, cats, time, end, priority);
     }
 
     static string Remove(string text, Match m) => text.Remove(m.Index, m.Length);
@@ -176,7 +222,9 @@ static class SmartAdd
             var rel = d == DateTime.Today ? L.T("dziś") : d == DateTime.Today.AddDays(1) ? L.T("jutro") : null;
             parts.Add((rel != null ? rel + ", " : "") + d.ToString("ddd d MMM", BoardWindow.Pl));
         }
+        if (r.Time is { } t) parts.Add(r.End is { } e ? $@"{t:hh\:mm}–{e:hh\:mm}" : $@"{t:hh\:mm}");
         if (r.Estimate is { } h) parts.Add(h.ToString("0.#", BoardWindow.Pl) + "h");
+        if (r.Priority != null) parts.Add("!" + r.Priority);
         parts.AddRange(r.Categories);
         return parts.Count > 0 ? "→ " + string.Join("  ·  ", parts) : "";
     }

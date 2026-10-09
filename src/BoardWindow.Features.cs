@@ -92,7 +92,7 @@ public partial class BoardWindow
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"{App.AccountName(S.Layer)};{from:yyyy-MM-dd} – {to:yyyy-MM-dd}");
         sb.AppendLine();
-        sb.AppendLine(L.T("Data;Dzień tygodnia;Tydzień;Oznaczenie;Zadania;Zrobione;Estymacja [h];Zrobione [h];Spotkania [h]"));
+        sb.AppendLine(L.T("Data;Dzień tygodnia;Tydzień;Oznaczenie;Zadania;Zrobione;Kontynuowane;Estymacja [h];Zrobione [h];Spotkania [h]"));
 
         var allTasks = new List<(DateTime Day, TaskItem Task)>();
         int tasksSum = 0, doneSum = 0;
@@ -109,9 +109,9 @@ public partial class BoardWindow
             var mark = Store.DayMark(key);
             if (mark != null) marks[mark] = marks.GetValueOrDefault(mark) + 1;
             tasksSum += tasks.Count; doneSum += done; hoursSum += hours; doneHoursSum += doneHours; meetSum += meet;
-            sb.AppendLine($"{key};{d.ToString("dddd", Pl)};{WeekNo(d)};{mark};{tasks.Count};{done};{H(hours)};{H(doneHours)};{H(meet)}");
+            sb.AppendLine($"{key};{d.ToString("dddd", Pl)};{WeekNo(d)};{mark};{tasks.Count};{done};{Store.Data.Tasks.Count(t => t.WorkedDays?.Contains(key) == true)};{H(hours)};{H(doneHours)};{H(meet)}");
         }
-        sb.AppendLine($"{L.T("Razem")};;;{string.Join(" ", marks.Select(kv => $"{kv.Key} {kv.Value}"))};{tasksSum};{doneSum};{H(hoursSum)};{H(doneHoursSum)};{H(meetSum)}");
+        sb.AppendLine($"{L.T("Razem")};;;{string.Join(" ", marks.Select(kv => $"{kv.Key} {kv.Value}"))};{tasksSum};{doneSum};;{H(hoursSum)};{H(doneHoursSum)};{H(meetSum)}");
 
         sb.AppendLine();
         sb.AppendLine(L.T("Oznaczenie;Opis;Dni"));
@@ -612,6 +612,18 @@ public partial class BoardWindow
         }
         menu.Items.Add(est);
 
+        // priority (also for own / private tasks; Notion tasks get theirs from Notion on the next sync)
+        var prio = new MenuItem { Header = L.T("Priorytet") + (t.Priority != null ? $"  ({t.Priority})" : "") };
+        foreach (var (level, name) in new[] { (3, SmartAdd.PriorityName(3)), (2, SmartAdd.PriorityName(2)), (1, SmartAdd.PriorityName(1)), (0, L.T("Brak")) })
+        {
+            var value = level == 0 ? null : name;
+            var label = (string.Equals(t.Priority, value, StringComparison.OrdinalIgnoreCase) ? "✓  " : "     ") + name + (level > 0 ? $"   {new string('!', level)}" : "");
+            prio.Items.Add(Item(label, () => Do(() => { var real = Store.Materialize(t); real.Priority = value; Store.Changed(real); })));
+        }
+        menu.Items.Add(prio);
+        if (t.Time != null)
+            menu.Items.Add(Item(L.F("Usuń godziny ({0})", t.End != null ? $"{t.Time}–{t.End}" : t.Time), () => Do(() => { var real = Store.Materialize(t); real.Time = real.End = null; Store.Changed(real); })));
+
         var tags = TaskItem.Tags(t.Text, out _);
         var cats = new MenuItem { Header = L.T("Kategoria") +(tags.Count > 0 ? $"  ({string.Join(", ", tags.Select(x => Store.CategoryFor(x)?.Name ?? x))})" : "") };
         foreach (var c in Store.Categories)
@@ -794,6 +806,7 @@ public partial class BoardWindow
             return;
         }
         if (e.Key == Key.Escape && SearchPanel.Visibility == Visibility.Visible) { e.Handled = true; CloseSearch(); return; }
+        if (e.Key == Key.F1) { e.Handled = true; HelpWindow.ShowHelp(); return; }
         if (Keyboard.FocusedElement is TextBox) return;
         if (e.Key == Key.Z && Keyboard.Modifiers == ModifierKeys.Control)
         {
@@ -880,6 +893,7 @@ public partial class BoardWindow
         }
         Add(L.T("Szukaj…  (Ctrl+F)"), OpenSearch);
         Add(L.T("Cofnij  (Ctrl+Z)"), Undo, Store.CanUndo);
+        Add(L.T("Komendy i skróty…  (F1)"), HelpWindow.ShowHelp);
         menu.Items.Add(new Separator());
         if (S.AccountFor(S.Layer).Notion.Configured)
             Add(L.T("Synchronizuj Notion teraz"), async () => { var r = await NotionSync.Run(S.Layer); SyncText.Text = r.Error ?? L.F("Notion: nowe {0}, zmienione {1}", r.Added, r.Updated); _syncFlash.Stop(); _syncFlash.Start(); });

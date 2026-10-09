@@ -10,7 +10,7 @@ static partial class L
         ("POKAŻ KOLEJNE ({0} z {1})", "SHOW MORE ({0} of {1})"),
         // CSV export
         ("Eksport okresu do CSV", "Export period to CSV"),
-        ("Data;Dzień tygodnia;Tydzień;Oznaczenie;Zadania;Zrobione;Estymacja [h];Zrobione [h];Spotkania [h]", "Date;Weekday;Week;Mark;Tasks;Done;Estimate [h];Done [h];Meetings [h]"),
+        ("Data;Dzień tygodnia;Tydzień;Oznaczenie;Zadania;Zrobione;Kontynuowane;Estymacja [h];Zrobione [h];Spotkania [h]", "Date;Weekday;Week;Mark;Tasks;Done;Continued;Estimate [h];Done [h];Meetings [h]"),
         ("Razem", "Total"),
         ("Oznaczenie;Opis;Dni", "Mark;Description;Days"),
         ("Kategoria;Zadania;Zrobione;Estymacja [h];Zrobione [h]", "Category;Tasks;Done;Estimate [h];Done [h]"),

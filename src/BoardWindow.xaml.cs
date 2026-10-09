@@ -460,10 +460,12 @@ public partial class BoardWindow : GlassWindow
             {
                 CornerRadius = new CornerRadius(1.5),
                 HorizontalAlignment = HorizontalAlignment.Left,
-                Background = isToday ? Res("AccentBrush") : B(Color.FromArgb(0x60, 0xFF, 0xFF, 0xFF)),
+                // every day in the accent: full when all done, dimmer while unfinished (and on past days)
+                Background = B(A(((SolidColorBrush)Res("AccentBrush")).Color, done == total ? (byte)0xFF : isToday ? (byte)0xE0 : (byte)0x90)),
                 ToolTip = L.F("Zrobione {0} z {1}", done, total),
             };
-            double frac = (double)done / total;
+            // checklists count too: a task with 2 of 4 items ticked fills half of its share
+            double frac = (tasks.Sum(t => t.Progress) + archivedDone) / total;
             bool known = _progress.TryGetValue(key, out var before);
             _progress[key] = frac;
             bool animate = Anim.On && known && Math.Abs(before - frac) > 0.0001; // only a real change, never on plain rebuilds
@@ -486,6 +488,8 @@ public partial class BoardWindow : GlassWindow
             .OrderBy(x => x.at);
         foreach (var (_, el) in timed) panel.Children.Add(el);
         foreach (var t in tasks) panel.Children.Add(BuildTaskRow(t, false, compact));
+        // unfinished tasks that moved on to a later day: shown here as "continued" (the work did happen here)
+        foreach (var t in Store.Data.Tasks.Where(t => t.WorkedDays != null && t.WorkedDays.Contains(key)).OrderBy(t => t.Order)) panel.Children.Add(BuildContinuedRow(t, compact));
         panel.Children.Add(BuildAddRow(key, date, compact));
         _panels[key] = panel;
 
@@ -608,6 +612,29 @@ public partial class BoardWindow : GlassWindow
             menu.Items.Add(del);
             menu.PlacementTarget = row;
             menu.IsOpen = true;
+        };
+        return row;
+    }
+
+    /// <summary>A task that was on this day unfinished and moved on: dimmed, with where it went (click = go there).</summary>
+    FrameworkElement BuildContinuedRow(TaskItem t, bool compact)
+    {
+        var where = t.Archived ? L.T("w archiwum") : t.Day == null ? "backlog" : ParseKey(t.Day).ToString("ddd d MMM", Pl);
+        var row = new Border
+        {
+            Padding = new Thickness(2, compact ? 0 : 2, 4, compact ? 0 : 2), Margin = new Thickness(0, 0, 0, 1), Opacity = 0.5, Cursor = Cursors.Hand, Background = Brushes.Transparent,
+            ToolTip = L.F("Kontynuowane: zadanie było tu w toku i przeszło dalej ({0}){1}", where, t.Done ? " – " + L.T("zrobione") : ""),
+        };
+        var tb = new TextBlock { TextWrapping = compact ? TextWrapping.NoWrap : TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = Math.Max(9.5, S.FontSize - (compact ? 2 : 1)), FontStyle = FontStyles.Italic };
+        tb.Inlines.Add(new Run("↷  ") { Foreground = Res("AccentBrush"), FontStyle = FontStyles.Normal });
+        TaskItem.Tags(t.Text, out var rest);
+        tb.Inlines.Add(new Run(rest.Length > 0 ? rest : t.Text) { Foreground = Res("FgDim") });
+        tb.Inlines.Add(new Run("  → " + where) { Foreground = Res("FgFaint"), FontStyle = FontStyles.Normal });
+        row.Child = tb;
+        row.MouseLeftButtonUp += (_, e) =>
+        {
+            e.Handled = true;
+            if (t.Day != null && !t.Archived) { _flashId = t.Id; JumpTo(ParseKey(t.Day)); }
         };
         return row;
     }
@@ -758,6 +785,8 @@ public partial class BoardWindow : GlassWindow
         Grid.SetColumn(content, 1);
         var text = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Res("Fg"), FontSize = fs };
         var tags = TaskItem.Tags(t.Text, out var rest);
+        if (t.Time != null) // planned hours ("14-16" typed with the task)
+            text.Inlines.Add(new Run((t.End != null ? $"{t.Time}–{t.End}" : t.Time) + "  ") { FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush") });
         foreach (var tag in tags)
         {
             var c = TagColor(tag);
@@ -784,7 +813,7 @@ public partial class BoardWindow : GlassWindow
             text.ToolTip = L.T("Kliknij, aby otworzyć w Notion") +(t.Status != null ? $"\nStatus: {t.Status}" : "");
         }
         if (t.RuleId != null && Store.Rule(t.RuleId) is { } rule)
-            text.ToolTip = (text.ToolTip is string s0 ? s0 + "\n" : "") + L.T("Seria: ") + RecurringRule.Patterns.FirstOrDefault(p => p.Code == rule.Pattern).Label;
+            text.ToolTip = (text.ToolTip is string s0 ? s0 + "\n" : "") + L.T("Seria: ") + rule.Summary;
         if (t.Checklist is { Count: > 0 } cl)
         {
             int cd = cl.Count(x => x.Done);
@@ -1137,7 +1166,7 @@ public partial class BoardWindow : GlassWindow
             preview.Text = desc;
             preview.Visibility = desc.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         };
-        hint.Text = key == BacklogKey ? L.T("nowe zadanie…  (jutro, pt, 12.10, 2h, #art)") : L.T("nowe zadanie…  (2h, #art, jutro…)");
+        hint.Text = key == BacklogKey ? L.T("nowe zadanie…  (jutro, pt, 12.10, 2h, #art)") : L.T("nowe zadanie…  (2h, 14-16, !!, #art · F1 = komendy)");
         grid.Children.Add(box);
         grid.Children.Add(hint);
         host.Children.Add(preview);
@@ -1203,7 +1232,7 @@ public partial class BoardWindow : GlassWindow
             {
                 string? day = parsed.Day is { } pd ? DayKey(pd) : key == BacklogKey ? null : key;
                 var siblings = Store.Data.Tasks.Where(x => x.Day == day && !x.Archived);
-                var t = new TaskItem { Text = v, Day = day, Estimate = parsed.Estimate, Order = siblings.Any() ? siblings.Max(x => x.Order) + 1 : 0 };
+                var t = new TaskItem { Text = v, Day = day, Estimate = parsed.Estimate, Time = parsed.Time?.ToString(@"hh\:mm"), End = parsed.End?.ToString(@"hh\:mm"), Priority = parsed.Priority, Order = siblings.Any() ? siblings.Max(x => x.Order) + 1 : 0 };
                 _justAdded = t.Id;
                 change = () => Store.Add(t);
                 if (parsed.Day != null && day != key) // went to another day: say where, and show that week if it's off-screen
@@ -1377,12 +1406,14 @@ public partial class BoardWindow : GlassWindow
             c.Archived = false; // a copy dragged out of the archive goes onto the board
             c.ArchivedAt = null;
             c.NotionId = null;  // the Notion import keeps updating only the original
+            c.WorkedDays = null;
             Store.Add(c);
             _justAdded = c.Id;
         }
         else
         {
             if (t.Archived) { t.Archived = false; t.ArchivedAt = null; } // dragged out of the archive tab
+            t.NoteMove(t.Day, day, DayKey(DateTime.Today)); // a past day keeps a "continued" trace
             t.Day = day;
             t.Order = order;
             Store.Changed(t);
@@ -1428,6 +1459,7 @@ public partial class BoardWindow : GlassWindow
     {
         t = Store.Materialize(t);
         var siblings = Store.Data.Tasks.Where(x => x.Day == day && x != t && !x.Archived).ToList();
+        t.NoteMove(t.Day, day, DayKey(DateTime.Today));
         t.Day = day;
         t.Order = siblings.Count > 0 ? siblings.Max(x => x.Order) + 1 : 0;
         Store.Changed(t);

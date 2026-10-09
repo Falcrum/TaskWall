@@ -177,7 +177,7 @@ public sealed class TodayWindow : Window
             var day = BoardWindow.DayKey(r.Day ?? today);
             var siblings = Store.Data.Tasks.Where(x => x.Day == day && !x.Archived);
             Store.Checkpoint();
-            Store.Add(new TaskItem { Text = r.Text, Day = day, Estimate = r.Estimate, Order = siblings.Any() ? siblings.Max(x => x.Order) + 1 : 0 });
+            Store.Add(new TaskItem { Text = r.Text, Day = day, Estimate = r.Estimate, Time = r.Time?.ToString(@"hh\:mm"), End = r.End?.ToString(@"hh\:mm"), Priority = r.Priority, Order = siblings.Any() ? siblings.Max(x => x.Order) + 1 : 0 });
             Changed();
         };
         grid.Children.Add(box);
