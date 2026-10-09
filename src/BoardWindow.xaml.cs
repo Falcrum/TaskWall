@@ -358,7 +358,7 @@ public partial class BoardWindow : GlassWindow
             Opacity = outside ? 0.45 : 1,
         };
         Brush normalBg = isToday ? B(Color.FromArgb(0x1C, 0xFF, 0xFF, 0xFF))
-            : markColor is { } mc ? B(A(mc, 0x16))
+            : markColor is { } mc && markInfo?.Ring != true ? B(A(mc, 0x16)) // a "ring" mark (HO) only shows its badge
             : Brushes.Transparent;
         var inner = new Border
         {

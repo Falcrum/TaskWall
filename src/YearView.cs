@@ -135,6 +135,7 @@ static class YearView
         var empty = Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF);
         var future = Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF);
         var marks = types.GroupBy(m => m.Code).ToDictionary(g => g.Key, g => BoardWindow.ParseColor(g.First().Color));
+        var ringMarks = types.Where(m => m.Ring).Select(m => m.Code).ToHashSet();
         var yearMonday = BoardWindow.Monday(new DateTime(year, 1, 1));
         int Col(DateTime d) => (int)((BoardWindow.Monday(d) - yearMonday).TotalDays / 7);
         int totalCols = Col(new DateTime(year, 12, 31)) + 1;
@@ -179,12 +180,14 @@ static class YearView
 
                 Color fill;
                 Color? ring = null;
-                if (mark != null && marks.TryGetValue(mark, out var mc)) fill = mc;
+                bool markRing = mark != null && ringMarks.Contains(mark); // e.g. HO: a frame, the day still shows its tasks
+                if (mark != null && !markRing && marks.TryGetValue(mark, out var mc)) fill = mc;
                 else if (past && done > 0) fill = done == total ? accent : Color.FromArgb(0xC8, accent.R, accent.G, accent.B);
                 else if (past && total > 0) fill = Color.FromArgb(0x70, accent.R, accent.G, accent.B);
                 else if (!past && total > 0) { fill = Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF); ring = accent; }
                 else fill = past ? empty : future;
                 if (date == today) ring = Colors.White;
+                if (markRing && marks.TryGetValue(mark!, out var rcol)) ring = rcol; // today stays bold
 
                 bool strong = fill.A > 0x90;
                 var cell = new Border
@@ -192,7 +195,7 @@ static class YearView
                     Margin = new Thickness(1.6),
                     Background = new SolidColorBrush(fill),
                     BorderBrush = ring is { } rc ? new SolidColorBrush(rc) : null,
-                    BorderThickness = new Thickness(ring != null ? 1.6 : 0),
+                    BorderThickness = new Thickness(ring == null ? 0 : markRing ? 2.2 : 1.6),
                     Cursor = Cursors.Hand,
                     Child = new TextBlock
                     {

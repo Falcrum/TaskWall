@@ -124,6 +124,8 @@ public sealed class RecurringRule
     public int Interval { get; set; } = 1;
     /// <summary>Weekly: days of the week (0 = Sunday … 6 = Saturday); null = the start's weekday.</summary>
     public List<int>? Weekdays { get; set; }
+    /// <summary>Not on Sundays and public holidays.</summary>
+    public bool SkipSundaysHolidays { get; set; }
     public string Start { get; set; } = "";
     public string? End { get; set; }
     public double? Estimate { get; set; }
@@ -168,6 +170,7 @@ public sealed class RecurringRule
         var key = d.ToString("yyyy-MM-dd");
         if (End != null && string.CompareOrdinal(key, End) > 0) return false;
         if (Skips.Contains(key)) return false;
+        if (SkipSundaysHolidays && (d.DayOfWeek == DayOfWeek.Sunday || PolishHolidays.DayOff(d) != null)) return false;
         int n = Math.Max(1, Interval);
         switch (Pattern)
         {
@@ -192,7 +195,7 @@ public sealed class RecurringRule
     }
 
     /// <summary>"co 2 tygodnie: pn, śr · od 5 paź do 30 lis"</summary>
-    [JsonIgnore] public string Summary => Describe(Pattern, Interval, Weekdays, StartDate, End);
+    [JsonIgnore] public string Summary => Describe(Pattern, Interval, Weekdays, StartDate, End) + (SkipSundaysHolidays ? " · " + L.T("bez niedziel i świąt") : "");
 
     public static string Describe(string pattern, int interval, List<int>? weekdays, DateTime start, string? end)
     {
@@ -228,7 +231,7 @@ public sealed class RecurringRule
     {
         Text = o.Text; Pattern = o.Pattern; Interval = o.Interval; Weekdays = o.Weekdays == null ? null : new List<int>(o.Weekdays);
         Start = o.Start; End = o.End; Estimate = o.Estimate; Order = o.Order;
-        Skips = new List<string>(o.Skips); Deleted = o.Deleted; Modified = o.Modified;
+        Skips = new List<string>(o.Skips); Deleted = o.Deleted; Modified = o.Modified; SkipSundaysHolidays = o.SkipSundaysHolidays;
     }
 }
 
@@ -419,6 +422,9 @@ public sealed class MarkType
     public string Code { get; set; } = "";
     public string Label { get; set; } = "";
     public string Color { get; set; } = "#3BB8C9";
+    /// <summary>"ring" = only a coloured frame (the day keeps showing its tasks), "fill" = coloured day; null = HO ring, others fill.</summary>
+    public string? Style { get; set; }
+    [JsonIgnore] public bool Ring => Style == null ? Code == "HO" : Style == "ring";
 
     public static List<MarkType> DefaultsFor(string layer) => layer == "private"
         ? new()

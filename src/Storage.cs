@@ -582,7 +582,7 @@ public sealed class BoardStore
     }
 
     static string RuleKey(RecurringRule r) =>
-        $"{r.Text}|{r.Pattern}|{r.Interval}|{string.Join(",", r.Weekdays ?? new())}|{r.Start}|{r.End}|{r.Estimate}|{r.Order}|{string.Join(",", r.Skips)}|{r.Deleted}";
+        $"{r.Text}|{r.Pattern}|{r.Interval}|{r.SkipSundaysHolidays}|{string.Join(",", r.Weekdays ?? new())}|{r.Start}|{r.End}|{r.Estimate}|{r.Order}|{string.Join(",", r.Skips)}|{r.Deleted}";
 
     static string Comparable(TaskItem t)
     {

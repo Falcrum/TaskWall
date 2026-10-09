@@ -244,7 +244,7 @@ public sealed class SettingsWindow : DarkWindow
         FillMarks(store, marks);
         var addMark = Btn(L.T("+ Dodaj oznaczenie"), "SecondaryButton", (_, _) =>
         {
-            var list = store.MarkTypes.Select(x => new MarkType { Code = x.Code, Label = x.Label, Color = x.Color }).ToList();
+            var list = store.MarkTypes.Select(x => new MarkType { Code = x.Code, Label = x.Label, Color = x.Color, Style = x.Style }).ToList();
             var used = list.Select(x => x.Color).ToHashSet(StringComparer.OrdinalIgnoreCase);
             list.Add(new MarkType { Code = L.T("NOWE"), Label = "", Color = Category.Palette.FirstOrDefault(x => !used.Contains(x)) ?? Category.Palette[0] });
             store.SetMarkTypes(list);
@@ -519,7 +519,7 @@ public sealed class SettingsWindow : DarkWindow
     void FillMarks(BoardStore store, StackPanel host, bool focusLast = false)
     {
         host.Children.Clear();
-        var list = store.MarkTypes.Select(x => new MarkType { Code = x.Code, Label = x.Label, Color = x.Color }).ToList();
+        var list = store.MarkTypes.Select(x => new MarkType { Code = x.Code, Label = x.Label, Color = x.Color, Style = x.Style }).ToList();
         void Save() { store.SetMarkTypes(list); App.Board?.Rebuild(); }
         TextBox? last = null;
         if (list.Count == 0) host.Children.Add(Label(L.T("Brak oznaczeń dni na tym koncie."), 11.5, "FgFaint"));
@@ -535,6 +535,11 @@ public sealed class SettingsWindow : DarkWindow
             del.ToolTip = L.T("Usuwa oznaczenie z listy (dni już oznaczone zostają w danych)");
             DockPanel.SetDock(del, Dock.Right);
             row.Children.Add(del);
+            // frame (day keeps its own colours, e.g. HO) or a coloured day (e.g. BŚU)
+            var style = Btn(list[i].Ring ? L.T("◯ ramka") : L.T("● tło"), "LinkButton", (_, _) => { list[index].Style = list[index].Ring ? "fill" : "ring"; Save(); FillMarks(store, host); });
+            style.ToolTip = L.T("Ramka: dzień zachowuje kolory zadań (np. w widoku roku), widać tylko obrys i etykietę. Tło: cały dzień w kolorze oznaczenia.");
+            DockPanel.SetDock(style, Dock.Right);
+            row.Children.Add(style);
             var code = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = list[i].Code, MaxLength = 8, Width = 90, Margin = new Thickness(0, 0, 6, 0), ToolTip = L.T("Kod w nagłówku dnia") };
             var label = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = list[i].Label, MaxLength = 40, ToolTip = L.T("Opis (np. Home Office)") };
             void Commit()

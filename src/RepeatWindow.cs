@@ -28,6 +28,7 @@ public sealed class RepeatWindow : DarkWindow
     readonly TextBox _from = new() { Style = (Style)Application.Current.Resources["FieldBox"], Width = 150 };
     readonly TextBox _to = new() { Style = (Style)Application.Current.Resources["FieldBox"], Width = 150 };
     readonly TextBlock _preview = Label("", 12, "FgDim");
+    readonly CheckBox _skipHolidays = new() { Content = L.T("Pomijaj niedziele i święta"), Margin = new Thickness(0, 12, 0, 0) };
     readonly Button _save;
     readonly List<(ToggleButton Button, int Day)> _dayButtons = new();
 
@@ -92,6 +93,7 @@ public sealed class RepeatWindow : DarkWindow
         period.Children.Add(_to);
         period.Children.Add(new TextBlock { Text = L.T("np. 14.10 · jutro · pt"), Foreground = Ui.Res("FgFaint"), FontSize = 11.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) });
         p.Children.Add(period);
+        p.Children.Add(_skipHolidays);
 
         _preview.Margin = new Thickness(0, 14, 0, 0);
         p.Children.Add(_preview);
@@ -129,6 +131,9 @@ public sealed class RepeatWindow : DarkWindow
         _interval.Text = Math.Max(1, interval).ToString();
         var days = rule?.Weekdays is { Count: > 0 } w ? w : new List<int> { (int)start.DayOfWeek };
         foreach (var (b, d) in _dayButtons) b.IsChecked = days.Contains(d);
+        _skipHolidays.IsChecked = rule?.SkipSundaysHolidays ?? false;
+        _skipHolidays.Checked += (_, _) => Update();
+        _skipHolidays.Unchecked += (_, _) => Update();
 
         _pattern.SelectionChanged += (_, _) => Update();
         _interval.TextChanged += (_, _) => Update();
@@ -168,7 +173,7 @@ public sealed class RepeatWindow : DarkWindow
         DateTime? to = _to.Text.Trim().Length == 0 ? null : Day(_to.Text);
         if (_to.Text.Trim().Length > 0 && (to == null || to < from)) return null;
         if (!int.TryParse(_interval.Text.Trim(), out var n) || n < 1 || n > 99) return null;
-        var r = new RecurringRule { Pattern = Pattern, Interval = Pattern == "weekdays" ? 1 : n, Start = from.ToString("yyyy-MM-dd"), End = to?.ToString("yyyy-MM-dd") };
+        var r = new RecurringRule { Pattern = Pattern, Interval = Pattern == "weekdays" ? 1 : n, Start = from.ToString("yyyy-MM-dd"), End = to?.ToString("yyyy-MM-dd"), SkipSundaysHolidays = _skipHolidays.IsChecked == true };
         if (Pattern == "weekly")
         {
             var days = _dayButtons.Where(x => x.Button.IsChecked == true).Select(x => x.Day).ToList();
@@ -224,7 +229,7 @@ public sealed class RepeatWindow : DarkWindow
         _store.Checkpoint();
         if (_rule != null)
         {
-            _rule.Pattern = r.Pattern; _rule.Interval = r.Interval; _rule.Weekdays = r.Weekdays; _rule.Start = r.Start; _rule.End = r.End;
+            _rule.Pattern = r.Pattern; _rule.Interval = r.Interval; _rule.Weekdays = r.Weekdays; _rule.Start = r.Start; _rule.End = r.End; _rule.SkipSundaysHolidays = r.SkipSundaysHolidays;
             if (_task == null && _mark.SelectedItem is ComboBoxItem it) _rule.Text = (string)it.Tag;
             _rule.Deleted = false;
             _store.Changed(_rule);
