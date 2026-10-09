@@ -31,7 +31,9 @@ Aplikacja nie ma okna na pasku zadań. Steruje się nią ikoną w zasobniku (lew
 | Konta | PRACA / PRYWATNE na środku górnego paska albo Ctrl+1 / Ctrl+2. Każde konto ma własny folder, kalendarze, Notion, kategorie, oznaczenia dni, archiwum i alarmy |
 | Widoki | DZIEŃ · 1 TYDZIEŃ · 2 TYGODNIE · MIESIĄC · ROK (zapamiętywany). ‹ › przesuwa o dzień, tydzień, miesiąc albo rok |
 | Dodaj zadanie | „+ dodaj zadanie” pod dniem. Enter dodaje i otwiera kolejne pole, Esc zamyka. Kliknięcie kategorii pod polem wstawia np. `[ART]` |
-| Sprytne dodawanie | `jutro`, `pt`, `w pt`, `za 3 dni`, `14.10` na początku albo na końcu (też `tomorrow`, `fri`, `in 3 days`), `2h` / `30 min` (estymacja), `#art` (kategoria). Podgląd pokazuje, co zostało rozpoznane |
+| Sprytne dodawanie | `jutro`, `pt`, `w pt`, `za 3 dni`, `14.10` na początku albo na końcu (też `tomorrow`, `fri`, `in 3 days`), `2h` / `30 min` (estymacja), `#art` (kategoria). Podgląd pokazuje, co zostało rozpoznane; `14-16` = godziny, `!!!` / `!!` / `!` = priorytet. Wszystkie komendy: **F1** (działają też przy edycji) |
+| Zadania wielodniowe | niezrobione zadanie przeniesione dalej (KONTYNUUJ DZIŚ albo przeciągnięciem) zostaje w poprzednich dniach jako wyszarzone „↷ 1/3”, w tym samym rzędzie przez cały tydzień. Prawy przycisk → Rozpoczęte… ustawia początek pracy albo „tylko ten dzień” |
+| Podzadania z Notion | strony z „Parent item / Element nadrzędny” są wcięte pod zadaniem głównym; przeciągnięcie głównego zabiera je ze sobą |
 | Szybko z dowolnego miejsca | **Ctrl+Shift+Spacja**: tablica wyskakuje z polem na dziś. Lewy klik na ikonie w zasobniku: karta „Dziś” |
 | Alarm | ikona zegara na górnym pasku, prawy przycisk na dniu → Dodaj alarm (w ten dzień), „+ ALARM” w karcie Dziś albo menu zasobnika. Godzina: `15:30`, `9`, `za 20 min`. Powtarzanie: codziennie, w dni robocze, co tydzień, co 2 tygodnie, co miesiąc |
 | Spotkanie | kliknij kategorię Meeting pod polem nowego zadania albo wpisz `[Meeting] 14-15:30 Sprint` (też `#meeting o 10 30 min`). Okno: tytuł, od–do, przypomnienie, powtarzanie. Godziny spotkań liczą się do sumy dnia |
@@ -105,7 +107,7 @@ Przełączniki są w `src/Dev.cs`:
 - `--data <folder>`: osobne dane i ustawienia testowe (`.dev\settings.dev.json`), działa obok zainstalowanej kopii, nie rusza autostartu
 - `--topmost --shot <dir> [--shot-delay s] --exit`: zrzuty okien
 - `--open day|month|year|drawer|archive|calendar|settings|today|add|private|alarm|meeting|repeat-mark|ring|ring-soon|search=…|import=…`
-- `--selftest <plik>`: testy warstwy danych (64)
+- `--selftest <plik>`: testy warstwy danych (73)
 
 Teksty interfejsu to polskie klucze w `L.T(...)` / `L.F(...)`, angielskie tłumaczenia w `src/Lang/En.*.cs`.
 
