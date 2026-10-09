@@ -423,6 +423,32 @@ public sealed class BoardStore
         return all.Count;
     }
 
+    /// <summary>Backups of this account, newest first: daily copies, copies made before a reset, merged conflict copies.</summary>
+    public List<(string File, DateTime When, int Tasks)> Backups()
+    {
+        var list = new List<(string, DateTime, int)>();
+        if (!Directory.Exists(BackupFolder)) return list;
+        foreach (var f in Directory.GetFiles(BackupFolder, "*.json", SearchOption.AllDirectories))
+        {
+            var d = TryRead(f).Data;
+            if (d != null) list.Add((f, File.GetLastWriteTime(f), d.Tasks.Count));
+        }
+        return list.OrderByDescending(x => x.Item2).ToList();
+    }
+
+    /// <summary>
+    /// Brings tasks, day marks and series back to a backup's state – as new edits, so other computers follow and
+    /// Ctrl+Z can still undo it.
+    /// </summary>
+    public bool RestoreFrom(string file)
+    {
+        var d = TryRead(file).Data;
+        if (d == null) return false;
+        Checkpoint(); // Ctrl+Z after the restore goes back to how it was
+        _undo.Add(JsonSerializer.Serialize(new BoardData { Tasks = d.Tasks, Days = d.Days, Rules = d.Rules, MarkRules = d.MarkRules }, Json.Options));
+        return Undo();
+    }
+
     public int ClearAlarms(bool meetings)
     {
         var list = Data.Alarms.Where(a => !a.Deleted && a.IsMeeting == meetings).ToList();

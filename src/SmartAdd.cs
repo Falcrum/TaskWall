@@ -94,7 +94,7 @@ static class SmartAdd
         return text;
     }
 
-    public static Result Parse(string input, IReadOnlyList<Category> categories, DateTime? today = null)
+    public static Result Parse(string input, IReadOnlyList<Category> categories, DateTime? today = null, bool dates = true)
     {
         var now = (today ?? DateTime.Today).Date;
         var text = input.Trim();
@@ -126,7 +126,7 @@ static class SmartAdd
         }
 
         // date words at the start or the end
-        for (int pass = 0; pass < 2 && day == null; pass++)
+        for (int pass = 0; dates && pass < 2 && day == null; pass++)
         {
             var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
             if (words.Count == 0) break;

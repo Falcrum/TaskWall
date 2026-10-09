@@ -322,6 +322,27 @@ static class Dev
             Check("continued: past days kept when moving forward, dropped when moving back",
                 carried.WorkedDays!.SequenceEqual(new[] { "2026-10-05", "2026-10-06" }) && Do(() => carried.NoteMove("2026-10-08", "2026-10-06", "2026-10-08")) && carried.WorkedDays!.SequenceEqual(new[] { "2026-10-05" }));
             Check("progress: checklist counts as part of a task", new TaskItem { Checklist = new() { new() { Done = true }, new(), new(), new() { Done = true } } }.Progress == 0.5);
+            var sundayRule = new RecurringRule { Pattern = "daily", Start = "2026-10-30", SkipSundaysHolidays = true };
+            Check("series: skip Sundays and holidays (1 Nov 2026 = Sunday + All Saints, 11 Nov = holiday)",
+                sundayRule.Occurs(new DateTime(2026, 10, 31)) && !sundayRule.Occurs(new DateTime(2026, 11, 1)) && !sundayRule.Occurs(new DateTime(2026, 11, 11)) && sundayRule.Occurs(new DateTime(2026, 11, 12)));
+            Check("day marks: HO is a frame by default, BŚU a fill", new MarkType { Code = "HO" }.Ring && !new MarkType { Code = "BŚU" }.Ring && new MarkType { Code = "BŚU", Style = "ring" }.Ring);
+            const string subJson = """
+            {"object":"page","id":"2222aaaa-2222-bbbb-3333-cccc4444dddd","url":"https://www.notion.so/x","properties":{
+              "Name":{"type":"title","title":[{"plain_text":"Podzadanie"}]},
+              "Parent item":{"type":"relation","relation":[{"id":"1111aaaa-2222-bbbb-3333-cccc4444dddd"}]}}}
+            """;
+            using (var sj = System.Text.Json.JsonDocument.Parse(subJson))
+                Check("notion: sub-item knows its main task", NotionSync.ParsePage(sj.RootElement)!.ParentId == "1111aaaa2222bbbb3333cccc4444dddd");
+            var restoreStore = new BoardStore("work");
+            restoreStore.Open(Path.Combine(dir, "restore"));
+            restoreStore.Add(new TaskItem { Text = "z kopii" });
+            restoreStore.SaveNow();
+            var copyFile = Path.Combine(dir, "restore", "copy.json");
+            File.Copy(restoreStore.FilePath, copyFile);
+            restoreStore.ClearTasks();
+            restoreStore.Add(new TaskItem { Text = "nowe" });
+            Check("restore from a backup file (and Ctrl+Z back)", restoreStore.RestoreFrom(copyFile) && restoreStore.Data.Tasks.Single().Text == "z kopii"
+                && restoreStore.Undo() && restoreStore.Data.Tasks.Single().Text == "nowe");
             var sealedToken = NotionSync.Protect("ntn_test_token_1234567890");
             Check("notion: token encrypted (DPAPI), not stored in plain text", sealedToken != null && !sealedToken.Contains("ntn_test"));
 

@@ -55,6 +55,8 @@ public sealed class TaskItem
     public string? Priority { get; set; }
     /// <summary>Title as last read from Notion (sync renames the task only while its text still matches it).</summary>
     public string? NotionTitle { get; set; }
+    /// <summary>Notion sub-item: page id of its main task (shown indented under it).</summary>
+    public string? ParentNotionId { get; set; }
 
     [JsonIgnore] public bool IsBacklog => Day == null;
     [JsonIgnore] public bool HasLink => !string.IsNullOrEmpty(Url);
@@ -78,7 +80,7 @@ public sealed class TaskItem
     {
         Text = o.Text; Done = o.Done; Day = o.Day; Order = o.Order; Modified = o.Modified; Estimate = o.Estimate;
         Archived = o.Archived; ArchivedAt = o.ArchivedAt; RuleId = o.RuleId; RuleDay = o.RuleDay;
-        NotionId = o.NotionId; Url = o.Url; Status = o.Status; Priority = o.Priority; NotionTitle = o.NotionTitle;
+        NotionId = o.NotionId; Url = o.Url; Status = o.Status; Priority = o.Priority; NotionTitle = o.NotionTitle; ParentNotionId = o.ParentNotionId;
         Checklist = CopyList(o.Checklist);
         Time = o.Time; End = o.End; WorkedDays = o.WorkedDays == null ? null : new List<string>(o.WorkedDays);
     }
@@ -513,6 +515,8 @@ public sealed class AppSettings
     public bool OpenNotionInApp { get; set; }
     public bool AutoRollover { get; set; }
     public bool AlarmSound { get; set; } = true;
+    /// <summary>Minutes before a task with planned hours starts to remind (-1 = off).</summary>
+    public int TaskReminder { get; set; } = 5;
     public bool BoardHidden { get; set; }
     /// <summary>"pl" or "en".</summary>
     public string Language { get; set; } = "pl";

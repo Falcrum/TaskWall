@@ -18,6 +18,7 @@ public partial class BoardWindow
     string? _tagFilter;
     bool _archiveTab;
     bool _allTags;          // backlog: all category chips or only the biggest ones
+    string? _statusFilter;  // backlog: only this Notion status
     int _backlogShown = 200; // backlog rows built (more on demand)
 
     void InitFeatures()
@@ -229,7 +230,25 @@ public partial class BoardWindow
         var tagCounts = all.SelectMany(t => TaskItem.Tags(t.Text, out _).Distinct()).GroupBy(x => x).OrderByDescending(g => g.Count()).ThenBy(g => g.Key).ToList();
         if (_tagFilter != null && tagCounts.All(g => g.Key != _tagFilter)) _tagFilter = null;
         TagChips.Children.Clear();
-        TagChips.Visibility = tagCounts.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        // Notion statuses ("Do zrobienia", "W toku" …) as a filter too
+        var statusCounts = all.Where(t => !string.IsNullOrEmpty(t.Status)).GroupBy(t => t.Status!).OrderByDescending(g => g.Count()).ToList();
+        if (_statusFilter != null && statusCounts.All(g => g.Key != _statusFilter)) _statusFilter = null;
+        foreach (var g in statusCounts)
+        {
+            var status = g.Key;
+            bool on = _statusFilter == status;
+            var chip = new Border
+            {
+                CornerRadius = new CornerRadius(9), Padding = new Thickness(8, 1, 8, 2), Margin = new Thickness(0, 0, 5, 5), Cursor = Cursors.Hand,
+                BorderThickness = new Thickness(1), BorderBrush = B(Color.FromArgb(on ? (byte)0xC0 : (byte)0x40, 0xFF, 0xFF, 0xFF)),
+                Background = B(Color.FromArgb(on ? (byte)0x40 : (byte)0x12, 0xFF, 0xFF, 0xFF)),
+                Child = new TextBlock { Text = $"● {status}  {g.Count()}", FontSize = 10.5, FontWeight = FontWeights.SemiBold, Foreground = Res("Fg") },
+                ToolTip = on ? L.T("Pokaż wszystkie") : L.F("Tylko status „{0}”", status),
+            };
+            chip.MouseLeftButtonUp += (_, _) => { _statusFilter = on ? null : status; _backlogShown = 200; BuildBacklog(); };
+            TagChips.Children.Add(chip);
+        }
+        TagChips.Visibility = tagCounts.Count > 0 || statusCounts.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         // only the biggest categories (a whole team's Notion has dozens) – the rest behind "+ N"
         const int TagLimit = 10;
         var visibleTags = _allTags ? tagCounts : tagCounts.Take(TagLimit).Concat(tagCounts.Skip(TagLimit).Where(g => g.Key == _tagFilter)).ToList();
@@ -268,11 +287,12 @@ public partial class BoardWindow
 
         var shown = all.Where(t =>
             (_tagFilter == null || TaskItem.Tags(t.Text, out _).Contains(_tagFilter)) &&
+            (_statusFilter == null || t.Status == _statusFilter) &&
             (q.Length == 0 || Matches(t.Text, q) || Matches(t.Status, q) || Matches(t.Priority, q))).ToList();
 
         BacklogCount.Text = shown.Count == all.Count ? all.Count.ToString() : $"{shown.Count}/{all.Count}";
         // thousands of rows would freeze the drawer: the first ones, then "show more"
-        foreach (var t in shown.Take(_backlogShown)) BacklogList.Children.Add(BuildTaskRow(t, true));
+        foreach (var (t, depth) in Nest(shown.Take(_backlogShown))) BacklogList.Children.Add(BuildTaskRow(t, true, depth: depth));
         if (shown.Count > _backlogShown)
         {
             var moreRows = new Button { Style = (Style)FindResource("BarButton"), Content = L.F("POKAŻ KOLEJNE ({0} z {1})", Math.Min(200, shown.Count - _backlogShown), shown.Count - _backlogShown), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 4, 0, 4) };

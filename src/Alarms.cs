@@ -23,6 +23,7 @@ static class AlarmService
 {
     static readonly DispatcherTimer Timer = new();
     static readonly List<(Alarm Alarm, string Layer, DateTime Due, DateTime At)> Snoozed = new();
+    static readonly HashSet<string> RangTasks = new(); // task reminders shown this session
     static bool _started;
 
     /// <summary>Raised after alarms were added / edited / rang (open views refresh).</summary>
@@ -66,6 +67,21 @@ static class AlarmService
                 }
                 if (a.Next(now) is { } n && n < next) next = n;
             }
+        // tasks with planned hours today ("14-16"): a reminder some minutes before the start
+        if (App.Settings.TaskReminder >= 0)
+            foreach (var (layer, store) in App.OpenStores())
+                foreach (var t in store.Data.Tasks.Where(t => t.Time != null && !t.Done && !t.Archived && t.Day == now.ToString("yyyy-MM-dd")).ToList())
+                {
+                    if (!TimeSpan.TryParseExact(t.Time, @"hh\:mm", null, out var tod)) continue;
+                    var ringAt = now.Date + tod - TimeSpan.FromMinutes(App.Settings.TaskReminder);
+                    var key = $"{t.Id}|{t.Day}|{t.Time}";
+                    if (ringAt <= now && now - ringAt < TimeSpan.FromMinutes(3) && RangTasks.Add(key))
+                    {
+                        AlarmToast.Ring(new Alarm { Id = "task:" + t.Id, Kind = "task", Text = t.Text, Day = t.Day!, Time = t.Time!, End = t.End }, layer, now.Date + tod);
+                        rang = true;
+                    }
+                    else if (ringAt > now && ringAt < next) next = ringAt;
+                }
         foreach (var s in Snoozed.Where(s => s.Due <= now).ToList())
         {
             Snoozed.Remove(s);
@@ -233,6 +249,7 @@ public sealed class AlarmToast : Window
         var occurrence = a.IsMeeting ? a.At(at.AddMinutes(a.Remind ?? 0).Date) : at;
         head.Inlines.Add(new System.Windows.Documents.Run(a.IsMeeting
             ? $"{L.T("SPOTKANIE")}  {occurrence:HH:mm}–{a.EndAt(occurrence):HH:mm}  ·  {L.Up(App.AccountName(layer))}"
+            : a.Kind == "task" ? $"{L.T("ZADANIE")}  {a.Time}{(a.End != null ? "–" + a.End : "")}  ·  {L.Up(App.AccountName(layer))}"
             : $"ALARM  {at:HH:mm}  ·  {L.Up(App.AccountName(layer))}"));
         if (a.IsMeeting && occurrence > DateTime.Now)
             head.Inlines.Add(new System.Windows.Documents.Run("  ·  " + AlarmService.Until(occurrence)) { Foreground = Ui.Res("FgDim") });

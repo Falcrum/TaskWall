@@ -278,6 +278,27 @@ public sealed class SettingsWindow : DarkWindow
         ClearButton(L.T("Usuń spotkania"), () => store.Alarms.Count(a => a.IsMeeting), () => store.ClearAlarms(meetings: true), L.T("spotkania"));
         ClearButton(L.T("Usuń alarmy"), () => store.Alarms.Count(a => !a.IsMeeting), () => store.ClearAlarms(meetings: false), L.T("alarmy"));
         ClearButton(L.T("Usuń oznaczenia dni"), () => store.Data.Days.Count(kv => !string.IsNullOrEmpty(kv.Value.Mark)) + store.Data.MarkRules.Count(r => !r.Deleted), store.ClearMarks, L.T("oznaczenia dni (też powtarzane)"));
+        Button? restore = null;
+        restore = Btn(L.T("Przywróć z kopii…"), "SecondaryButton", (_, _) =>
+        {
+            var menu = new ContextMenu { PlacementTarget = restore, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+            var backups = store.Backups();
+            if (backups.Count == 0) menu.Items.Add(new MenuItem { Header = L.T("Brak kopii w folderze backup"), IsEnabled = false });
+            foreach (var (file, when, count) in backups.Take(25))
+            {
+                var mi = new MenuItem { Header = L.F("{0}  ·  zadań: {1}  ·  {2}", when.ToString("ddd d MMM yyyy, HH:mm", BoardWindow.Pl), count, Path.GetFileName(Path.GetDirectoryName(file)) == "backup" ? Path.GetFileName(file) : Path.GetFileName(Path.GetDirectoryName(file)) + "\\" + Path.GetFileName(file)) };
+                mi.Click += (_, _) =>
+                {
+                    if (MessageBox.Show(this, L.F("Przywrócić zadania, oznaczenia dni i serie konta „{0}” do stanu z kopii ({1})?\nObecny stan da się przywrócić Ctrl+Z na tablicy.", App.AccountName(id), when.ToString("g", BoardWindow.Pl)), "TaskWall",
+                            MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+                    if (store.RestoreFrom(file)) App.Board?.Rebuild();
+                };
+                menu.Items.Add(mi);
+            }
+            menu.IsOpen = true;
+        });
+        restore.Margin = new Thickness(0, 0, 8, 8);
+        clearRow.Children.Add(restore);
         p.Children.Add(clearRow);
     }
 
@@ -721,6 +742,12 @@ public sealed class SettingsWindow : DarkWindow
         p.Children.Add(Check(L.T("Pokazuj zegar z kalendarzem"), S.ShowClock, v => S.ShowClock = v));
         p.Children.Add(Check(L.T("Zegar 24-godzinny"), S.Use24h, v => S.Use24h = v));
         p.Children.Add(Check(L.T("Dźwięk alarmów"), S.AlarmSound, v => S.AlarmSound = v));
+        var remind = new ComboBox { Width = 200, HorizontalAlignment = HorizontalAlignment.Left };
+        foreach (var (m, label) in new[] { (-1, L.T("Wyłączone")), (0, L.T("W chwili rozpoczęcia")), (5, L.T("5 min przed")), (10, L.T("10 min przed")), (15, L.T("15 min przed")) })
+            remind.Items.Add(new ComboBoxItem { Content = label, Tag = m });
+        remind.SelectedItem = remind.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (int)i.Tag == S.TaskReminder) ?? remind.Items[2];
+        remind.SelectionChanged += (_, _) => { if (remind.SelectedItem is ComboBoxItem it) { S.TaskReminder = (int)it.Tag; SettingsStore.Save(S); AlarmService.Reschedule(); } };
+        p.Children.Add(Pair(L.T("Przypomnienie o zadaniach z godziną (np. 14-16)"), remind));
         p.Children.Add(Check(L.T("Otwieraj linki w aplikacji Notion (zamiast w przeglądarce)"), S.OpenNotionInApp, v => S.OpenNotionInApp = v));
         var hot = new ComboBox { Width = 320, HorizontalAlignment = HorizontalAlignment.Left };
         foreach (var (key, label) in new[] { ("Ctrl+Shift+Space", L.T("Ctrl + Shift + Spacja")), ("Ctrl+Alt+D", "Ctrl + Alt + D"), ("Ctrl+Alt+T", "Ctrl + Alt + T"), ("Win+Shift+D", "Win + Shift + D"), ("", L.T("Wyłączony")) })

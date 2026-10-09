@@ -27,7 +27,11 @@ static class NotionSync
     public sealed record Result(int Added, int Updated, int Total, string? Error);
 
     /// <summary>A parsed page (title, status …), independent of the API's JSON.</summary>
-    public sealed record Page(string Id, string Title, string? Status, string? Priority, double? Estimate, string Url, List<string> People);
+    public sealed record Page(string Id, string Title, string? Status, string? Priority, double? Estimate, string Url, List<string> People)
+    {
+        /// <summary>The main task of a Notion sub-item (page id without dashes).</summary>
+        public string? ParentId { get; init; }
+    }
 
     // ---------- token storage (DPAPI, current Windows user) ----------
 
@@ -224,6 +228,7 @@ static class NotionSync
         string? status = null, priority = null;
         double? estimate = null;
         var people = new List<string>();
+        string? parent = null;
         if (!p.TryGetProperty("properties", out var props)) return null;
         foreach (var prop in props.EnumerateObject())
         {
@@ -243,6 +248,12 @@ static class NotionSync
                         if (name.Contains("prior")) priority = val;
                         else if (name.Contains("status") || name.Contains("stan")) status ??= val;
                     }
+                    break;
+                case "relation":
+                    // Notion sub-items: "Parent item" / "Element nadrzędny" points at the main task
+                    if (parent == null && (name.Contains("parent") || name.Contains("nadrz") || name.Contains("rodzic") || name.Contains("główn")) && v.TryGetProperty("relation", out var rel) && rel.ValueKind == JsonValueKind.Array)
+                        foreach (var r in rel.EnumerateArray())
+                            if (r.TryGetProperty("id", out var rid)) { parent = rid.GetString()!.Replace("-", ""); break; }
                     break;
                 case "people":
                     foreach (var person in v.GetProperty("people").EnumerateArray())
@@ -265,7 +276,7 @@ static class NotionSync
         }
         if (string.IsNullOrWhiteSpace(title)) return null;
         if (estimate is <= 0 or > 1000) estimate = null;
-        return new Page(id, title.Trim(), status, priority, estimate is { } e ? Math.Round(e, 2) : null, url, people);
+        return new Page(id, title.Trim(), status, priority, estimate is { } e ? Math.Round(e, 2) : null, url, people) { ParentId = parent };
     }
 
     static bool IsEstimate(string name) =>
@@ -292,7 +303,7 @@ static class NotionSync
                 store.Add(new TaskItem
                 {
                     Text = title, NotionTitle = title, NotionId = page.Id, Url = page.Url,
-                    Status = page.Status, Priority = page.Priority, Estimate = page.Estimate, Order = order++,
+                    Status = page.Status, Priority = page.Priority, Estimate = page.Estimate, Order = order++, ParentNotionId = page.ParentId,
                 });
                 added++;
                 continue;
@@ -315,6 +326,7 @@ static class NotionSync
             if (page.Estimate != null && page.Estimate != t.Estimate) { t.Estimate = page.Estimate; changed = true; }
             if (link.SyncDone && !t.Done && NotionImport.LooksDone(page.Status)) { t.Done = true; changed = true; }
             if (page.Url != t.Url) { t.Url = page.Url; changed = true; }
+            if (page.ParentId != t.ParentNotionId) { t.ParentNotionId = page.ParentId; changed = true; }
             if (changed) { store.Changed(t); updated++; }
         }
         return (added, updated);

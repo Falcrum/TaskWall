@@ -5,6 +5,17 @@ static partial class L
     /// <summary>Polish → English (Settings).</summary>
     static readonly (string Pl, string En)[] Settings =
     {
+        ("5 min przed", "5 min before"),
+        ("10 min przed", "10 min before"),
+        ("15 min przed", "15 min before"),
+        ("Wyłączone", "Off"),
+        ("ZADANIE", "TASK"),
+        ("Przypomnienie o zadaniach z godziną (np. 14-16)", "Reminder for tasks with hours (e.g. 14-16)"),
+        ("Przywróć z kopii…", "Restore from backup…"),
+        ("Brak kopii w folderze backup", "No copies in the backup folder"),
+        ("{0}  ·  zadań: {1}  ·  {2}", "{0}  ·  tasks: {1}  ·  {2}"),
+        ("Przywrócić zadania, oznaczenia dni i serie konta „{0}” do stanu z kopii ({1})?\nObecny stan da się przywrócić Ctrl+Z na tablicy.", "Restore tasks, day marks and series of account “{0}” to the backup ({1})?\nCtrl+Z on the board brings the current state back."),
+        ("Tylko status „{0}”", "Only status “{0}”"),
         ("Synchronizuj przy starcie programu i co", "Sync when the app starts and every"),
         ("Rozpoznano bazę i widok ✓ – wczytane będą tylko zadania pasujące do filtrów tego widoku{0}.", "Database and view recognised ✓ – only tasks matching this view's filters will be loaded{0}."),
         ("Rozpoznano bazę, ale link nie ma widoku (…?v=…) – wczytana byłaby cała baza. Skopiuj link do widoku z filtrami, np. „Dla mnie”.", "Database recognised, but the link has no view (…?v=…) – the whole database would be loaded. Copy the link of a filtered view, e.g. “Assigned to me”."),

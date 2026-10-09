@@ -114,7 +114,7 @@ static class YearView
         Legend(accent, L.T("zrobione"));
         Legend(Color.FromArgb(0x70, accent.R, accent.G, accent.B), L.T("niedokończone"));
         Legend(accent, L.T("zaplanowane"), ring: true);
-        foreach (var m in types) Legend(BoardWindow.ParseColor(m.Color), m.Code);
+        foreach (var m in types) Legend(BoardWindow.ParseColor(m.Color), m.Code, ring: m.Ring);
         header.Children.Add(legend);
         dock.Children.Add(header);
 

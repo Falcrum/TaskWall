@@ -119,13 +119,36 @@ public partial class BoardWindow : GlassWindow
         Rebuild();
     }
 
+    /// <summary>Notion sub-items right under their main task (when it's in the same list), with their depth for the indent.</summary>
+    static List<(TaskItem Task, int Depth)> Nest(IEnumerable<TaskItem> list)
+    {
+        var items = list.ToList();
+        var main = items.Where(t => t.NotionId != null).GroupBy(t => t.NotionId!).ToDictionary(g => g.Key, g => g.First());
+        bool HasMain(TaskItem t) => t.ParentNotionId != null && t.ParentNotionId != t.NotionId && main.ContainsKey(t.ParentNotionId);
+        var children = items.Where(HasMain).GroupBy(t => t.ParentNotionId!).ToDictionary(g => g.Key, g => g.ToList());
+        var result = new List<(TaskItem, int)>();
+        var seen = new HashSet<string>();
+        void Add(TaskItem t, int depth)
+        {
+            if (!seen.Add(t.Id)) return;
+            result.Add((t, depth));
+            if (depth < 4 && t.NotionId != null && children.TryGetValue(t.NotionId, out var sub))
+                foreach (var c in sub) Add(c, depth + 1);
+        }
+        foreach (var t in items) if (!HasMain(t)) Add(t, 0);
+        foreach (var t in items) Add(t, 0); // anything left (a cycle of parents)
+        return result;
+    }
+
     /// <summary>Tasks shown on a day: stored (not archived) + recurring occurrences not materialized yet.</summary>
     static List<TaskItem> DayTasks(DateTime d, Dictionary<string, List<TaskItem>> byDay)
     {
         byDay.TryGetValue(DayKey(d), out var stored);
         var list = new List<TaskItem>(stored ?? new List<TaskItem>());
         list.AddRange(Store.VirtualTasks(d));
-        list.Sort((a, b) => a.Order.CompareTo(b.Order));
+        // tasks with planned hours first, by the hour; the rest in their own (dragged) order
+        list.Sort((a, b) => a.Time != null && b.Time != null ? string.CompareOrdinal(a.Time, b.Time)
+            : a.Time != null ? -1 : b.Time != null ? 1 : a.Order.CompareTo(b.Order));
         return list;
     }
 
@@ -548,7 +571,7 @@ public partial class BoardWindow : GlassWindow
             panel.Children.Add(block);
         }
         else foreach (var (_, el) in timed) panel.Children.Add(el);
-        foreach (var t in tasks.Where(t => !spanIds.Contains(t.Id))) panel.Children.Add(BuildTaskRow(t, false, compact));
+        foreach (var (t, depth) in Nest(tasks.Where(t => !spanIds.Contains(t.Id)))) panel.Children.Add(BuildTaskRow(t, false, compact, depth: depth));
         panel.Children.Add(BuildAddRow(key, date, compact));
         _panels[key] = panel;
 
@@ -842,14 +865,14 @@ public partial class BoardWindow : GlassWindow
 
     // ---------- task row ----------
 
-    FrameworkElement BuildTaskRow(TaskItem t, bool inBacklog, bool compact = false, (int Index, int Total)? span = null)
+    FrameworkElement BuildTaskRow(TaskItem t, bool inBacklog, bool compact = false, (int Index, int Total)? span = null, int depth = 0)
     {
         var wrapper = new Border
         {
             Tag = t,
             CornerRadius = new CornerRadius(6),
             Padding = new Thickness(4, compact ? 1 : 3, 1, compact ? 1 : 3),
-            Margin = new Thickness(-4, 0, 0, compact ? 0 : 1),
+            Margin = new Thickness(-4 + depth * (compact ? 12 : 18), 0, 0, compact ? 0 : 1), // Notion sub-items indented under their main task
         };
         Anim.HoverBackground(wrapper, Colors.Transparent, Color.FromArgb(0x16, 0xFF, 0xFF, 0xFF));
         var grid = new Grid();
@@ -1219,7 +1242,17 @@ public partial class BoardWindow : GlassWindow
             else if (commit && rule == null && v.Length == 0)
                 change = () => { if (t.IsVirtual && Store.Rule(t.RuleId) is { } r) { r.Skips.Add(t.RuleDay!); Store.Changed(r); } else Store.Archive(Store.Materialize(t)); };
             else if (commit && rule == null && v != t.Text)
-                change = () => { var real = Store.Materialize(t); real.Text = v; Store.Changed(real); };
+                change = () =>
+                {
+                    // the same commands as for a new task ("14-16", "!!", "2h", "#art"), but a date word stays text
+                    var p = SmartAdd.Parse(v, Store.Categories, dates: false);
+                    var real = Store.Materialize(t);
+                    real.Text = p.Text.Length > 0 ? p.Text : v;
+                    if (p.Time is { } tm) { real.Time = tm.ToString(@"hh\:mm"); real.End = p.End?.ToString(@"hh\:mm"); }
+                    if (p.Priority != null) real.Priority = p.Priority;
+                    if (p.Estimate != null) real.Estimate = p.Estimate;
+                    Store.Changed(real);
+                };
             Commit(change, null);
         }
 
@@ -1538,6 +1571,19 @@ public partial class BoardWindow : GlassWindow
         {
             if (t.Archived) { t.Archived = false; t.ArchivedAt = null; } // dragged out of the archive tab
             t.NoteMove(t.Day, day, DayKey(DateTime.Today)); // a past day keeps a "continued" trace
+            var from = t.Day;
+            // a Notion main task takes its sub-items from the same place along
+            if (t.NotionId != null && from != day)
+            {
+                int n = 0;
+                foreach (var c in Store.Data.Tasks.Where(c => c.ParentNotionId == t.NotionId && c.Day == from && !c.Archived && c != t).ToList())
+                {
+                    c.NoteMove(c.Day, day, DayKey(DateTime.Today));
+                    c.Day = day;
+                    c.Order = order + 0.001 * ++n;
+                    Store.Changed(c);
+                }
+            }
             t.Day = day;
             t.Order = order;
             Store.Changed(t);
