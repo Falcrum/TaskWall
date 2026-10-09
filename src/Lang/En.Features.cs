@@ -5,6 +5,10 @@ static partial class L
     /// <summary>Polish → English (Features).</summary>
     static readonly (string Pl, string En)[] Features =
     {
+        ("wszystkie", "all"),
+        ("bez priorytetu", "no priority"),
+        ("wyczyść filtry", "clear filters"),
+        ("Usuń listę kontrolną ({0} pkt)", "Delete the checklist ({0} items)"),
         ("mniej", "less"),
         ("+ {0} więcej", "+ {0} more"),
         ("POKAŻ KOLEJNE ({0} z {1})", "SHOW MORE ({0} of {1})"),

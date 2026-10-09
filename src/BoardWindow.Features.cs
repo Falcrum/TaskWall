@@ -17,8 +17,12 @@ public partial class BoardWindow
     bool _drawerOpen, _pinnedVisible = true;
     string? _tagFilter;
     bool _archiveTab;
-    bool _allTags;          // backlog: all category chips or only the biggest ones
     string? _statusFilter;  // backlog: only this Notion status
+    string? _prioFilter;    // backlog: only this priority (NoPriority = none set)
+    const string NoPriority = "0000none";
+
+    /// <summary>High → medium → low → others, for the priority filter.</summary>
+    static int PriorityRank(string p) => PriorityColor(p) is var c && c == Color.FromRgb(0xE0, 0x5A, 0x55) ? 0 : c == Color.FromRgb(0x4A, 0x8B, 0xE8) ? 1 : c == Color.FromRgb(0x46, 0xB0, 0x6E) ? 2 : 3;
     int _backlogShown = 200; // backlog rows built (more on demand)
 
     void InitFeatures()
@@ -229,65 +233,40 @@ public partial class BoardWindow
 
         var tagCounts = all.SelectMany(t => TaskItem.Tags(t.Text, out _).Distinct()).GroupBy(x => x).OrderByDescending(g => g.Count()).ThenBy(g => g.Key).ToList();
         if (_tagFilter != null && tagCounts.All(g => g.Key != _tagFilter)) _tagFilter = null;
+        // filters: category · priority · status (dropdowns with counts – a team's Notion has dozens of categories)
         TagChips.Children.Clear();
-        // Notion statuses ("Do zrobienia", "W toku" …) as a filter too
         var statusCounts = all.Where(t => !string.IsNullOrEmpty(t.Status)).GroupBy(t => t.Status!).OrderByDescending(g => g.Count()).ToList();
+        var prioCounts = all.Where(t => !string.IsNullOrEmpty(t.Priority)).GroupBy(t => t.Priority!).OrderBy(g => PriorityRank(g.Key)).ThenBy(g => g.Key).ToList();
         if (_statusFilter != null && statusCounts.All(g => g.Key != _statusFilter)) _statusFilter = null;
-        foreach (var g in statusCounts)
+        if (_prioFilter != null && _prioFilter != NoPriority && prioCounts.All(g => g.Key != _prioFilter)) _prioFilter = null;
+        void Filter(string label, string? current, IEnumerable<(string Value, string Text)> options, Action<string?> set)
         {
-            var status = g.Key;
-            bool on = _statusFilter == status;
-            var chip = new Border
-            {
-                CornerRadius = new CornerRadius(9), Padding = new Thickness(8, 1, 8, 2), Margin = new Thickness(0, 0, 5, 5), Cursor = Cursors.Hand,
-                BorderThickness = new Thickness(1), BorderBrush = B(Color.FromArgb(on ? (byte)0xC0 : (byte)0x40, 0xFF, 0xFF, 0xFF)),
-                Background = B(Color.FromArgb(on ? (byte)0x40 : (byte)0x12, 0xFF, 0xFF, 0xFF)),
-                Child = new TextBlock { Text = $"● {status}  {g.Count()}", FontSize = 10.5, FontWeight = FontWeights.SemiBold, Foreground = Res("Fg") },
-                ToolTip = on ? L.T("Pokaż wszystkie") : L.F("Tylko status „{0}”", status),
-            };
-            chip.MouseLeftButtonUp += (_, _) => { _statusFilter = on ? null : status; _backlogShown = 200; BuildBacklog(); };
-            TagChips.Children.Add(chip);
+            var box = new ComboBox { MinWidth = 120, Margin = new Thickness(0, 0, 6, 4), ToolTip = label };
+            box.Items.Add(new ComboBoxItem { Content = label + ": " + L.T("wszystkie"), Tag = null });
+            foreach (var (value, text) in options) box.Items.Add(new ComboBoxItem { Content = text, Tag = value });
+            box.SelectedItem = box.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string?)i.Tag == current) ?? box.Items[0];
+            box.SelectionChanged += (_, _) => { set((box.SelectedItem as ComboBoxItem)?.Tag as string); _backlogShown = 200; Dispatcher.BeginInvoke(BuildBacklog); };
+            TagChips.Children.Add(box);
         }
-        TagChips.Visibility = tagCounts.Count > 0 || statusCounts.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        // only the biggest categories (a whole team's Notion has dozens) – the rest behind "+ N"
-        const int TagLimit = 10;
-        var visibleTags = _allTags ? tagCounts : tagCounts.Take(TagLimit).Concat(tagCounts.Skip(TagLimit).Where(g => g.Key == _tagFilter)).ToList();
-        foreach (var g in visibleTags)
+        if (tagCounts.Count > 0)
+            Filter(L.T("Kategoria"), _tagFilter, tagCounts.Select(g => (g.Key, $"{(g.Key == TaskItem.MeetingTag ? "Meeting" : Store.CategoryFor(g.Key)?.Name ?? g.Key)}  ({g.Count()})")), v => _tagFilter = v);
+        if (prioCounts.Count > 0)
+            Filter(L.T("Priorytet"), _prioFilter, prioCounts.Select(g => (g.Key, $"{g.Key}  ({g.Count()})"))
+                .Append((NoPriority, $"{L.T("bez priorytetu")}  ({all.Count(t => string.IsNullOrEmpty(t.Priority))})")), v => _prioFilter = v);
+        if (statusCounts.Count > 0)
+            Filter(L.T("Status"), _statusFilter, statusCounts.Select(g => (g.Key, $"{g.Key}  ({g.Count()})")), v => _statusFilter = v);
+        if (_tagFilter != null || _prioFilter != null || _statusFilter != null)
         {
-            var tag = g.Key;
-            var color = TagColor(tag);
-            bool on = _tagFilter == tag;
-            var chip = new Border
-            {
-                CornerRadius = new CornerRadius(9),
-                Padding = new Thickness(8, 1, 8, 2),
-                Margin = new Thickness(0, 0, 5, 5),
-                Cursor = Cursors.Hand,
-                BorderThickness = new Thickness(1),
-                BorderBrush = B(A(color, on ? (byte)0xFF : (byte)0x55)),
-                Background = B(A(color, on ? (byte)0x55 : (byte)0x18)),
-                Child = new TextBlock { Text = $"{(tag == TaskItem.MeetingTag ? "Meeting" : tag)}  {g.Count()}", FontSize = 10.5, FontWeight = FontWeights.SemiBold, Foreground = B(color) },
-                ToolTip = on ? L.T("Pokaż wszystkie") : L.F("Pokaż tylko [{0}]", tag),
-            };
-            chip.MouseLeftButtonUp += (_, _) => { _tagFilter = on ? null : tag; BuildBacklog(); };
-            TagChips.Children.Add(chip);
+            var clear = new Button { Style = (Style)FindResource("LinkButton"), Content = L.T("wyczyść filtry"), FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 4) };
+            clear.Click += (_, _) => { _tagFilter = _prioFilter = _statusFilter = null; BuildBacklog(); };
+            TagChips.Children.Add(clear);
         }
-
-        if (tagCounts.Count > TagLimit)
-        {
-            var more = new Border
-            {
-                CornerRadius = new CornerRadius(9), Padding = new Thickness(8, 1, 8, 2), Margin = new Thickness(0, 0, 5, 5), Cursor = Cursors.Hand,
-                Background = B(Color.FromArgb(0x18, 0xFF, 0xFF, 0xFF)),
-                Child = new TextBlock { Text = _allTags ? L.T("mniej") : L.F("+ {0} więcej", tagCounts.Count - TagLimit), FontSize = 10.5, FontWeight = FontWeights.SemiBold, Foreground = Res("FgDim") },
-            };
-            more.MouseLeftButtonUp += (_, _) => { _allTags = !_allTags; BuildBacklog(); };
-            TagChips.Children.Add(more);
-        }
+        TagChips.Visibility = TagChips.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         var shown = all.Where(t =>
             (_tagFilter == null || TaskItem.Tags(t.Text, out _).Contains(_tagFilter)) &&
             (_statusFilter == null || t.Status == _statusFilter) &&
+            (_prioFilter == null || (_prioFilter == NoPriority ? string.IsNullOrEmpty(t.Priority) : t.Priority == _prioFilter)) &&
             (q.Length == 0 || Matches(t.Text, q) || Matches(t.Status, q) || Matches(t.Priority, q))).ToList();
 
         BacklogCount.Text = shown.Count == all.Count ? all.Count.ToString() : $"{shown.Count}/{all.Count}";
@@ -623,6 +602,12 @@ public partial class BoardWindow
             else { _expanded.Add(t.Id); if (!hasList) _checkAddFor = t.Id; }
             Rebuild();
         }));
+        if (hasList)
+            menu.Items.Add(Item(L.F("Usuń listę kontrolną ({0} pkt)", t.Checklist!.Count), () =>
+            {
+                _expanded.Remove(t.Id);
+                Do(() => { var real = Store.Materialize(t); real.Checklist = null; Store.Changed(real); });
+            }));
 
         var est = new MenuItem { Header = L.T("Estymacja") +(t.Estimate is > 0 ? $"  ({Hours(t.Estimate.Value)})" : "") };
         foreach (var h in new double?[] { null, 0.5, 1, 1.5, 2, 3, 4, 6, 8 })

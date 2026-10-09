@@ -440,6 +440,7 @@ public partial class BoardWindow : GlassWindow
 
         // ----- header -----
         var header = new Grid { Margin = new Thickness(0, 0, 0, compact ? 2 : 5) };
+        header.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto, SharedSizeGroup = $"W{week}H" }); // same header height across the week
         header.ColumnDefinitions.Add(new ColumnDefinition());
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         DockPanel.SetDock(header, Dock.Top);
@@ -510,22 +511,23 @@ public partial class BoardWindow : GlassWindow
         header.Children.Add(right);
         dock.Children.Add(header);
 
-        // ----- progress bar (done / all, archived done included) -----
-        if (total > 0)
+        // ----- progress bar (done / all, archived done included) – always there (empty without tasks), the same height
+        // everywhere, so the lanes of multi-day tasks start at the same height on every day -----
         {
-            var track = new Grid { Height = isToday ? 3 : 2, Margin = new Thickness(0, 0, 2, compact ? 3 : 6) };
+            var track = new Grid { Height = 3, Margin = new Thickness(0, 0, 2, compact ? 3 : 6) };
             DockPanel.SetDock(track, Dock.Top);
-            track.Children.Add(new Border { CornerRadius = new CornerRadius(1.5), Background = B(Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF)) });
+            track.Children.Add(new Border { CornerRadius = new CornerRadius(1.5), Background = total > 0 ? B(Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF)) : Brushes.Transparent });
             var fill = new Border
             {
                 CornerRadius = new CornerRadius(1.5),
                 HorizontalAlignment = HorizontalAlignment.Left,
                 // every day in the accent: full when all done, dimmer while unfinished (and on past days)
                 Background = B(A(((SolidColorBrush)Res("AccentBrush")).Color, done == total ? (byte)0xFF : isToday ? (byte)0xE0 : (byte)0x90)),
+                Visibility = total > 0 ? Visibility.Visible : Visibility.Collapsed,
                 ToolTip = L.F("Zrobione {0} z {1}", done, total),
             };
             // checklists count too: a task with 2 of 4 items ticked fills half of its share
-            double frac = (tasks.Sum(t => t.Progress) + archivedDone) / total;
+            double frac = total > 0 ? (tasks.Sum(t => t.Progress) + archivedDone) / total : 0;
             bool known = _progress.TryGetValue(key, out var before);
             _progress[key] = frac;
             bool animate = Anim.On && known && Math.Abs(before - frac) > 0.0001; // only a real change, never on plain rebuilds
@@ -985,7 +987,8 @@ public partial class BoardWindow : GlassWindow
             text.Opacity = 0.45;
         }
         content.Children.Add(text);
-        if (_expanded.Contains(t.Id)) content.Children.Add(BuildChecklist(t, fs));
+        // an empty list shows only while its first point is being typed ("Dodaj listę kontrolną"), then it goes away again
+        if (_expanded.Contains(t.Id) && (t.Checklist is { Count: > 0 } || _checkAddFor == t.Id)) content.Children.Add(BuildChecklist(t, fs));
 
         if (inBacklog && (!string.IsNullOrEmpty(t.Priority) || !string.IsNullOrEmpty(t.Status)))
         {
@@ -1128,6 +1131,8 @@ public partial class BoardWindow : GlassWindow
                 _editors.Remove(cancel);
                 var v = input.Text.Trim();
                 _checkAddFor = keepOpen && v.Length > 0 ? t.Id : null;
+                // changed my mind: nothing typed into a list that has no points → no list (and no "+ punkt" left behind)
+                if (v.Length == 0 && t.Checklist is not { Count: > 0 }) { _expanded.Remove(t.Id); Dispatcher.BeginInvoke(Rebuild); }
                 Commit(v.Length > 0 ? () =>
                 {
                     var real = Store.Materialize(t);

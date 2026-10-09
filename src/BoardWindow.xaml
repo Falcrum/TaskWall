@@ -17,9 +17,9 @@
             <!-- top bar: navigation + views | account | actions (all caps, like the day names) -->
             <Grid DockPanel.Dock="Top" Height="30" Margin="0,0,0,4" Background="Transparent" MouseRightButtonUp="Bar_RightClick">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <Button Style="{StaticResource IconButton}" Content="&#xE76B;" Click="Prev_Click" ToolTip="Wstecz"/>
@@ -40,7 +40,7 @@
                             Visibility="Collapsed" ToolTip="Przenieś niezrobione zadania z minionych dni na dziś"/>
                     <TextBlock x:Name="SyncText" VerticalAlignment="Center" Margin="12,0,0,0" FontSize="11" Foreground="{StaticResource FgFaint}"/>
                 </StackPanel>
-                <Border x:Name="LayerSwitch" Grid.Column="1" CornerRadius="8" Background="#10FFFFFF" Padding="2" VerticalAlignment="Center" Margin="12,0"
+                <Border x:Name="LayerSwitch" Grid.Column="1" HorizontalAlignment="Center" CornerRadius="8" Background="#10FFFFFF" Padding="2" VerticalAlignment="Center" Margin="12,0"
                         ToolTip="Konto (Ctrl+1 / Ctrl+2)">
                     <StackPanel Orientation="Horizontal">
                         <Button x:Name="WorkLayerButton" Style="{StaticResource BarButton}" Content="PRACA" Click="WorkLayer_Click" Padding="12,2"/>
