@@ -57,6 +57,9 @@ static class YearView
 
     static Color C(string hex) => (Color)ColorConverter.ConvertFromString(hex);
 
+    /// <summary>Accent strength for 1, 2, 3, 4, 5+ done tasks on a day.</summary>
+    static readonly byte[] Levels = { 0x48, 0x70, 0x98, 0xC4, 0xFF };
+
     public static FrameworkElement Build(int year, BoardStore store, Action<DateTime> pick, bool animate = true)
     {
         var data = store.Data;
@@ -101,20 +104,21 @@ static class YearView
         header.Children.Add(totals);
 
         var legend = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 5) };
-        void Legend(Color fill, string label, bool ring = false)
+        void Swatch(Border b) { b.Width = 11; b.Height = 11; b.CornerRadius = new CornerRadius(3); b.VerticalAlignment = VerticalAlignment.Center; legend.Children.Add(b); }
+        void Text(string label, double left = 6) => legend.Children.Add(new TextBlock { Text = label, FontSize = 11, Foreground = Ui.Res("FgDim"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(left, 0, 14, 0) });
+        // intensity scale: less → more done tasks (like a contribution graph)
+        Text(L.T("mniej"), 0);
+        foreach (var a in Levels) { var b = new Border { Background = new SolidColorBrush(Color.FromArgb(a, accent.R, accent.G, accent.B)), Margin = new Thickness(0, 0, 3, 0) }; Swatch(b); }
+        Text(L.T("więcej zrobionych"), 3);
+        Swatch(new Border { BorderBrush = new SolidColorBrush(accent), BorderThickness = new Thickness(1.5) });
+        Text(L.T("zaplanowane"));
+        foreach (var m in types)
         {
-            legend.Children.Add(new Border
-            {
-                Width = 11, Height = 11, CornerRadius = new CornerRadius(3), Margin = new Thickness(14, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center,
-                Background = ring ? Brushes.Transparent : new SolidColorBrush(fill),
-                BorderBrush = ring ? new SolidColorBrush(fill) : null, BorderThickness = new Thickness(ring ? 1.5 : 0),
-            });
-            legend.Children.Add(new TextBlock { Text = label, FontSize = 11, Foreground = Ui.Res("FgDim"), VerticalAlignment = VerticalAlignment.Center });
+            var c = BoardWindow.ParseColor(m.Color);
+            if (m.Ring) Swatch(new Border { Background = new SolidColorBrush(Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF)), Child = new System.Windows.Shapes.Ellipse { Width = 4, Height = 4, Fill = new SolidColorBrush(c), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1.5, 1.5, 0) } });
+            else Swatch(new Border { Background = new SolidColorBrush(c) });
+            Text(m.Code);
         }
-        Legend(accent, L.T("zrobione"));
-        Legend(Color.FromArgb(0x70, accent.R, accent.G, accent.B), L.T("niedokończone"));
-        Legend(accent, L.T("zaplanowane"), ring: true);
-        foreach (var m in types) Legend(BoardWindow.ParseColor(m.Color), m.Code, ring: m.Ring);
         header.Children.Add(legend);
         dock.Children.Add(header);
 
@@ -132,8 +136,9 @@ static class YearView
             panel.Children.Add(l);
         }
 
-        var empty = Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF);
-        var future = Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF);
+        // past days are a bit darker than the ones ahead (never lighter)
+        var empty = Color.FromArgb(0x0E, 0xFF, 0xFF, 0xFF);
+        var future = Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF);
         var marks = types.GroupBy(m => m.Code).ToDictionary(g => g.Key, g => BoardWindow.ParseColor(g.First().Color));
         var ringMarks = types.Where(m => m.Ring).Select(m => m.Code).ToHashSet();
         var yearMonday = BoardWindow.Monday(new DateTime(year, 1, 1));
@@ -182,12 +187,13 @@ static class YearView
                 Color? ring = null;
                 bool markRing = mark != null && ringMarks.Contains(mark); // e.g. HO: a frame, the day still shows its tasks
                 if (mark != null && !markRing && marks.TryGetValue(mark, out var mc)) fill = mc;
-                else if (past && done > 0) fill = done == total ? accent : Color.FromArgb(0xC8, accent.R, accent.G, accent.B);
-                else if (past && total > 0) fill = Color.FromArgb(0x70, accent.R, accent.G, accent.B);
-                else if (!past && total > 0) { fill = Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF); ring = accent; }
+                // intensity by the number of done tasks; worked on but nothing finished = a faint tint
+                else if (past && done > 0) fill = Color.FromArgb(Levels[Math.Min(done, Levels.Length) - 1], accent.R, accent.G, accent.B);
+                else if (past && total > 0) fill = Color.FromArgb(0x26, accent.R, accent.G, accent.B);
+                else if (!past && total > 0) { fill = future; ring = Color.FromArgb(0xB0, accent.R, accent.G, accent.B); }
                 else fill = past ? empty : future;
                 if (date == today) ring = Colors.White;
-                if (markRing && marks.TryGetValue(mark!, out var rcol)) ring = rcol; // today stays bold
+                Color? dot = markRing && marks.TryGetValue(mark!, out var rcol) ? rcol : null; // e.g. HO: a small dot, the colours stay the tasks'
 
                 bool strong = fill.A > 0x90;
                 var cell = new Border
@@ -195,7 +201,7 @@ static class YearView
                     Margin = new Thickness(1.6),
                     Background = new SolidColorBrush(fill),
                     BorderBrush = ring is { } rc ? new SolidColorBrush(rc) : null,
-                    BorderThickness = new Thickness(ring == null ? 0 : markRing ? 2.2 : 1.6),
+                    BorderThickness = new Thickness(ring == null ? 0 : 1.6),
                     Cursor = Cursors.Hand,
                     Child = new TextBlock
                     {
@@ -207,6 +213,17 @@ static class YearView
                     },
                 };
                 cell.SizeChanged += (_, e) => cell.CornerRadius = new CornerRadius(e.NewSize.Width * 0.24);
+                if (dot is { } dc) // the mark as a small dot in the top-right corner
+                {
+                    var number = cell.Child;
+                    cell.Child = null;
+                    var g = new Grid();
+                    g.Children.Add(number);
+                    var e2 = new System.Windows.Shapes.Ellipse { Fill = new SolidColorBrush(dc), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top };
+                    g.SizeChanged += (_, ev) => { e2.Width = e2.Height = Math.Max(3, ev.NewSize.Width * 0.2); e2.Margin = new Thickness(0, ev.NewSize.Width * 0.1, ev.NewSize.Width * 0.1, 0); };
+                    g.Children.Add(e2);
+                    cell.Child = g;
+                }
 
                 var tip = date.ToString("dddd, d MMMM yyyy", BoardWindow.Pl) + "  ·  " + L.F("tydz. {0}", BoardWindow.WeekNo(date));
                 if (dayOff != null) tip += "\n" + L.F("{0} (dzień wolny)", dayOff);

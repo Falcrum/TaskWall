@@ -112,12 +112,37 @@ public partial class BoardWindow : GlassWindow
     public const double ChromeHeight = 8 + 34 + 10;
 
     /// <summary>Wraps a user action: undo checkpoint first, then the change.</summary>
-    void Do(Action change)
+    void Do(Action change, Action? after = null)
     {
         Store.Checkpoint();
         change();
         Rebuild();
+        after?.Invoke();
     }
+
+    readonly DispatcherTimer _undoHide = new() { Interval = TimeSpan.FromSeconds(7) };
+
+    /// <summary>"Zarchiwizowano: … · COFNIJ" at the bottom for a few seconds (Ctrl+Z works too).</summary>
+    void ShowUndo(string message)
+    {
+        UndoText.Text = message;
+        UndoBar.Visibility = Visibility.Visible;
+        Anim.Enter(UndoBar, 0, 10, 220);
+        _undoHide.Stop();
+        _undoHide.Tick -= HideUndo;
+        _undoHide.Tick += HideUndo;
+        _undoHide.Start();
+    }
+
+    void HideUndo(object? s, EventArgs e) { _undoHide.Stop(); UndoBar.Visibility = Visibility.Collapsed; }
+
+    void UndoBar_Click(object sender, RoutedEventArgs e)
+    {
+        HideUndo(null, EventArgs.Empty);
+        Undo();
+    }
+
+    static string Short(string text) => text.Length > 40 ? text[..38] + "…" : text;
 
     /// <summary>Notion sub-items right under their main task (when it's in the same list), with their depth for the indent.</summary>
     static List<(TaskItem Task, int Depth)> Nest(IEnumerable<TaskItem> list)
@@ -1287,13 +1312,13 @@ public partial class BoardWindow : GlassWindow
             Store.Changed(r);
         }
         else if (Store.Find(t.Id) is { } live) Store.Archive(live); // the live instance (row may be older than a merge)
-    }));
+    }, after: () => ShowUndo(t.IsVirtual ? L.F("Pominięto w serii: {0}", Short(t.Text)) : L.F("Zarchiwizowano: {0}", Short(t.Text)))));
 
     void DeleteForGood(TaskItem t, FrameworkElement row) => Anim.Leave(row, () => Do(() =>
     {
         if (t.IsVirtual && Store.Rule(t.RuleId) is { } r) { if (!r.Skips.Contains(t.RuleDay!)) r.Skips.Add(t.RuleDay!); Store.Changed(r); }
         else if (Store.Find(t.Id) is { } live) Store.Remove(live);
-    }));
+    }, after: () => ShowUndo(L.F("Usunięto: {0}", Short(t.Text)))));
 
     // ---------- inline editing ----------
 

@@ -57,7 +57,7 @@ static class Icons
 
     /// <summary>Calendar sheet with a pointer arrow in the middle ("go to today") – readable from a distance.</summary>
     public static FrameworkElement Today(double s = 19) => Box(s, Line(Sheet),
-        Fill("M9.6,11.4 L9.6,19.6 L11.7,17.6 L13.3,20.9 L14.9,20.1 L13.3,16.9 L16.2,16.6 Z"));
+        Fill("M9.8,11.3 L9.8,18.3 L11.6,16.6 L13,19.4 L14.4,18.7 L13,15.9 L15.6,15.7 Z")); // equal gap above and below
 
     /// <summary>Alarm clock (alarms and meetings).</summary>
     public static FrameworkElement Alarm(double s = 19) => Box(s,

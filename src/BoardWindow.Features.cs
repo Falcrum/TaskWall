@@ -171,11 +171,11 @@ public partial class BoardWindow
         {
             if (!_archiveTab) { OnDrop(null, BacklogList, e); return; }
             e.Handled = true; // dropped on the archive list: archive it
-            if (DraggedTask(e) is { } t && !t.Archived) Dispatcher.BeginInvoke(() => Do(() => Store.Archive(t)));
+            if (DraggedTask(e) is { } t && !t.Archived) Dispatcher.BeginInvoke(() => Do(() => Store.Archive(t), after: () => ShowUndo(L.F("Zarchiwizowano: {0}", Short(t.Text)))));
         };
         // buttons need their own DragOver, otherwise the board's "not a target" handler refuses the drop
         foreach (var b in new[] { BacklogButton, ArchiveButton, BacklogTabButton, ArchiveTabButton }) b.DragOver += (_, e) => AcceptDrop(e);
-        ArchiveButton.Drop += (_, e) => { e.Handled = true; if (DraggedTask(e) is { } t && !t.Archived) Dispatcher.BeginInvoke(() => Do(() => Store.Archive(t))); };
+        ArchiveButton.Drop += (_, e) => { e.Handled = true; if (DraggedTask(e) is { } t && !t.Archived) Dispatcher.BeginInvoke(() => Do(() => Store.Archive(t), after: () => ShowUndo(L.F("Zarchiwizowano: {0}", Short(t.Text))))); };
         BacklogButton.DragEnter += (_, _) => { if (S.BacklogMode == "drawer") SetDrawer(true); };
         BacklogButton.Drop += (_, e) => { e.Handled = true; if (DraggedTask(e) is { } t) Dispatcher.BeginInvoke(() => Do(() => ToBacklog(t))); };
         PreviewKeyDown += OnKey;
@@ -188,7 +188,7 @@ public partial class BoardWindow
         };
         // drop a task on a tab: into the backlog / into the archive
         BacklogTabButton.Drop += (_, e) => { e.Handled = true; if (DraggedTask(e) is { } t) Dispatcher.BeginInvoke(() => Do(() => ToBacklog(t))); };
-        ArchiveTabButton.Drop += (_, e) => { e.Handled = true; if (DraggedTask(e) is { } t && !t.Archived) Dispatcher.BeginInvoke(() => Do(() => Store.Archive(t))); };
+        ArchiveTabButton.Drop += (_, e) => { e.Handled = true; if (DraggedTask(e) is { } t && !t.Archived) Dispatcher.BeginInvoke(() => Do(() => Store.Archive(t), after: () => ShowUndo(L.F("Zarchiwizowano: {0}", Short(t.Text))))); };
         // forget a pressed row when the button goes up anywhere (else a later drag over it would start a drag)
         AddHandler(MouseLeftButtonUpEvent, new MouseButtonEventHandler((_, _) => _pressed = null), handledEventsToo: true);
         BodyRoot.SizeChanged += (_, _) =>
@@ -952,6 +952,25 @@ public partial class BoardWindow
         if (e.Key == Key.Escape && SearchPanel.Visibility == Visibility.Visible) { e.Handled = true; CloseSearch(); return; }
         if (e.Key == Key.F1) { e.Handled = true; HelpWindow.ShowHelp(); return; }
         if (Keyboard.FocusedElement is TextBox) return;
+        // keyboard navigation (not while typing): ← → periods, T / Home today, 1–5 views, B backlog, A archive
+        if (Keyboard.Modifiers == ModifierKeys.None)
+        {
+            Action? nav = e.Key switch
+            {
+                Key.Left or Key.PageUp => () => Step(-1),
+                Key.Right or Key.PageDown => () => Step(1),
+                Key.T or Key.Home => () => Today_Click(this, new RoutedEventArgs()),
+                Key.D1 or Key.NumPad1 => () => SetView(ViewMode.Day),
+                Key.D2 or Key.NumPad2 => () => SetView(ViewMode.Week1),
+                Key.D3 or Key.NumPad3 => () => SetView(ViewMode.Week2),
+                Key.D4 or Key.NumPad4 => () => SetView(ViewMode.Month),
+                Key.D5 or Key.NumPad5 => () => SetView(ViewMode.Year),
+                Key.B => () => TogglePanel(archive: false),
+                Key.A => () => TogglePanel(archive: true),
+                _ => null,
+            };
+            if (nav != null) { e.Handled = true; nav(); return; }
+        }
         if (e.Key == Key.Z && Keyboard.Modifiers == ModifierKeys.Control)
         {
             e.Handled = true;
@@ -1090,7 +1109,7 @@ public partial class BoardWindow
             .Where(d => _view == ViewMode.Day || S.ShowWeekends || !IsWeekend(d)).Select(DayKey).ToHashSet(); // only what's on screen
         var done = Store.Data.Tasks.Where(t => t.Done && !t.Archived && (t.IsBacklog || keys.Contains(t.Day!))).ToList();
         if (done.Count == 0) return;
-        Do(() => { foreach (var t in done) Store.Archive(t); });
+        Do(() => { foreach (var t in done) Store.Archive(t); }, after: () => ShowUndo(L.F("Zarchiwizowano zrobione: {0}", done.Count)));
         SyncText.Text = L.F("zarchiwizowano {0}", done.Count);
         _syncFlash.Stop();
         _syncFlash.Start();
