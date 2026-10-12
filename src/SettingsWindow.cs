@@ -34,7 +34,8 @@ public sealed class SettingsWindow : DarkWindow
         Content = new ScrollViewer { Content = _sections, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
 
         AddSection(L.T("Ogólne"), L.T("język, autostart, zegar, alarmy, Notion, skrót klawiszowy"), BuildGeneral);
-        AddSection(L.T("Konta"), L.T("Praca i Prywatne: folder, kalendarze Google, Notion, kategorie, oznaczenia dni"), BuildAccounts);
+        AddSection(L.T("Konta"), L.T("Praca i Prywatne: folder, kalendarze Google, kategorie, oznaczenia dni"), BuildAccounts);
+        AddSection(L.T("Połączenia"), L.T("Notion: automatyczne wczytywanie zadań z bazy"), BuildConnections);
         AddSection(L.T("Ekran i rozmiar"), L.T("monitor, skala, szerokość i wysokość tablicy"), BuildScreen);
         AddSection(L.T("Tablica"), L.T("weekendy, widok roku, zaległe zadania, backlog"), BuildBoard);
         AddSection(L.T("Wygląd"), L.T("matowe szkło, przyciemnienie, kolor akcentu, animacje"), BuildLook);
@@ -214,9 +215,6 @@ public sealed class SettingsWindow : DarkWindow
         p.Children.Add(calRow);
         UpdateCalStatus();
 
-        // Notion: automatic read-only sync of one database into this account's backlog
-        p.Children.Add(Sub("Notion"));
-        p.Children.Add(BuildNotion(acc, store));
 
         // categories (stored in this account's board.json, so they sync with its other computers)
         p.Children.Add(Sub(L.T("Kategorie")));
@@ -397,15 +395,47 @@ public sealed class SettingsWindow : DarkWindow
         if (focusLast && last != null) last.Loaded += (_, _) => { last.Focus(); last.SelectAll(); };
     }
 
+    /// <summary>Connections to other services (Notion for now), per layer.</summary>
+    FrameworkElement BuildConnections()
+    {
+        var panel = new StackPanel();
+        var body = new Border();
+        var switcher = new Border { CornerRadius = new CornerRadius(8), Background = new SolidColorBrush(Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF)), Padding = new Thickness(2), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 4, 0, 10) };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+        switcher.Child = buttons;
+        string current = S.Layer;
+        void Fill()
+        {
+            foreach (Button b in buttons.Children)
+            {
+                bool on = (string)b.Tag == current;
+                b.Background = on ? new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF)) : Brushes.Transparent;
+                b.Foreground = on ? Ui.Res("Fg") : Ui.Res("FgDim");
+            }
+            var p = new StackPanel();
+            p.Children.Add(Sub("Notion"));
+            p.Children.Add(BuildNotion(S.AccountFor(current), App.StoreFor(current)));
+            body.Child = p;
+        }
+        foreach (var acc in S.Accounts)
+        {
+            var id = acc.Id;
+            var b = new Button { Style = (Style)Application.Current.Resources["BarButton"], Tag = id, Padding = new Thickness(14, 4, 14, 4), Content = L.Up(App.AccountName(id)) };
+            b.Click += (_, _) => { current = id; Fill(); };
+            buttons.Children.Add(b);
+        }
+        panel.Children.Add(switcher);
+        panel.Children.Add(Label(L.T("Każda warstwa (konto) ma własne połączenia. Zadania trafiają do backlogu tej warstwy."), 11.5, "FgDim"));
+        panel.Children.Add(body);
+        Fill();
+        return panel;
+    }
+
     FrameworkElement BuildNotion(Account acc, BoardStore store)
     {
         var link = acc.Notion;
         var p = new StackPanel();
         p.Children.Add(Label(L.T("Automatycznie wczytuje zadania z bazy Notion do backlogu tego konta – tylko odczyt, nic nie jest zmieniane w Notion. Używa Twojego osobistego tokenu (działa jak Twoje konto, bez admina). Token jest zaszyfrowany dla Twojego konta Windows i zostaje tylko na tym komputerze – na drugim komputerze wklej ten sam token (zachowaj go w menedżerze haseł) albo utwórz osobny."), 11, "FgFaint"));
-        var open = Btn(L.T("Utwórz token w Notion ↗"), "LinkButton", (_, _) => GlassWindow.OpenUrl("https://www.notion.so/developers/tokens"));
-        open.HorizontalAlignment = HorizontalAlignment.Left;
-        open.Margin = new Thickness(-7, 4, 0, 4);
-        p.Children.Add(open);
 
         var db = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = link.Database, ToolTip = L.T("Link do bazy: ••• przy widoku bazy → Copy link to view") };
         var dbState = Label("", 11.5, "FgDim");
@@ -446,6 +476,11 @@ public sealed class SettingsWindow : DarkWindow
         var clear = Btn(L.T("Usuń token"), "LinkButton", (_, _) => { link.TokenProtected = null; SettingsStore.Save(S); ShowTokenState(); });
         DockPanel.SetDock(clear, Dock.Right);
         tokenRow.Children.Add(clear);
+        // where to get one – right next to the field
+        var open = Btn(L.T("Utwórz token w Notion ↗"), "LinkButton", (_, _) => GlassWindow.OpenUrl("https://www.notion.so/developers/tokens"));
+        open.Margin = new Thickness(6, 0, 0, 0);
+        DockPanel.SetDock(open, Dock.Right);
+        tokenRow.Children.Add(open);
         tokenRow.Children.Add(token);
         token.GotKeyboardFocus += (_, _) => { if (token.Password == Mask) token.SelectAll(); };
         token.PasswordChanged += (_, _) =>
@@ -682,6 +717,7 @@ public sealed class SettingsWindow : DarkWindow
         var p = new StackPanel();
         p.Children.Add(Check(L.T("Matowe szkło (rozmyta tapeta pod tablicą)"), S.Blur, v => S.Blur = v));
         p.Children.Add(Check(L.T("Animacje"), S.Animations, v => S.Animations = v));
+        p.Children.Add(Check(L.T("Podpisy przy ikonach górnego paska"), S.BarCaptions, v => S.BarCaptions = v));
         p.Children.Add(SliderRow(L.T("Rozmycie"), 0, 100, S.BlurStrength, v => S.BlurStrength = v, v => $"{v:0}"));
         p.Children.Add(SliderRow(L.T("Przyciemnienie"), 0, 95, S.TintOpacity * 100, v => S.TintOpacity = v / 100, v => $"{v:0}%"));
         var refresh = Btn(L.T("Odśwież tapetę"), "SecondaryButton", (_, _) => App.Instance.RefreshWallpaper());
@@ -780,6 +816,18 @@ public sealed class SettingsWindow : DarkWindow
         var ver = Label(L.F("Wersja {0}  ·  dane zostają w folderach kont, ustawienia w %APPDATA%\\TaskWall", Installer.Version), 11, "FgFaint");
         ver.Margin = new Thickness(0, 10, 0, 0);
         p.Children.Add(ver);
+        // updates through the cloud folder
+        var setup = Updater.SetupPath;
+        var shared = setup != null ? Updater.VersionOf(setup) : null;
+        var upd = Label(setup == null ? L.T("Aktualizacje: brak folderu danych.")
+            : shared == null ? L.F("Aktualizacje: w folderze danych nie ma jeszcze instalatora ({0}). Zainstalowana kopia odłoży go tam sama.", setup)
+            : L.F("Aktualizacje: w folderze danych jest instalator wersji {0}. Inne komputery proponują aktualizację przy starcie.", shared.ToString(3)), 11, "FgFaint");
+        upd.Margin = new Thickness(0, 8, 0, 4);
+        p.Children.Add(upd);
+        var check = Btn(L.T("Sprawdź aktualizację"), "SecondaryButton", (_, _) => Updater.Check(askAgain: true));
+        check.HorizontalAlignment = HorizontalAlignment.Left;
+        check.Margin = new Thickness(0);
+        p.Children.Add(check);
         return p;
     }
 

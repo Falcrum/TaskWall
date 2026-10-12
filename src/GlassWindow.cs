@@ -290,7 +290,16 @@ public class GlassWindow : Window
     static void SetAllTopmost(bool on)
     {
         foreach (var w in All.ToList())
-            if (w.IsVisible) w.Topmost = on || DevTopmost; // WndProc pushes it back to the bottom once Topmost is cleared
+            if (w.IsVisible) w.Topmost = on || DevTopmost || AlwaysOnTop; // WndProc pushes it back to the bottom once Topmost is cleared
+    }
+
+    /// <summary>"Tablica nad wszystkim" from the tray: stays on top until switched off (unlike the peek).</summary>
+    public static bool AlwaysOnTop { get; private set; }
+
+    public static void SetAlwaysOnTop(bool on)
+    {
+        AlwaysOnTop = on;
+        SetAllTopmost(on || _peek || _desktopMode);
     }
 
     /// <summary>Bring the desktop windows above everything (global hotkey) until focus goes elsewhere.</summary>

@@ -144,6 +144,7 @@ public partial class App : Application
             }
             AlarmService.Changed += () => Board?.OnExternalChange(quiet: true);
             AlarmService.Start();
+            Updater.Start();
             // Notion: each account with a token syncs on its own interval (first run right after start-up)
             _notionTimer.Tick += (_, _) => { NotionSync.Tick(); FullSync(); };
             NotionSync.StateChanged += () => Board?.UpdateSyncIcon();
@@ -520,7 +521,7 @@ public partial class App : Application
         GlassWindow.EndOverlays(); // a topmost board (Win+D / hotkey) would cover the dialog
         if (_settingsWindow == null)
         {
-            _settingsWindow = new SettingsWindow { Topmost = GlassWindow.DevTopmost };
+            _settingsWindow = new SettingsWindow { Topmost = GlassWindow.DevTopmost || GlassWindow.AlwaysOnTop };
             _settingsWindow.Closed += (_, _) => { _settingsWindow = null; ScheduleTrim(); };
             _settingsWindow.Show();
         }
@@ -562,7 +563,7 @@ public partial class App : Application
         _importOpen = true;
         try
         {
-            var win = new ImportWindow(export) { Topmost = GlassWindow.DevTopmost };
+            var win = new ImportWindow(export) { Topmost = GlassWindow.DevTopmost || GlassWindow.AlwaysOnTop };
             if (win.ShowDialog() == true)
             {
                 Board?.RevealBacklog();
@@ -602,6 +603,15 @@ public partial class App : Application
                 menu.Items.Add(mi);
             }
             Add(Settings.BoardHidden ? "Pokaż tablicę" : "Ukryj tablicę", () => SetBoardHidden(!Settings.BoardHidden));
+            // on top of all windows until chosen again (or Esc on the board)
+            Add("Tablica nad wszystkim", () =>
+            {
+                SetBoardHidden(false);
+                GlassWindow.SetAlwaysOnTop(!GlassWindow.AlwaysOnTop);
+                if (GlassWindow.AlwaysOnTop) Board?.Activate();
+            });
+            ((MenuItem)menu.Items[^1]).IsCheckable = true;
+            ((MenuItem)menu.Items[^1]).IsChecked = GlassWindow.AlwaysOnTop;
             Add("Dziś…", ToggleToday);
             Add("Komendy i skróty…", HelpWindow.ShowHelp);
             Add("Nowy alarm…", () => AlarmWindow.Edit(Store));

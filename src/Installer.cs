@@ -34,6 +34,7 @@ static class Installer
         }
     }
 
+    public static bool IsRunningInstalled => RunningInstalled;
     static bool RunningInstalled => string.Equals(Environment.ProcessPath, InstalledExe, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Handles the installer switches before the app starts. True = the process should exit.</summary>

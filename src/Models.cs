@@ -522,6 +522,8 @@ public sealed class AppSettings
     public bool BarCaptions { get; set; }
     /// <summary>The backlog / archive drawer stays open while dragging and clicking elsewhere.</summary>
     public bool DrawerLocked { get; set; }
+    /// <summary>Update the user said "no" to (not offered again; Settings → Info can still install it).</summary>
+    public string? SkippedUpdate { get; set; }
     /// <summary>"pl" or "en".</summary>
     public string Language { get; set; } = "pl";
     /// <summary>"Ctrl+Shift+Space", "Ctrl+Alt+D", "Ctrl+Alt+T", "Win+Shift+D" or "" (off).</summary>
