@@ -5,6 +5,9 @@ static partial class L
     /// <summary>Polish → English (Common).</summary>
     static readonly (string Pl, string En)[] Common =
     {
+        ("Szansa opadów (0–100%)", "Chance of rain (0–100%)"),
+        ("Prędkość wiatru (km/h)", "Wind speed (km/h)"),
+        ("wiatr do {0} km/h", "wind up to {0} km/h"),
         ("← → · PgUp PgDn", "← → · PgUp PgDn"),
         ("poprzedni / następny okres", "previous / next period"),
         ("T · Home", "T · Home"),

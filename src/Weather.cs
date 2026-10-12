@@ -19,11 +19,13 @@ public sealed class WeatherSettings
     public double Longitude { get; set; }
     /// <summary>Show the precipitation chance next to the temperatures.</summary>
     public bool ShowRain { get; set; } = true;
+    /// <summary>Show the day's top wind speed (km/h).</summary>
+    public bool ShowWind { get; set; } = true;
     [System.Text.Json.Serialization.JsonIgnore] public bool Ready => Enabled && (Latitude != 0 || Longitude != 0);
 }
 
 /// <summary>One day of the forecast.</summary>
-public sealed record WeatherDay(DateTime Date, int Code, double Max, double Min, int? Rain);
+public sealed record WeatherDay(DateTime Date, int Code, double Max, double Min, int? Rain, double? Wind = null);
 
 /// <summary>
 /// The weather layer: a 16-day forecast from Open-Meteo (free, no key, no account), shown in the day headers.
@@ -56,7 +58,7 @@ static class WeatherService
         try
         {
             var url = string.Create(CultureInfo.InvariantCulture,
-                $"https://api.open-meteo.com/v1/forecast?latitude={w.Latitude:0.####}&longitude={w.Longitude:0.####}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=16");
+                $"https://api.open-meteo.com/v1/forecast?latitude={w.Latitude:0.####}&longitude={w.Longitude:0.####}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max&timezone=auto&forecast_days=16");
             var json = await Http.GetStringAsync(url);
             _days = Parse(json);
             Fetched = DateTime.Now;
@@ -81,12 +83,14 @@ static class WeatherService
         var max = d.GetProperty("temperature_2m_max");
         var min = d.GetProperty("temperature_2m_min");
         d.TryGetProperty("precipitation_probability_max", out var rain);
+        d.TryGetProperty("wind_speed_10m_max", out var wind);
         var result = new Dictionary<DateTime, WeatherDay>();
         for (int i = 0; i < time.Count; i++)
         {
             if (double.IsNaN(Num(max, i))) continue;
             int? r = rain.ValueKind == JsonValueKind.Array && rain[i].ValueKind == JsonValueKind.Number ? (int)rain[i].GetDouble() : null;
-            result[time[i]] = new WeatherDay(time[i], code[i].ValueKind == JsonValueKind.Number ? code[i].GetInt32() : 0, Num(max, i), Num(min, i), r);
+            double? wnd = wind.ValueKind == JsonValueKind.Array && wind[i].ValueKind == JsonValueKind.Number ? wind[i].GetDouble() : null;
+            result[time[i]] = new WeatherDay(time[i], code[i].ValueKind == JsonValueKind.Number ? code[i].GetInt32() : 0, Num(max, i), Num(min, i), r, wnd);
         }
         return result;
     }
@@ -97,7 +101,8 @@ static class WeatherService
         {
             if (!File.Exists(CacheFile)) return;
             _days = Parse(File.ReadAllText(CacheFile));
-            Fetched = File.GetLastWriteTime(CacheFile);
+            // a cache from before the wind was read: fetch again right away
+            Fetched = _days.Values.Any(d => d.Wind != null) ? File.GetLastWriteTime(CacheFile) : null;
         }
         catch (Exception ex) { Log.Error("weather cache", ex); }
     }
@@ -126,10 +131,10 @@ static class WeatherService
         1 or 2 => ("⛅", L.T("częściowe zachmurzenie")),
         3 => ("☁", L.T("pochmurno")),
         45 or 48 => ("≋", L.T("mgła")),
-        >= 51 and <= 57 => ("☂", L.T("mżawka")),
-        >= 61 and <= 67 => ("☂", L.T("deszcz")),
+        >= 51 and <= 57 => ("🌧", L.T("mżawka")),
+        >= 61 and <= 67 => ("🌧", L.T("deszcz")),
         >= 71 and <= 77 => ("❄", L.T("śnieg")),
-        >= 80 and <= 82 => ("☂", L.T("przelotne opady")),
+        >= 80 and <= 82 => ("🌧", L.T("przelotne opady")),
         85 or 86 => ("❄", L.T("przelotny śnieg")),
         >= 95 => ("⚡", L.T("burza")),
         _ => ("·", ""),

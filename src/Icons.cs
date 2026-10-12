@@ -115,6 +115,19 @@ static class Icons
         return new Viewbox { Width = s, Height = s, Child = canvas, SnapsToDevicePixels = true };
     }
 
+    /// <summary>Wind: three gusts (for the weather line; plain brush, used inside text).</summary>
+    public static FrameworkElement Wind(Brush brush, double s = 11)
+    {
+        var p = new Path
+        {
+            Data = Geometry.Parse("M3,8.5 H14.5 A2.8,2.8 0 1 0 11.7,5.7 M3,12.5 H18.2 A2.8,2.8 0 1 1 15.4,15.3 M3,16.5 H10"),
+            Stroke = brush, StrokeThickness = 2, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round,
+        };
+        var canvas = new Canvas { Width = 24, Height = 24 };
+        canvas.Children.Add(p);
+        return new Viewbox { Width = s, Height = s, Child = canvas };
+    }
+
     /// <summary>Icon with a round counter badge in the top-right corner (backlog / archive).</summary>
     public static FrameworkElement WithBadge(FrameworkElement icon, out TextBlock count)
     {

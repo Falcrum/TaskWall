@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Windows;
 using System.Windows.Media;
 
@@ -26,7 +27,10 @@ static class Th
     {
         Light = setting == "light" || (setting == "auto" && WallpaperIsLight());
         if (!Light) return;
-        void Set(string key, string color) => res[key] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color));
+        // a fresh colour dictionary in place of Colors.xaml (the first merged one): the styles of Theme.xaml
+        // and all windows take their brushes from it, since nothing has been built yet
+        var colors = new ResourceDictionary();
+        void Set(string key, string color) => colors[key] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color));
         Set("Fg", "#1D222C");
         Set("FgDim", "#4A5162");
         Set("FgFaint", "#79808F");
@@ -41,6 +45,7 @@ static class Th
         Set("InkMid", "#3310141C");
         Set("InkLine", "#5C10141C");
         Set("InkHi", "#9910141C");
+        res.MergedDictionaries[0] = colors;
     }
 
     static bool WallpaperIsLight()

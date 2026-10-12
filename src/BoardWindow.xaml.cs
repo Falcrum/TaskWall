@@ -504,17 +504,6 @@ public partial class BoardWindow : GlassWindow
             if (firstCol) dateText.Inlines.Add(new Run(L.F("  ·  tydz. {0}", WeekNo(date))) { Foreground = Res("FgFaint"), FontWeight = FontWeights.Normal });
             left.Children.Add(dateText);
         }
-        // weather layer: "☀ 18° / 9°  ☂ 40%" (Settings → Pogoda)
-        if (WeatherService.On(date) is { } wd)
-        {
-            var (symbol, desc) = WeatherService.Describe(wd.Code);
-            var w = new TextBlock { FontSize = compact ? 9.5 : 10.5, Foreground = Res("FgDim"), Margin = new Thickness(0, 1, 0, 0) };
-            w.Inlines.Add(new Run(symbol + " ") { FontFamily = new FontFamily("Segoe UI Symbol"), Foreground = Res("AccentBrush") });
-            w.Inlines.Add(new Run($"{Math.Round(wd.Max):0}°" + (double.IsNaN(wd.Min) ? "" : $" / {Math.Round(wd.Min):0}°")));
-            if (S.Weather.ShowRain && wd.Rain is >= 20) w.Inlines.Add(new Run($"  ☂ {wd.Rain}%") { Foreground = Res("FgFaint") });
-            w.ToolTip = $"{desc}\n{L.F("max {0}°, min {1}°", Math.Round(wd.Max), Math.Round(wd.Min))}" + (wd.Rain is { } r ? "\n" + L.F("szansa opadów {0}%", r) : "") + $"\n{S.Weather.City}";
-            left.Children.Add(w);
-        }
         if (holidayNames.Count > 0)
             left.Children.Add(new TextBlock
             {
@@ -538,6 +527,30 @@ public partial class BoardWindow : GlassWindow
                 Foreground = done == total ? Res("AccentBrush") : Res("FgDim"),
                 ToolTip = L.F("Zrobione {0} z {1}", done, total) + (archivedDone > 0 ? L.F(" (w tym {0} w archiwum)", archivedDone) : ""),
             });
+        // weather (Settings → Pogoda): right under the counter – "☁ 13° / 4°", then "☂ 35%  ≈ 12 km/h"
+        if (WeatherService.On(date) is { } wd)
+        {
+            var (symbol, desc) = WeatherService.Describe(wd.Code);
+            double fsw = compact ? 9.5 : 10;
+            var w = new TextBlock { FontSize = fsw, Foreground = Res("FgDim"), HorizontalAlignment = HorizontalAlignment.Right };
+            w.Inlines.Add(new Run(symbol + " ") { FontFamily = new FontFamily("Segoe UI Symbol"), Foreground = Res("AccentBrush") });
+            w.Inlines.Add(new Run($"{Math.Round(wd.Max):0}°" + (double.IsNaN(wd.Min) ? "" : $" / {Math.Round(wd.Min):0}°")));
+            right.Children.Add(w);
+            var line2 = new TextBlock { FontSize = fsw - 0.5, Foreground = Res("FgFaint"), HorizontalAlignment = HorizontalAlignment.Right };
+            if (S.Weather.ShowRain && wd.Rain is { } rain) line2.Inlines.Add(new Run($"☂ {rain}%"));
+            if (S.Weather.ShowWind && wd.Wind is { } wind)
+            {
+                if (line2.Inlines.Count > 0) line2.Inlines.Add(new Run("   "));
+                line2.Inlines.Add(new InlineUIContainer(Icons.Wind(Res("FgFaint"), fsw + 1)) { BaselineAlignment = BaselineAlignment.Center });
+                line2.Inlines.Add(new Run($" {Math.Round(wind):0} km/h"));
+            }
+            bool hasExtra = line2.Inlines.Count > 0;
+            if (hasExtra) right.Children.Add(line2);
+            var tip = $"{desc}\n{L.F("max {0}°, min {1}°", Math.Round(wd.Max), Math.Round(wd.Min))}"
+                + (wd.Rain is { } r ? "\n" + L.F("szansa opadów {0}%", r) : "")
+                + (wd.Wind is { } wi ? "\n" + L.F("wiatr do {0} km/h", Math.Round(wi)) : "") + $"\n{S.Weather.City}";
+            foreach (var el in right.Children.OfType<TextBlock>().Skip(right.Children.Count - (hasExtra ? 2 : 1))) el.ToolTip = tip;
+        }
         if (hours > 0 || meetingHours > 0)
         {
             double left_ = tasks.Where(t => !t.Done).Sum(t => t.Estimate ?? 0);

@@ -135,18 +135,6 @@ public partial class BoardWindow
             menu.Items.Add(mi);
         }
         menu.Items.Add(new Separator());
-        // overlay layers on top of the account (weather now, more later)
-        var weather = new MenuItem { Header = L.T("Pogoda"), IsCheckable = true, IsChecked = S.Weather.Enabled };
-        weather.Click += (_, _) =>
-        {
-            if (!S.Weather.Ready && !S.Weather.Enabled) { App.Instance.ShowSettings(); return; } // no city yet
-            S.Weather.Enabled = !S.Weather.Enabled;
-            SettingsStore.Save(S);
-            if (S.Weather.Enabled) WeatherService.Refresh();
-            Rebuild();
-        };
-        menu.Items.Add(weather);
-        menu.Items.Add(new Separator());
         var settings = new MenuItem { Header = L.T("Ustawienia warstw…") };
         settings.Click += (_, _) => App.Instance.ShowSettings();
         menu.Items.Add(settings);

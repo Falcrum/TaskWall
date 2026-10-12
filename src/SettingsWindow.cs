@@ -19,6 +19,9 @@ public sealed class SettingsWindow : DarkWindow
     static AppSettings S => App.Settings;
     readonly StackPanel _sections = new() { Margin = new Thickness(20, 16, 20, 20) };
     readonly List<(Border header, Border body, TextBlock chevron)> _accordion = new();
+    readonly List<Action> _openers = new();
+    /// <summary>Opens a section by its position (dev screenshots).</summary>
+    public void OpenSection(int index) { if (index >= 0 && index < _openers.Count) _openers[index](); }
     readonly DispatcherTimer _statusTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     string _account = App.Settings.Layer;
     readonly Border _accountBody = new();
@@ -36,7 +39,7 @@ public sealed class SettingsWindow : DarkWindow
         AddSection(L.T("Ogólne"), L.T("język, autostart, zegar, alarmy, Notion, skrót klawiszowy"), BuildGeneral);
         AddSection(L.T("Konta"), L.T("Praca i Prywatne: folder, kalendarze Google, kategorie, oznaczenia dni"), BuildAccounts);
         AddSection(L.T("Połączenia"), L.T("Notion: automatyczne wczytywanie zadań z bazy"), BuildConnections);
-        AddSection(L.T("Pogoda"), L.T("warstwa pogody: prognoza w nagłówkach dni"), BuildWeather);
+        AddSection(L.T("Pogoda"), L.T("prognoza w nagłówkach dni, lokalizacja"), BuildWeather);
         AddSection(L.T("Ekran i rozmiar"), L.T("monitor, skala, szerokość i wysokość tablicy"), BuildScreen);
         AddSection(L.T("Tablica"), L.T("weekendy, widok roku, zaległe zadania, backlog"), BuildBoard);
         AddSection(L.T("Wygląd"), L.T("matowe szkło, przyciemnienie, kolor akcentu, animacje"), BuildLook);
@@ -87,6 +90,7 @@ public sealed class SettingsWindow : DarkWindow
             else Open();
         };
         _accordion.Add((header, body, chevron));
+        _openers.Add(Open);
         _sections.Children.Add(header);
         _sections.Children.Add(body);
         if (open) Dispatcher.BeginInvoke(Open);
@@ -118,7 +122,7 @@ public sealed class SettingsWindow : DarkWindow
         }
         Paint();
         panel.Children.Add(switcher);
-        panel.Children.Add(Label(L.T("Każde konto ma osobne dane (zadania, archiwum, kategorie) w swoim folderze w chmurze i własne kalendarze Google. Na tablicy przełączasz je przyciskiem na środku górnego paska albo Ctrl+1 / Ctrl+2."), 11.5, "FgDim"));
+        panel.Children.Add(Label(L.T("Każde konto ma osobny folder danych, kalendarze, kategorie i oznaczenia dni. Przełączanie: ikona warstwy na górnym pasku, Ctrl+1 / Ctrl+2."), 11.5, "FgDim"));
         panel.Children.Add(_accountBody);
         FillAccount(Paint);
         return panel;
@@ -156,7 +160,7 @@ public sealed class SettingsWindow : DarkWindow
 
         // calendars
         p.Children.Add(Sub(L.T("Kalendarze Google")));
-        p.Children.Add(Label(L.T("W Kalendarzu Google: Ustawienia → wybierz kalendarz → Integracja kalendarza → „Tajny adres w formacie iCal”. Dla konta Prywatne możesz podać kalendarz z prywatnego Gmaila. Adres zostaje tylko na tym komputerze."), 11, "FgFaint"));
+        p.Children.Add(Label(L.T("Adres iCal: Kalendarz Google → Ustawienia → kalendarz → Integracja kalendarza → Tajny adres w formacie iCal. Adres jest zapisywany tylko na tym komputerze."), 11, "FgFaint"));
         var feeds = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
         p.Children.Add(feeds);
         void FillFeeds()
@@ -219,7 +223,7 @@ public sealed class SettingsWindow : DarkWindow
 
         // categories (stored in this account's board.json, so they sync with its other computers)
         p.Children.Add(Sub(L.T("Kategorie")));
-        p.Children.Add(Label(L.T("Etykieta [Nazwa] na początku zadania. Wybierasz ją prawym przyciskiem → Kategoria, klikając pod polem nowego zadania albo wpisując #nazwa."), 11, "FgFaint"));
+        p.Children.Add(Label(L.T("Etykieta [Nazwa] na początku zadania. Przypisanie: prawy przycisk → Kategoria, etykiety pod polem nowego zadania albo #nazwa."), 11, "FgFaint"));
         var cats = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
         p.Children.Add(cats);
         FillCategories(store, cats);
@@ -237,7 +241,7 @@ public sealed class SettingsWindow : DarkWindow
 
         // day marks (HO, BŚU, Urlop …) – also per account, synced like the categories
         p.Children.Add(Sub(L.T("Oznaczenia dni")));
-        p.Children.Add(Label(L.T("Krótki kod w nagłówku dnia, np. HO, BŚU, Urlop. Ustawiasz je prawym przyciskiem na dniu, także jako powtarzane (np. HO w każdy piątek albo urlop od–do). Liczy je widok roku i eksport CSV."), 11, "FgFaint"));
+        p.Children.Add(Label(L.T("Kod w nagłówku dnia (np. HO, BŚU, Urlop). Ustawianie: prawy przycisk na dniu; stały cykl: przycisk Cykl…. Uwzględniane w widoku roku i eksporcie CSV."), 11, "FgFaint"));
         var marks = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
         p.Children.Add(marks);
         FillMarks(store, marks);
@@ -256,7 +260,7 @@ public sealed class SettingsWindow : DarkWindow
 
         // clearing this account's data (goes to the other computers too)
         p.Children.Add(Sub(L.T("Wyczyść dane")));
-        p.Children.Add(Label(L.T("Usuwa dane tego konta – także na innych komputerach, które synchronizują ten folder. Zadania i oznaczenia da się jeszcze cofnąć Ctrl+Z na tablicy, a kopie dzienne zostają w podfolderze backup."), 11, "FgFaint"));
+        p.Children.Add(Label(L.T("Usuwa dane konta, również na innych komputerach synchronizujących ten folder. Zadania i oznaczenia można przywrócić przez Ctrl+Z lub z kopii dziennej."), 11, "FgFaint"));
         var clearRow = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
         void ClearButton(string label, Func<int> count, Func<int> clear, string what)
         {
@@ -401,13 +405,14 @@ public sealed class SettingsWindow : DarkWindow
     {
         var w = S.Weather;
         var p = new StackPanel();
-        p.Children.Add(Label(L.T("Prognoza na 16 dni z Open-Meteo (bezpłatnie, bez konta) – w nagłówku każdego dnia: symbol pogody, temperatura najwyższa / najniższa i szansa opadów. Wysyłane są tylko współrzędne wybranego miasta."), 11, "FgFaint"));
+        p.Children.Add(Label(L.T("Prognoza na 16 dni (Open-Meteo, bez konta): symbol pogody, temperatura maks. / min., szansa opadów i wiatr w nagłówku dnia. Do serwisu wysyłane są wyłącznie współrzędne miasta."), 11, "FgFaint"));
         var status = Label("", 11.5, "FgDim");
-        void ShowStatus() => status.Text = !w.Ready ? L.T("Wybierz miasto, żeby włączyć prognozę.")
+        void ShowStatus() => status.Text = !w.Ready ? L.T("Wybierz miasto, aby włączyć prognozę.")
             : WeatherService.Error != null ? L.F("Błąd: {0}", WeatherService.Error)
             : WeatherService.Fetched is { } f ? L.F("{0} · pobrano {1}", w.City, f.ToString("HH:mm")) : w.City;
-        p.Children.Add(Check(L.T("Pokazuj pogodę w dniach (warstwa pogody)"), w.Enabled, v => { w.Enabled = v; if (v) WeatherService.Refresh(); }));
-        p.Children.Add(Check(L.T("Pokazuj szansę opadów (od 20%)"), w.ShowRain, v => w.ShowRain = v));
+        p.Children.Add(Check(L.T("Pokazuj pogodę w nagłówkach dni"), w.Enabled, v => { w.Enabled = v; if (v) WeatherService.Refresh(); }));
+        p.Children.Add(Check(L.T("Szansa opadów (0–100%)"), w.ShowRain, v => w.ShowRain = v));
+        p.Children.Add(Check(L.T("Prędkość wiatru (km/h)"), w.ShowWind, v => w.ShowWind = v));
 
         var row = new DockPanel { Margin = new Thickness(0, 8, 0, 0) };
         var city = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = w.City };
@@ -419,7 +424,7 @@ public sealed class SettingsWindow : DarkWindow
             try
             {
                 var found = await WeatherService.Find(city.Text);
-                if (found.Count == 0) results.Children.Add(Label(L.T("Nie znalazłem takiego miejsca."), 11.5, "FgFaint"));
+                if (found.Count == 0) results.Children.Add(Label(L.T("Nie znaleziono miejscowości."), 11.5, "FgFaint"));
                 foreach (var (label, lat, lon) in found)
                 {
                     var b = Btn(label, "LinkButton", (_, _) =>
@@ -486,7 +491,7 @@ public sealed class SettingsWindow : DarkWindow
             buttons.Children.Add(b);
         }
         panel.Children.Add(switcher);
-        panel.Children.Add(Label(L.T("Każda warstwa (konto) ma własne połączenia. Zadania trafiają do backlogu tej warstwy."), 11.5, "FgDim"));
+        panel.Children.Add(Label(L.T("Połączenia ustawia się osobno dla każdego konta. Zadania trafiają do backlogu wybranego konta."), 11.5, "FgDim"));
         panel.Children.Add(body);
         Fill();
         return panel;
@@ -496,7 +501,7 @@ public sealed class SettingsWindow : DarkWindow
     {
         var link = acc.Notion;
         var p = new StackPanel();
-        p.Children.Add(Label(L.T("Automatycznie wczytuje zadania z bazy Notion do backlogu tego konta – tylko odczyt, nic nie jest zmieniane w Notion. Używa Twojego osobistego tokenu (działa jak Twoje konto, bez admina). Token jest zaszyfrowany dla Twojego konta Windows i zostaje tylko na tym komputerze – na drugim komputerze wklej ten sam token (zachowaj go w menedżerze haseł) albo utwórz osobny."), 11, "FgFaint"));
+        p.Children.Add(Label(L.T("Wczytuje zadania z bazy Notion do backlogu konta (tylko odczyt). Wymaga osobistego tokenu Notion. Token jest szyfrowany dla bieżącego użytkownika Windows i zapisywany tylko na tym komputerze; na innym komputerze należy podać ten sam albo nowy token."), 11, "FgFaint"));
 
         var db = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = link.Database, ToolTip = L.T("Link do bazy: ••• przy widoku bazy → Copy link to view") };
         var dbState = Label("", 11.5, "FgDim");
@@ -506,8 +511,8 @@ public sealed class SettingsWindow : DarkWindow
             var id = NotionImport.ExtractId(v);
             dbState.Text = v.Length == 0 ? L.T("Wklej link do bazy.")
                 : id == null ? L.T("To nie wygląda na link do bazy Notion.")
-                : NotionSync.ViewId(v) != null ? L.F("Rozpoznano bazę i widok ✓ – wczytane będą tylko zadania pasujące do filtrów tego widoku{0}.", link.ViewName != null ? $" („{link.ViewName}”)" : "")
-                : L.T("Rozpoznano bazę, ale link nie ma widoku (…?v=…) – wczytana byłaby cała baza. Skopiuj link do widoku z filtrami, np. „Dla mnie”.");
+                : NotionSync.ViewId(v) != null ? L.F("Baza i widok rozpoznane{0}. Wczytywane są zadania spełniające filtry widoku.", link.ViewName != null ? $" („{link.ViewName}”)" : "")
+                : L.T("Link bez widoku (…?v=…): wczytywana byłaby cała baza. Zalecany link do widoku z filtrami.");
             dbState.Foreground = v.Length > 0 && id == null ? new SolidColorBrush(Color.FromRgb(0xF2, 0xA6, 0x5A)) : Ui.Res("FgDim");
         }
         db.TextChanged += (_, _) => ShowDbState();
@@ -515,7 +520,7 @@ public sealed class SettingsWindow : DarkWindow
         ShowDbState();
         p.Children.Add(Pair(L.T("Link do bazy"), db));
         p.Children.Add(dbState);
-        p.Children.Add(Label(L.T("Skąd go wziąć: otwórz bazę w Notion → kliknij nazwę widoku (zakładka nad tabelą, np. „Table”) → Copy link to view. Jeśli baza zajmuje całą stronę, wystarczy też Ctrl+L (kopiuje adres strony)."), 11, "FgFaint"));
+        p.Children.Add(Label(L.T("Link do widoku: w Notion nazwa widoku nad tabelą → Copy link to view. Baza na całą stronę: Ctrl+L."), 11, "FgFaint"));
         var howTo = Btn(L.T("Jak skopiować link do widoku (pomoc Notion) ↗"), "LinkButton", (_, _) => GlassWindow.OpenUrl("https://www.notion.com/help/views-filters-and-sorts"));
         howTo.HorizontalAlignment = HorizontalAlignment.Left;
         howTo.Margin = new Thickness(-7, 2, 0, 8);
@@ -529,7 +534,7 @@ public sealed class SettingsWindow : DarkWindow
         bool filling = false;
         void ShowTokenState()
         {
-            tokenState.Text = link.TokenProtected != null ? L.T("Token zapisany i zaszyfrowany. Wklej nowy, żeby go zmienić.") : L.T("Brak tokenu.");
+            tokenState.Text = link.TokenProtected != null ? L.T("Token zapisany (zaszyfrowany). Wklejenie nowego zastępuje poprzedni.") : L.T("Brak tokenu.");
             filling = true;
             token.Password = link.TokenProtected != null ? Mask : "";
             filling = false;
@@ -593,7 +598,7 @@ public sealed class SettingsWindow : DarkWindow
         {
             statuses.Children.Clear();
             var known = link.KnownStatuses ?? new();
-            if (known.Count == 0) { statuses.Children.Add(Label(L.T("Statusy pojawią się po pierwszej synchronizacji (domyślnie pomijane są zakończone)."), 11, "FgFaint")); return; }
+            if (known.Count == 0) { statuses.Children.Add(Label(L.T("Lista statusów pojawi się po pierwszej synchronizacji. Domyślnie pomijane są statusy zakończone."), 11, "FgFaint")); return; }
             var skip = link.SkipStatuses ?? known.Where(NotionImport.LooksDone).ToList();
             foreach (var s in known)
             {
@@ -899,15 +904,15 @@ public sealed class SettingsWindow : DarkWindow
         btn.Margin = new Thickness(0);
         row.Children.Add(btn);
         p.Children.Add(row);
-        var ver = Label(L.F("Wersja {0}  ·  dane zostają w folderach kont, ustawienia w %APPDATA%\\TaskWall", Installer.Version), 11, "FgFaint");
+        var ver = Label(L.F("Wersja {0}  ·  dane: foldery kont  ·  ustawienia: %APPDATA%\\TaskWall", Installer.Version), 11, "FgFaint");
         ver.Margin = new Thickness(0, 10, 0, 0);
         p.Children.Add(ver);
         // updates through the cloud folder
         var setup = Updater.SetupPath;
         var shared = setup != null ? Updater.VersionOf(setup) : null;
         var upd = Label(setup == null ? L.T("Aktualizacje: brak folderu danych.")
-            : shared == null ? L.F("Aktualizacje: w folderze danych nie ma jeszcze instalatora ({0}). Zainstalowana kopia odłoży go tam sama.", setup)
-            : L.F("Aktualizacje: w folderze danych jest instalator wersji {0}. Inne komputery proponują aktualizację przy starcie.", shared.ToString(3)), 11, "FgFaint");
+            : shared == null ? L.F("Aktualizacje: brak instalatora w folderze danych ({0}). Zainstalowana kopia zapisuje go automatycznie.", setup)
+            : L.F("Aktualizacje: instalator w folderze danych – wersja {0}. Komputery ze starszą wersją proponują aktualizację przy starcie.", shared.ToString(3)), 11, "FgFaint");
         upd.Margin = new Thickness(0, 8, 0, 4);
         p.Children.Add(upd);
         var check = Btn(L.T("Sprawdź aktualizację"), "SecondaryButton", (_, _) => Updater.Check(askAgain: true));

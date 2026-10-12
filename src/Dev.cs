@@ -35,6 +35,11 @@ static class Dev
 
         var open = Arg("--open");
         if (open == "settings") App.Instance.ShowSettings();
+        else if (open?.StartsWith("settings:") == true && int.TryParse(open["settings:".Length..], out var sec))
+        {
+            App.Instance.ShowSettings();
+            App.Current.Dispatcher.BeginInvoke(() => (App.Current.Windows.OfType<SettingsWindow>().FirstOrDefault())?.OpenSection(sec), DispatcherPriority.ApplicationIdle);
+        }
         else if (open == "archive") App.Current.Dispatcher.BeginInvoke(() => App.Board?.ShowArchive(), DispatcherPriority.ApplicationIdle);
         else if (open == "private") App.Instance.SwitchLayer("private");
         else if (open == "add") App.Current.Dispatcher.BeginInvoke(() => App.Board?.QuickAdd(), DispatcherPriority.ApplicationIdle);
@@ -350,7 +355,7 @@ static class Dev
             Check("multi-day: moving past the planned end drops the plan", planned.PlanEnd == null);
             var wx = WeatherService.Parse("""{"daily":{"time":["2026-10-12","2026-10-13"],"weather_code":[3,61],"temperature_2m_max":[12.4,13.0],"temperature_2m_min":[7.1,null],"precipitation_probability_max":[67,null]}}""");
             Check("weather: forecast parsed (code, max/min, rain chance)", wx.Count == 2 && wx[new DateTime(2026, 10, 12)].Code == 3 && wx[new DateTime(2026, 10, 12)].Rain == 67
-                && wx[new DateTime(2026, 10, 13)].Rain == null && WeatherService.Describe(61).Symbol == "☂");
+                && wx[new DateTime(2026, 10, 13)].Rain == null && WeatherService.Describe(61).Symbol == "🌧");
             var sealedToken = NotionSync.Protect("ntn_test_token_1234567890");
             Check("notion: token encrypted (DPAPI), not stored in plain text", sealedToken != null && !sealedToken.Contains("ntn_test"));
 

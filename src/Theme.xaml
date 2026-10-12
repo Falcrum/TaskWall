@@ -4,21 +4,6 @@
     <FontFamily x:Key="UiFont">Segoe UI Variable Text, Segoe UI</FontFamily>
     <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
 
-    <SolidColorBrush x:Key="Fg" Color="#E9ECF3"/>
-    <SolidColorBrush x:Key="FgDim" Color="#9AA1B2"/>
-    <SolidColorBrush x:Key="FgFaint" Color="#6B7282"/>
-    <SolidColorBrush x:Key="Line" Color="#1CFFFFFF"/>
-    <SolidColorBrush x:Key="Hover" Color="#14FFFFFF"/>
-    <SolidColorBrush x:Key="Field" Color="#12FFFFFF"/>
-    <SolidColorBrush x:Key="FieldBorder" Color="#2AFFFFFF"/>
-    <SolidColorBrush x:Key="MenuBg" Color="#F21A1E28"/>
-    <SolidColorBrush x:Key="DialogBg" Color="#FF151922"/>
-    <SolidColorBrush x:Key="CardBg" Color="#FF1C212C"/>
-    <!-- translucent "ink" over the glass (white on dark; the light theme swaps them, src/Th.cs) -->
-    <SolidColorBrush x:Key="InkSoft" Color="#22FFFFFF"/>
-    <SolidColorBrush x:Key="InkMid" Color="#40FFFFFF"/>
-    <SolidColorBrush x:Key="InkLine" Color="#66FFFFFF"/>
-    <SolidColorBrush x:Key="InkHi" Color="#AAFFFFFF"/>
     <!-- replaced at runtime from settings -->
     <SolidColorBrush x:Key="AccentBrush" Color="#5B8CFF"/>
     <SolidColorBrush x:Key="AccentSoft" Color="#335B8CFF"/>

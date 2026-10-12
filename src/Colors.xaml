@@ -1,0 +1,20 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Colours of the dark theme. The light theme replaces this whole dictionary at start-up (src/Th.cs);
+         Theme.xaml (styles) is merged after it and takes its brushes from here. -->
+    <SolidColorBrush x:Key="Fg" Color="#E9ECF3"/>
+    <SolidColorBrush x:Key="FgDim" Color="#9AA1B2"/>
+    <SolidColorBrush x:Key="FgFaint" Color="#6B7282"/>
+    <SolidColorBrush x:Key="Line" Color="#1CFFFFFF"/>
+    <SolidColorBrush x:Key="Hover" Color="#14FFFFFF"/>
+    <SolidColorBrush x:Key="Field" Color="#12FFFFFF"/>
+    <SolidColorBrush x:Key="FieldBorder" Color="#2AFFFFFF"/>
+    <SolidColorBrush x:Key="MenuBg" Color="#F21A1E28"/>
+    <SolidColorBrush x:Key="DialogBg" Color="#FF151922"/>
+    <SolidColorBrush x:Key="CardBg" Color="#FF1C212C"/>
+    <!-- translucent "ink" over the glass (white on dark; the light theme swaps them, src/Th.cs) -->
+    <SolidColorBrush x:Key="InkSoft" Color="#22FFFFFF"/>
+    <SolidColorBrush x:Key="InkMid" Color="#40FFFFFF"/>
+    <SolidColorBrush x:Key="InkLine" Color="#66FFFFFF"/>
+    <SolidColorBrush x:Key="InkHi" Color="#AAFFFFFF"/>
+</ResourceDictionary>
