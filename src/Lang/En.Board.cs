@@ -76,7 +76,7 @@ static partial class L
         ("Usuń oznaczenie", "Remove mark"),
         (" (tylko ten dzień)", " (this day only)"),
         ("Seria „{0}”: {1}…", "Series “{0}”: {1}…"),
-        ("Powtarzaj oznaczenie…", "Repeat mark…"),
+        ("Oznaczenie w cyklu (np. HO co czwartek i piątek)…", "Mark on a cycle (e.g. HO every Thursday and Friday)…"),
         ("Oznaczenia dni (np. Urlop): dodaj w ustawieniach…", "Day marks (e.g. Holiday): add them in Settings…"),
         ("Dodaj zadanie", "Add task"),
         ("Dodaj alarm…", "Add alarm…"),

@@ -591,6 +591,12 @@ public sealed class SettingsWindow : DarkWindow
             del.ToolTip = L.T("Usuwa oznaczenie z listy (dni już oznaczone zostają w danych)");
             DockPanel.SetDock(del, Dock.Right);
             row.Children.Add(del);
+            // a cycle (hybrid work: HO every Thursday and Friday …)
+            var code0 = list[i].Code;
+            var cycle = Btn(L.T("Cykl…"), "LinkButton", (_, _) => RepeatWindow.ForMark(store, null, DateTime.Today, code0));
+            cycle.ToolTip = L.T("Powtarzaj to oznaczenie w wybrane dni tygodnia, np. praca hybrydowa: HO co czwartek i piątek");
+            DockPanel.SetDock(cycle, Dock.Right);
+            row.Children.Add(cycle);
             // frame (day keeps its own colours, e.g. HO) or a coloured day (e.g. BŚU)
             var style = Btn(list[i].Ring ? L.T("◯ ramka") : L.T("● tło"), "LinkButton", (_, _) => { list[index].Style = list[index].Ring ? "fill" : "ring"; Save(); FillMarks(store, host); });
             style.ToolTip = L.T("Ramka: dzień zachowuje kolory zadań (np. w widoku roku), widać tylko obrys i etykietę. Tło: cały dzień w kolorze oznaczenia.");
@@ -700,6 +706,7 @@ public sealed class SettingsWindow : DarkWindow
     {
         var p = new StackPanel();
         p.Children.Add(Check(L.T("Pokazuj weekendy"), S.ShowWeekends, v => S.ShowWeekends = v));
+        p.Children.Add(Check(L.T("Zwijaj zrobione zadania w dniu do jednej linii („✓ 3 zrobione”)"), S.CollapseDone, v => S.CollapseDone = v));
         p.Children.Add(Check(L.T("Przycisk widoku roku (365 dni)"), S.ShowYearButton, v => S.ShowYearButton = v));
         p.Children.Add(Check(L.T("Automatycznie przenoś niezrobione zadania z minionych dni na dziś"), S.AutoRollover, v => S.AutoRollover = v));
         var mode = new ComboBox { Width = 320, HorizontalAlignment = HorizontalAlignment.Left };

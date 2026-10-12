@@ -161,6 +161,9 @@ public partial class BoardWindow
     void InitFeatures()
     {
         SetupBarIcons();
+        BodyRoot.PreviewDragOver += EdgeScroll;
+        BodyRoot.PreviewDrop += (_, _) => StopEdge();
+        _edgeTimer.Tick += EdgeTick;
         UpdateDrawerLock();
         BacklogScroll.DragOver += (_, e) =>
         {

@@ -120,6 +120,7 @@ public partial class BoardWindow : GlassWindow
         after?.Invoke();
     }
 
+    readonly HashSet<string> _showDone = new(); // days whose folded done tasks are unfolded
     readonly DispatcherTimer _undoHide = new() { Interval = TimeSpan.FromSeconds(7) };
 
     /// <summary>"Zarchiwizowano: … · COFNIJ" at the bottom for a few seconds (Ctrl+Z works too).</summary>
@@ -607,8 +608,22 @@ public partial class BoardWindow : GlassWindow
             var days = SpanDays(t)!;
             panel.Children.Add(BuildContinuedRow(t, (days.IndexOf(key) + 1, days.Count), compact, planned: string.CompareOrdinal(key, t.Day) > 0));
         }
-        foreach (var (t, depth) in Nest(tasks.Where(t => !spanIds.Contains(t.Id))))
+        // optional (Settings → Tablica): done tasks folded into one "✓ 3 zrobione" line, click to unfold
+        bool fold = S.CollapseDone && !_showDone.Contains(key);
+        var listed = tasks.Where(t => !spanIds.Contains(t.Id) && !(fold && t.Done)).ToList();
+        foreach (var (t, depth) in Nest(listed))
             panel.Children.Add(BuildTaskRow(t, false, compact, SpanDays(t) is { } sd ? (sd.IndexOf(key) + 1, sd.Count) : null, depth));
+        int doneHere = tasks.Count(t => t.Done && !spanIds.Contains(t.Id));
+        if (S.CollapseDone && doneHere > 0)
+        {
+            var toggle = new TextBlock
+            {
+                Text = (fold ? "▸  " : "▾  ") + L.F("✓ {0} zrobione", doneHere), FontSize = Math.Max(9.5, S.FontSize - 2), Foreground = Res("FgFaint"),
+                Cursor = Cursors.Hand, Margin = new Thickness(2, 2, 0, 3), ToolTip = fold ? L.T("Pokaż zrobione zadania") : L.T("Zwiń zrobione zadania"),
+            };
+            toggle.MouseLeftButtonUp += (_, e) => { e.Handled = true; if (!_showDone.Remove(key)) _showDone.Add(key); Rebuild(); };
+            panel.Children.Add(toggle);
+        }
         var addRow = BuildAddRow(key, date, compact);
         if (isPast && _addingKey != key) // past days: "+ dodaj zadanie" only on hover (less clutter)
         {
@@ -904,7 +919,7 @@ public partial class BoardWindow : GlassWindow
                 edit.Click += (_, _) => RepeatWindow.ForMark(Store, series, date);
                 menu.Items.Add(edit);
             }
-            var repeat = new MenuItem { Header = "     " + L.T("Powtarzaj oznaczenie…") };
+            var repeat = new MenuItem { Header = "     " + L.T("Oznaczenie w cyklu (np. HO co czwartek i piątek)…") };
             repeat.Click += (_, _) => RepeatWindow.ForMark(Store, null, date, mark);
             menu.Items.Add(repeat);
         }
@@ -1576,6 +1591,52 @@ public partial class BoardWindow : GlassWindow
             source.Opacity = 1;
             HideDropLine();
         }
+    }
+
+    // ---------- dragging onto the next / previous period: hold the task at the left / right edge ----------
+    readonly DispatcherTimer _edgeTimer = new() { Interval = TimeSpan.FromMilliseconds(650) };
+    int _edgeDir;
+
+    void EdgeScroll(object sender, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(DragFormat) || _view == ViewMode.Year || WeeksGrid.ActualWidth <= 0) { StopEdge(); return; }
+        var p = e.GetPosition(WeeksGrid);
+        double edge = Math.Min(36, WeeksGrid.ActualWidth / 20);
+        int dir = p.Y >= 0 && p.Y <= WeeksGrid.ActualHeight ? (p.X < edge ? -1 : p.X > WeeksGrid.ActualWidth - edge ? 1 : 0) : 0;
+        if (dir == _edgeDir) return;
+        _edgeDir = dir;
+        _edgeTimer.Stop();
+        if (dir == 0) { SyncText.Text = ""; return; }
+        SyncText.Text = dir < 0 ? L.T("‹ przytrzymaj: poprzedni okres") : L.T("przytrzymaj: następny okres ›");
+        _edgeTimer.Start();
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)] struct CursorPoint { public int X, Y; }
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool GetCursorPos(out CursorPoint p);
+
+    /// <summary>The mouse is still over the board (the drag didn't leave the window).</summary>
+    bool CursorOverBoard()
+    {
+        if (!GetCursorPos(out var c) || PresentationSource.FromVisual(WeeksGrid) == null) return false;
+        var p = WeeksGrid.PointFromScreen(new Point(c.X, c.Y));
+        return p.X >= -4 && p.Y >= -4 && p.X <= WeeksGrid.ActualWidth + 4 && p.Y <= WeeksGrid.ActualHeight + 4;
+    }
+
+    void EdgeTick(object? s, EventArgs e)
+    {
+        // the drag left the window (no more DragOver events) or ended: stop
+        if (_edgeDir == 0 || !CursorOverBoard()) { StopEdge(); return; }
+        Step(_edgeDir); // keeps stepping while the task is held there
+        _edgeTimer.Interval = TimeSpan.FromMilliseconds(900);
+    }
+
+    void StopEdge()
+    {
+        if (_edgeDir == 0) return;
+        _edgeDir = 0;
+        _edgeTimer.Stop();
+        _edgeTimer.Interval = TimeSpan.FromMilliseconds(650);
+        SyncText.Text = "";
     }
 
     void Root_DragOver(object sender, DragEventArgs e)

@@ -525,6 +525,10 @@ public sealed class AppSettings
     public bool BarCaptions { get; set; }
     /// <summary>The backlog / archive drawer stays open while dragging and clicking elsewhere.</summary>
     public bool DrawerLocked { get; set; }
+    /// <summary>Done tasks of a day folded into one line.</summary>
+    public bool CollapseDone { get; set; }
+    /// <summary>"dark", "light" or "auto" (from the wallpaper brightness).</summary>
+    public string Theme { get; set; } = "dark";
     /// <summary>Update the user said "no" to (not offered again; Settings → Info can still install it).</summary>
     public string? SkippedUpdate { get; set; }
     /// <summary>"pl" or "en".</summary>
