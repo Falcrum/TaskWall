@@ -80,7 +80,7 @@ static class Native
 
     public static void UseDarkTitleBar(IntPtr hwnd)
     {
-        int on = 1;
+        int on = Th.Light ? 0 : 1; // the window frame follows the app theme
         DwmSetWindowAttribute(hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, ref on, sizeof(int));
     }
 

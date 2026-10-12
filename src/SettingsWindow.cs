@@ -67,7 +67,7 @@ public sealed class SettingsWindow : DarkWindow
         titles.Children.Add(Label(subtitle, 11.5, "FgFaint"));
         head.Children.Add(titles);
         var header = new Border { Child = head, Padding = new Thickness(14, 10, 14, 10), CornerRadius = new CornerRadius(8), Cursor = Cursors.Hand, Margin = new Thickness(0, 0, 0, 6) };
-        Anim.HoverBackground(header, Color.FromArgb(0x0C, 0xFF, 0xFF, 0xFF), Color.FromArgb(0x18, 0xFF, 0xFF, 0xFF));
+        Anim.HoverBackground(header, Th.Ink(0x0C), Th.Ink(0x18));
         var body = new Border { Padding = new Thickness(14, 4, 14, 14), Visibility = Visibility.Collapsed };
         bool built = false;
         void Open()
@@ -97,7 +97,7 @@ public sealed class SettingsWindow : DarkWindow
     FrameworkElement BuildAccounts()
     {
         var panel = new StackPanel();
-        var switcher = new Border { CornerRadius = new CornerRadius(8), Background = new SolidColorBrush(Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF)), Padding = new Thickness(2), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 4, 0, 10) };
+        var switcher = new Border { CornerRadius = new CornerRadius(8), Background = new SolidColorBrush(Th.Ink(0x10)), Padding = new Thickness(2), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 4, 0, 10) };
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
         switcher.Child = buttons;
         void Paint()
@@ -105,7 +105,7 @@ public sealed class SettingsWindow : DarkWindow
             foreach (Button b in buttons.Children)
             {
                 bool on = (string)b.Tag == _account;
-                b.Background = on ? new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF)) : Brushes.Transparent;
+                b.Background = on ? new SolidColorBrush(Th.Ink(0x30)) : Brushes.Transparent;
                 b.Foreground = on ? Ui.Res("Fg") : Ui.Res("FgDim");
                 b.Content = App.AccountName((string)b.Tag).ToUpper(BoardWindow.Pl);
             }
@@ -461,7 +461,7 @@ public sealed class SettingsWindow : DarkWindow
     {
         var panel = new StackPanel();
         var body = new Border();
-        var switcher = new Border { CornerRadius = new CornerRadius(8), Background = new SolidColorBrush(Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF)), Padding = new Thickness(2), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 4, 0, 10) };
+        var switcher = new Border { CornerRadius = new CornerRadius(8), Background = new SolidColorBrush(Th.Ink(0x10)), Padding = new Thickness(2), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 4, 0, 10) };
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
         switcher.Child = buttons;
         string current = S.Layer;
@@ -470,7 +470,7 @@ public sealed class SettingsWindow : DarkWindow
             foreach (Button b in buttons.Children)
             {
                 bool on = (string)b.Tag == current;
-                b.Background = on ? new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF)) : Brushes.Transparent;
+                b.Background = on ? new SolidColorBrush(Th.Ink(0x30)) : Brushes.Transparent;
                 b.Foreground = on ? Ui.Res("Fg") : Ui.Res("FgDim");
             }
             var p = new StackPanel();
@@ -783,6 +783,24 @@ public sealed class SettingsWindow : DarkWindow
     FrameworkElement BuildLook()
     {
         var p = new StackPanel();
+        // theme: applied when the app starts (all windows are built in it)
+        var theme = new ComboBox { Width = 240 };
+        foreach (var (code, label) in new[] { ("dark", L.T("Ciemny")), ("light", L.T("Jasny (do jasnych tapet)")), ("auto", L.T("Automatycznie z jasności tapety")) })
+            theme.Items.Add(new ComboBoxItem { Content = label, Tag = code });
+        theme.SelectedItem = theme.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == S.Theme) ?? theme.Items[0];
+        var restartTheme = Btn(L.T("Uruchom ponownie"), "SecondaryButton", (_, _) => App.Instance.Restart());
+        restartTheme.Visibility = Visibility.Collapsed;
+        theme.SelectionChanged += (_, _) =>
+        {
+            if (theme.SelectedItem is not ComboBoxItem it) return;
+            S.Theme = (string)it.Tag;
+            SettingsStore.Save(S);
+            restartTheme.Visibility = Visibility.Visible;
+        };
+        var themeRow = new StackPanel { Orientation = Orientation.Horizontal };
+        themeRow.Children.Add(theme);
+        themeRow.Children.Add(restartTheme);
+        p.Children.Add(Pair(L.T("Motyw"), themeRow));
         p.Children.Add(Check(L.T("Matowe szkło (rozmyta tapeta pod tablicą)"), S.Blur, v => S.Blur = v));
         p.Children.Add(Check(L.T("Animacje"), S.Animations, v => S.Animations = v));
         p.Children.Add(Check(L.T("Podpisy przy ikonach górnego paska"), S.BarCaptions, v => S.BarCaptions = v));

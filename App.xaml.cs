@@ -92,6 +92,7 @@ public partial class App : Application
     {
 
         Settings = SettingsStore.Load();
+        Th.Apply(Resources, Settings.Theme); // before any window is built
         if (string.IsNullOrWhiteSpace(Settings.DataFolder)) Settings.DataFolder = SettingsStore.DefaultDataFolder();
         SettingsStore.Save(Settings);
         ApplyTheme();
@@ -352,7 +353,7 @@ public partial class App : Application
         Resources["AccentBrush"] = new SolidColorBrush(accent);
         Resources["AccentSoft"] = new SolidColorBrush(Color.FromArgb(0x38, accent.R, accent.G, accent.B));
         byte a = (byte)Math.Clamp(Settings.TintOpacity * 255, Settings.Blur ? 0 : 40, 255);
-        Resources["GlassTint"] = new SolidColorBrush(Color.FromArgb(a, 0x08, 0x09, 0x0D));
+        Resources["GlassTint"] = new SolidColorBrush(Th.Glass(a));
     }
 
     // ---------- placement ----------

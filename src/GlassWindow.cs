@@ -56,7 +56,7 @@ public class GlassWindow : Window
         DpiChanged += (_, _) => UpdateRegion();
 
         _tint.SetResourceReference(Border.BackgroundProperty, "GlassTint");
-        _tint.BorderBrush = new SolidColorBrush(Color.FromArgb(0x2A, 0xFF, 0xFF, 0xFF));
+        _tint.BorderBrush = new SolidColorBrush(Th.Ink(0x2A));
         _tint.BorderThickness = new Thickness(1);
         Frame.Children.Add(_glass);
         Frame.Children.Add(_tint);

@@ -126,7 +126,7 @@ static class Icons
         {
             MinWidth = 13, Height = 13, CornerRadius = new CornerRadius(6.5), BorderThickness = new Thickness(1.1), Padding = new Thickness(2, 0, 2, 0),
             HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Child = count,
-            Background = new SolidColorBrush(Color.FromArgb(0xE0, 0x14, 0x16, 0x1C)),
+            Background = new SolidColorBrush(Th.Panel(0xE0)),
         };
         badge.SetBinding(Border.BorderBrushProperty, Fg());
         grid.Children.Add(badge);

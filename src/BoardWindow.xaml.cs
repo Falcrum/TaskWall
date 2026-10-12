@@ -90,6 +90,8 @@ public partial class BoardWindow : GlassWindow
     public static int WeekNo(DateTime d) => ISOWeek.GetWeekOfYear(d);
     public static string Hours(double h) => h.ToString("0.#", Pl) + "h";
     static SolidColorBrush B(Color c) => new(c);
+    /// <summary>Coloured text: as is on the dark glass, darker on the light theme (pastels are unreadable on white).</summary>
+    static SolidColorBrush Tx(Color c) => new(Th.Light ? Color.FromArgb(c.A, (byte)(c.R * 0.6), (byte)(c.G * 0.6), (byte)(c.B * 0.6)) : c);
     static Color A(Color c, byte a) => Color.FromArgb(a, c.R, c.G, c.B);
     public static Color ParseColor(string hex) { try { return (Color)ColorConverter.ConvertFromString(hex); } catch { return Color.FromRgb(0x9A, 0xA1, 0xB2); } }
 
@@ -306,20 +308,20 @@ public partial class BoardWindow : GlassWindow
         OverdueButton.Visibility = overdue > 0 && _view != ViewMode.Year ? Visibility.Visible : Visibility.Collapsed;
         OverdueButton.Content = L.F("↷ KONTYNUUJ DZIŚ ({0})", overdue);
         OverdueButton.ToolTip = L.F("Niezrobione zadania z minionych dni ({0}) przejdą na dziś. W dniach, w których były, zostaną jako wyszarzone „↷ 1/3” – widać, że praca trwała kilka dni.", overdue);
-        OverdueButton.Foreground = B(Color.FromRgb(0xF2, 0xA6, 0x5A));
+        OverdueButton.Foreground = Tx(Color.FromRgb(0xF2, 0xA6, 0x5A));
 
         YearButton.Visibility = S.ShowYearButton ? Visibility.Visible : Visibility.Collapsed;
         foreach (var (btn, mode) in new[] { (DayViewButton, ViewMode.Day), (OneWeekButton, ViewMode.Week1), (WeekViewButton, ViewMode.Week2), (MonthViewButton, ViewMode.Month), (YearButton, ViewMode.Year) })
         {
             bool on = _view == mode;
-            btn.Background = on ? B(Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF)) : Brushes.Transparent;
+            btn.Background = on ? B(Th.Ink(0x26)) : Brushes.Transparent;
             btn.Foreground = on ? Res("Fg") : Res("FgDim");
         }
         // the layer (account) on the right: icon + its name; the private one tinted green so it's obvious
         if (_barCaptions != S.BarCaptions) SetupBarIcons();
         bool priv = S.Layer == "private";
         if (_layerName != null) _layerName.Text = L.Up(App.AccountName(S.Layer));
-        LayerButton.Background = priv ? B(Color.FromArgb(0x40, 0x5C, 0xCB, 0x92)) : B(Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF));
+        LayerButton.Background = priv ? B(Color.FromArgb(0x40, 0x5C, 0xCB, 0x92)) : B(Th.Ink(0x14));
         LayerButton.Foreground = Res("Fg");
         ClearDoneButton.Visibility = _view == ViewMode.Year ? Visibility.Collapsed : Visibility.Visible;
         UpdateBacklogButton();
@@ -445,7 +447,7 @@ public partial class BoardWindow : GlassWindow
             BorderThickness = new Thickness(firstCol ? 0 : 1, firstRow ? 0 : 1, 0, 0),
             Opacity = outside ? 0.45 : 1,
         };
-        Brush normalBg = isToday ? B(Color.FromArgb(0x1C, 0xFF, 0xFF, 0xFF))
+        Brush normalBg = isToday ? B(Th.Ink(0x1C))
             : markColor is { } mc && markInfo?.Ring != true ? B(A(mc, 0x16)) // a "ring" mark (HO) only shows its badge
             : Brushes.Transparent;
         var inner = new Border
@@ -458,7 +460,7 @@ public partial class BoardWindow : GlassWindow
         };
         if (isToday)
         {
-            inner.BorderBrush = B(Color.FromArgb(0x1E, 0xFF, 0xFF, 0xFF));
+            inner.BorderBrush = B(Th.Ink(0x1E));
             inner.BorderThickness = new Thickness(1);
         }
         outer.Child = inner;
@@ -508,7 +510,7 @@ public partial class BoardWindow : GlassWindow
             var (symbol, desc) = WeatherService.Describe(wd.Code);
             var w = new TextBlock { FontSize = compact ? 9.5 : 10.5, Foreground = Res("FgDim"), Margin = new Thickness(0, 1, 0, 0) };
             w.Inlines.Add(new Run(symbol + " ") { FontFamily = new FontFamily("Segoe UI Symbol"), Foreground = Res("AccentBrush") });
-            w.Inlines.Add(new Run($"{Math.Round(wd.Max):0}° / {Math.Round(wd.Min):0}°"));
+            w.Inlines.Add(new Run($"{Math.Round(wd.Max):0}°" + (double.IsNaN(wd.Min) ? "" : $" / {Math.Round(wd.Min):0}°")));
             if (S.Weather.ShowRain && wd.Rain is >= 20) w.Inlines.Add(new Run($"  ☂ {wd.Rain}%") { Foreground = Res("FgFaint") });
             w.ToolTip = $"{desc}\n{L.F("max {0}°, min {1}°", Math.Round(wd.Max), Math.Round(wd.Min))}" + (wd.Rain is { } r ? "\n" + L.F("szansa opadów {0}%", r) : "") + $"\n{S.Weather.City}";
             left.Children.Add(w);
@@ -555,7 +557,7 @@ public partial class BoardWindow : GlassWindow
         {
             var track = new Grid { Height = 3, Margin = new Thickness(0, 0, 2, compact ? 3 : 6) };
             DockPanel.SetDock(track, Dock.Top);
-            track.Children.Add(new Border { CornerRadius = new CornerRadius(1.5), Background = total > 0 ? B(Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF)) : Brushes.Transparent });
+            track.Children.Add(new Border { CornerRadius = new CornerRadius(1.5), Background = total > 0 ? B(Th.Ink(0x1A)) : Brushes.Transparent });
             var fill = new Border
             {
                 CornerRadius = new CornerRadius(1.5),
@@ -658,7 +660,7 @@ public partial class BoardWindow : GlassWindow
 
         inner.DragOver += (_, e) => OnDragOverTarget(panel, e);
         inner.Drop += (_, e) => OnDrop(key, panel, e);
-        inner.DragEnter += (_, _) => inner.Background = B(Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF));
+        inner.DragEnter += (_, _) => inner.Background = B(Th.Ink(0x14));
         inner.DragLeave += (_, _) => inner.Background = normalBg;
         inner.MouseRightButtonUp += (_, e) =>
         {
@@ -686,8 +688,8 @@ public partial class BoardWindow : GlassWindow
             ToolTip = $"{e.Title}\n{e.TimeText}" + (e.Location != null ? $"\n{e.Location}" : "") + $"\n{e.Feed}",
         };
         var tb = new TextBlock { TextWrapping = compact ? TextWrapping.NoWrap : TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = Math.Max(9.5, S.FontSize - (compact ? 2 : 1)) };
-        tb.Inlines.Add(new Run("  ") { FontFamily = (FontFamily)FindResource("IconFont"), FontSize = Math.Max(8, S.FontSize - 4), Foreground = B(MeetingColor) });
-        tb.Inlines.Add(new Run(e.AllDay ? "" : e.Start.ToString("HH:mm") + "  ") { FontWeight = FontWeights.SemiBold, Foreground = B(MeetingColor) });
+        tb.Inlines.Add(new Run("  ") { FontFamily = (FontFamily)FindResource("IconFont"), FontSize = Math.Max(8, S.FontSize - 4), Foreground = Tx(MeetingColor) });
+        tb.Inlines.Add(new Run(e.AllDay ? "" : e.Start.ToString("HH:mm") + "  ") { FontWeight = FontWeights.SemiBold, Foreground = Tx(MeetingColor) });
         tb.Inlines.Add(new Run(e.Title) { Foreground = Res("Fg") });
         row.Child = tb;
         row.MouseRightButtonUp += (_, ev) =>
@@ -740,8 +742,8 @@ public partial class BoardWindow : GlassWindow
                 + (past ? "" : $"\n{AlarmService.Until(at)}") + "\n" + L.T("Kliknij, żeby zmienić"),
         };
         var tb = new TextBlock { TextWrapping = compact ? TextWrapping.NoWrap : TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = Math.Max(9.5, S.FontSize - (compact ? 2 : 1)) };
-        tb.Inlines.Add(new Run(a.IsMeeting ? "  " : "  ") { FontFamily = (FontFamily)FindResource("IconFont"), FontSize = Math.Max(8, S.FontSize - 4), Foreground = B(color) });
-        tb.Inlines.Add(new Run(time + "  ") { FontWeight = FontWeights.SemiBold, Foreground = B(color) });
+        tb.Inlines.Add(new Run(a.IsMeeting ? "  " : "  ") { FontFamily = (FontFamily)FindResource("IconFont"), FontSize = Math.Max(8, S.FontSize - 4), Foreground = Tx(color) });
+        tb.Inlines.Add(new Run(time + "  ") { FontWeight = FontWeights.SemiBold, Foreground = Tx(color) });
         tb.Inlines.Add(new Run(a.Text.Length > 0 ? a.Text : what) { Foreground = Res("Fg") });
         if (!a.Once) tb.Inlines.Add(new Run("  ↻") { Foreground = Res("FgFaint") });
         row.Child = tb;
@@ -798,7 +800,7 @@ public partial class BoardWindow : GlassWindow
         var text = new TextBlock { TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = fs, Foreground = Res("Fg") };
         text.Inlines.Add(new Run($"↷ {span.Index}/{span.Total}  ") { FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush") });
         var tags = TaskItem.Tags(t.Text, out var rest);
-        foreach (var tag in tags) text.Inlines.Add(new Run(tag + "  ") { FontWeight = FontWeights.Bold, FontSize = Math.Max(8.5, fs - 3), Foreground = B(TagColor(tag)) });
+        foreach (var tag in tags) text.Inlines.Add(new Run(tag + "  ") { FontWeight = FontWeights.Bold, FontSize = Math.Max(8.5, fs - 3), Foreground = Tx(TagColor(tag)) });
         var main = new Run(tags.Count > 0 ? rest : t.Text);
         if (t.Done) main.TextDecorations = TextDecorations.Strikethrough;
         text.Inlines.Add(main);
@@ -995,7 +997,7 @@ public partial class BoardWindow : GlassWindow
             Padding = new Thickness(4, compact ? 1 : 3, 1, compact ? 1 : 3),
             Margin = new Thickness(-4 + depth * (compact ? 12 : 18), 0, 0, compact ? 0 : 1), // Notion sub-items indented under their main task
         };
-        Anim.HoverBackground(wrapper, Colors.Transparent, Color.FromArgb(0x16, 0xFF, 0xFF, 0xFF));
+        Anim.HoverBackground(wrapper, Colors.Transparent, Th.Ink(0x16));
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -1006,7 +1008,7 @@ public partial class BoardWindow : GlassWindow
 
         // completion circle (ring coloured by Notion priority)
         var prioColor = string.IsNullOrEmpty(t.Priority) ? (Color?)null : PriorityColor(t.Priority);
-        var ringBrush = B(prioColor ?? Color.FromArgb(0x88, 0xFF, 0xFF, 0xFF));
+        var ringBrush = B(prioColor ?? Th.Ink(0x88));
         double cs = compact ? 12 : 14;
         var circle = new Border
         {
@@ -1066,8 +1068,8 @@ public partial class BoardWindow : GlassWindow
             var c = TagColor(tag);
             var chip = new StackPanel { Orientation = Orientation.Horizontal };
             if (tag == TaskItem.MeetingTag)
-                chip.Children.Add(new TextBlock { Text = "", FontFamily = (FontFamily)FindResource("IconFont"), FontSize = Math.Max(7.5, fs - 4), Foreground = B(c), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 1, 4, 0) });
-            chip.Children.Add(new TextBlock { Text = tag == TaskItem.MeetingTag ? "Meeting" : tag, FontSize = Math.Max(8.5, fs - 3), FontWeight = FontWeights.Bold, Foreground = B(c) });
+                chip.Children.Add(new TextBlock { Text = "", FontFamily = (FontFamily)FindResource("IconFont"), FontSize = Math.Max(7.5, fs - 4), Foreground = Tx(c), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 1, 4, 0) });
+            chip.Children.Add(new TextBlock { Text = tag == TaskItem.MeetingTag ? "Meeting" : tag, FontSize = Math.Max(8.5, fs - 3), FontWeight = FontWeights.Bold, Foreground = Tx(c) });
             text.Inlines.Add(new InlineUIContainer(new Border
             {
                 CornerRadius = new CornerRadius(4),
@@ -1095,7 +1097,7 @@ public partial class BoardWindow : GlassWindow
             var chip = new Border
             {
                 CornerRadius = new CornerRadius(4), Padding = new Thickness(4, 0, 4, 1), Margin = new Thickness(6, 0, 0, 0), Cursor = Cursors.Hand,
-                Background = B(Color.FromArgb(0x1E, 0xFF, 0xFF, 0xFF)), ToolTip = _expanded.Contains(t.Id) ? L.T("Zwiń listę") : L.T("Rozwiń listę"),
+                Background = B(Th.Ink(0x1E)), ToolTip = _expanded.Contains(t.Id) ? L.T("Zwiń listę") : L.T("Rozwiń listę"),
                 Child = new TextBlock { Text = $"☑ {cd}/{cl.Count}", FontSize = Math.Max(8.5, fs - 2.5), Foreground = cd == cl.Count ? Res("AccentBrush") : Res("FgDim") },
             };
             chip.PreviewMouseLeftButtonDown += (_, e) => e.Handled = true;
@@ -1221,7 +1223,7 @@ public partial class BoardWindow : GlassWindow
             var box = new Border
             {
                 Width = 11, Height = 11, CornerRadius = new CornerRadius(3), BorderThickness = new Thickness(1.2), Cursor = Cursors.Hand,
-                BorderBrush = item.Done ? Res("AccentBrush") : B(Color.FromArgb(0x88, 0xFF, 0xFF, 0xFF)),
+                BorderBrush = item.Done ? Res("AccentBrush") : B(Th.Ink(0x88)),
                 Background = item.Done ? Res("AccentBrush") : Brushes.Transparent, Margin = new Thickness(1, 2, 7, 0), VerticalAlignment = VerticalAlignment.Top,
             };
             var label = new TextBlock { Text = item.Text, TextWrapping = TextWrapping.Wrap, FontSize = Math.Max(9.5, fs - 1.5), Foreground = Res("FgDim"), Cursor = Cursors.Hand };
@@ -1469,7 +1471,7 @@ public partial class BoardWindow : GlassWindow
             {
                 CornerRadius = new CornerRadius(8), Padding = new Thickness(6, 0, 6, 1), Margin = new Thickness(0, 0, 4, 3),
                 Background = B(A(col, 0x24)), Cursor = Cursors.Hand,
-                Child = new TextBlock { Text = c.Name, FontSize = 10, FontWeight = FontWeights.SemiBold, Foreground = B(col) },
+                Child = new TextBlock { Text = c.Name, FontSize = 10, FontWeight = FontWeights.SemiBold, Foreground = Tx(col) },
             };
             chip.PreviewMouseLeftButtonDown += (_, e) =>
             {

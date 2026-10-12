@@ -331,6 +331,21 @@ static class Wallpaper
         return FromHsv(h2, Math.Clamp(s2 * 1.25, 0.5, 0.85), 0.96);
     }
 
+    /// <summary>Average brightness (0..1) of the wallpaper behind the area – for the automatic light / dark theme.</summary>
+    public static double? Luminance(Source s, Int32Rect area)
+    {
+        var small = Render(s, area, 0, 0.05);
+        if (small == null) return null;
+        var bmp = new FormatConvertedBitmap(small, PixelFormats.Bgra32, null, 0);
+        int stride = bmp.PixelWidth * 4;
+        var px = new byte[stride * bmp.PixelHeight];
+        bmp.CopyPixels(px, stride, 0);
+        double sum = 0;
+        int n = 0;
+        for (int i = 0; i < px.Length; i += 16, n++) sum += (0.0722 * px[i] + 0.7152 * px[i + 1] + 0.2126 * px[i + 2]) / 255.0;
+        return n > 0 ? sum / n : null;
+    }
+
     static void ToHsv(double r, double g, double b, out double h, out double s, out double v)
     {
         double max = Math.Max(r, Math.Max(g, b)), min = Math.Min(r, Math.Min(g, b)), d = max - min;

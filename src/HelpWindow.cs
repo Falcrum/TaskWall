@@ -38,6 +38,10 @@ public sealed class HelpWindow : DarkWindow
         {
             ("Ctrl+Shift+Spacja", "tablica na wierzch + nowe zadanie na dziś (Esc chowa); zmienisz w Ustawienia → Ogólne"),
             ("Ctrl+1 · Ctrl+2", "konto Praca · Prywatne"),
+            ("← → · PgUp PgDn", "poprzedni / następny okres"),
+            ("T · Home", "dziś"),
+            ("1 2 3 4 5", "widok: dzień · tydzień · 2 tygodnie · miesiąc · rok"),
+            ("B · A", "backlog · archiwum"),
             ("Ctrl+F", "szukaj wszędzie"),
             ("Ctrl+Z", "cofnij"),
             ("Enter · Esc", "dodaj i następne · zamknij pole"),
@@ -51,6 +55,7 @@ public sealed class HelpWindow : DarkWindow
             ("prawy przycisk na zadaniu", "menu: estymacja, priorytet, kategoria, powtarzanie, lista kontrolna, archiwum"),
             ("prawy przycisk na dniu", "oznaczenia dni, powtarzane oznaczenia, alarm"),
             ("przeciągnij", "na dzień, w liście, na BACKLOG lub ARCHIWUM; z Ctrl = kopia"),
+            ("przeciągnij do krawędzi", "przytrzymaj zadanie przy lewej / prawej krawędzi: poprzedni / następny okres"),
             ("Shift + przeciągnij", "rozciągnij zadanie do tego dnia (w przód: planowany koniec, w tył: początek)"),
             ("środkowy przycisk", "archiwizuj zadanie"),
             ("↷ 2/3", "zadanie wielodniowe: dzień 2 z 3 (przerywane kółko = dzień zaplanowany; klik = idź do aktywnego dnia)"),

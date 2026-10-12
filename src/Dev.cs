@@ -348,6 +348,9 @@ static class Dev
             var planned = new TaskItem { Text = "p", Day = "2026-10-12", PlanEnd = "2026-10-14" };
             planned.NoteMove("2026-10-12", "2026-10-15", "2026-10-12");
             Check("multi-day: moving past the planned end drops the plan", planned.PlanEnd == null);
+            var wx = WeatherService.Parse("""{"daily":{"time":["2026-10-12","2026-10-13"],"weather_code":[3,61],"temperature_2m_max":[12.4,13.0],"temperature_2m_min":[7.1,null],"precipitation_probability_max":[67,null]}}""");
+            Check("weather: forecast parsed (code, max/min, rain chance)", wx.Count == 2 && wx[new DateTime(2026, 10, 12)].Code == 3 && wx[new DateTime(2026, 10, 12)].Rain == 67
+                && wx[new DateTime(2026, 10, 13)].Rain == null && WeatherService.Describe(61).Symbol == "☂");
             var sealedToken = NotionSync.Protect("ntn_test_token_1234567890");
             Check("notion: token encrypted (DPAPI), not stored in plain text", sealedToken != null && !sealedToken.Contains("ntn_test"));
 

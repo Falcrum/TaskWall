@@ -115,7 +115,7 @@ static class YearView
         foreach (var m in types)
         {
             var c = BoardWindow.ParseColor(m.Color);
-            if (m.Ring) Swatch(new Border { Background = new SolidColorBrush(Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF)), Child = new System.Windows.Shapes.Ellipse { Width = 4, Height = 4, Fill = new SolidColorBrush(c), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1.5, 1.5, 0) } });
+            if (m.Ring) Swatch(new Border { Background = new SolidColorBrush(Th.Ink(0x26)), Child = new System.Windows.Shapes.Ellipse { Width = 4, Height = 4, Fill = new SolidColorBrush(c), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1.5, 1.5, 0) } });
             else Swatch(new Border { Background = new SolidColorBrush(c) });
             Text(m.Code);
         }
@@ -137,8 +137,8 @@ static class YearView
         }
 
         // past days are a bit darker than the ones ahead (never lighter)
-        var empty = Color.FromArgb(0x0E, 0xFF, 0xFF, 0xFF);
-        var future = Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF);
+        var empty = Th.Ink(0x0E);
+        var future = Th.Ink(0x1A);
         var marks = types.GroupBy(m => m.Code).ToDictionary(g => g.Key, g => BoardWindow.ParseColor(g.First().Color));
         var ringMarks = types.Where(m => m.Ring).Select(m => m.Code).ToHashSet();
         var yearMonday = BoardWindow.Monday(new DateTime(year, 1, 1));
@@ -192,7 +192,7 @@ static class YearView
                 else if (past && total > 0) fill = Color.FromArgb(0x26, accent.R, accent.G, accent.B);
                 else if (!past && total > 0) { fill = future; ring = Color.FromArgb(0xB0, accent.R, accent.G, accent.B); }
                 else fill = past ? empty : future;
-                if (date == today) ring = Colors.White;
+                if (date == today) ring = Th.Ink(0xFF);
                 Color? dot = markRing && marks.TryGetValue(mark!, out var rcol) ? rcol : null; // e.g. HO: a small dot, the colours stay the tasks'
 
                 bool strong = fill.A > 0x90;

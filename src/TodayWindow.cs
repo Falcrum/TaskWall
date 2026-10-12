@@ -31,7 +31,7 @@ public sealed class TodayWindow : Window
         FontSize = 12.5;
         Content = new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(0xF6, 0x16, 0x19, 0x21)),
+            Background = new SolidColorBrush(Th.Panel(0xF6)),
             BorderBrush = Ui.Res("FieldBorder"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(14),
             Padding = new Thickness(16, 12, 16, 14), Margin = new Thickness(8),
             Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 18, ShadowDepth = 2, Opacity = 0.45 },
@@ -123,7 +123,7 @@ public sealed class TodayWindow : Window
             var circle = new Border
             {
                 Width = 14, Height = 14, CornerRadius = new CornerRadius(7), BorderThickness = new Thickness(1.3), Cursor = Cursors.Hand,
-                BorderBrush = t.Done ? Ui.Res("AccentBrush") : new SolidColorBrush(Color.FromArgb(0x88, 0xFF, 0xFF, 0xFF)),
+                BorderBrush = t.Done ? Ui.Res("AccentBrush") : new SolidColorBrush(Th.Ink(0x88)),
                 Background = t.Done ? Ui.Res("AccentBrush") : Brushes.Transparent, Margin = new Thickness(0, 2, 9, 0), VerticalAlignment = VerticalAlignment.Top,
             };
             circle.MouseLeftButtonUp += (_, _) =>

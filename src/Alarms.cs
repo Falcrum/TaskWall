@@ -281,7 +281,7 @@ public sealed class AlarmToast : Window
 
         var card = new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(0xF8, 0x1A, 0x1D, 0x26)),
+            Background = new SolidColorBrush(Th.Panel(0xF8)),
             BorderBrush = new SolidColorBrush(Color.FromArgb(0x90, Amber.R, Amber.G, Amber.B)), BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(14), Padding = new Thickness(16, 12, 14, 12), Margin = new Thickness(8),
             Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 18, ShadowDepth = 2, Opacity = 0.5 },

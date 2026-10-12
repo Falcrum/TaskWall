@@ -25,7 +25,7 @@ public sealed class ClockWindow : GlassWindow
 
     readonly TextBlock _time = new() { FontSize = 34, FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center };
     readonly TextBlock _date = new() { FontSize = 10.5, FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center };
-    readonly Border _dash = new() { Width = 20, Height = 2.5, CornerRadius = new CornerRadius(1.25), Background = new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)) };
+    readonly Border _dash = new() { Width = 20, Height = 2.5, CornerRadius = new CornerRadius(1.25), Background = new SolidColorBrush(Th.Ink(0x70)) };
     readonly TextBlock _chevron = new() { Text = "", FontSize = 10, Visibility = Visibility.Collapsed, HorizontalAlignment = HorizontalAlignment.Center };
     readonly Grid _calendar = new() { Margin = new Thickness(14, 0, 14, 12) };
     readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
@@ -187,7 +187,7 @@ public sealed class ClockWindow : GlassWindow
                     Child = label,
                     ToolTip = PolishHolidays.DayOff(d),
                 };
-                if (!today) Anim.HoverBackground(cell, Colors.Transparent, Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF));
+                if (!today) Anim.HoverBackground(cell, Colors.Transparent, Th.Ink(0x30));
                 cell.MouseLeftButtonUp += (_, _) => Pick(d);
                 Put(cell, w + 1, i + 1);
             }

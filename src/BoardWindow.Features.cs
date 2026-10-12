@@ -370,7 +370,7 @@ public partial class BoardWindow
         ArchiveCount.Text = archived.ToString();
         foreach (var (btn, on) in new[] { (BacklogTabButton, !_archiveTab), (ArchiveTabButton, _archiveTab) })
         {
-            btn.Background = on ? B(Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF)) : Brushes.Transparent;
+            btn.Background = on ? B(Th.Ink(0x22)) : Brushes.Transparent;
             btn.Opacity = on ? 1 : 0.7;
         }
         ImportButton.Visibility = _archiveTab ? Visibility.Collapsed : Visibility.Visible;
@@ -472,7 +472,7 @@ public partial class BoardWindow
     {
         var neutral = Color.FromRgb(0x9A, 0xA1, 0xB2);
         var row = new Border { Tag = t, CornerRadius = new CornerRadius(6), Padding = new Thickness(4, 3, 1, 3), Margin = new Thickness(-4, 0, 0, 1) };
-        Anim.HoverBackground(row, Colors.Transparent, Color.FromArgb(0x16, 0xFF, 0xFF, 0xFF));
+        Anim.HoverBackground(row, Colors.Transparent, Th.Ink(0x16));
         var g = new Grid();
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         g.ColumnDefinitions.Add(new ColumnDefinition());
@@ -496,7 +496,7 @@ public partial class BoardWindow
             text.Inlines.Add(new InlineUIContainer(new Border
             {
                 CornerRadius = new CornerRadius(4), Padding = new Thickness(4, 0, 4, 1), Margin = new Thickness(0, 0, 5, 0), Background = B(A(neutral, 0x2E)),
-                Child = new TextBlock { Text = tag == TaskItem.MeetingTag ? "Meeting" : tag, FontSize = Math.Max(8.5, S.FontSize - 3), FontWeight = FontWeights.Bold, Foreground = B(neutral) },
+                Child = new TextBlock { Text = tag == TaskItem.MeetingTag ? "Meeting" : tag, FontSize = Math.Max(8.5, S.FontSize - 3), FontWeight = FontWeights.Bold, Foreground = Tx(neutral) },
             }) { BaselineAlignment = BaselineAlignment.Center });
         text.Inlines.Add(new Run(tags.Count > 0 ? rest : t.Text));
         if (t.Done) { text.TextDecorations = TextDecorations.Strikethrough; text.Opacity = 0.75; }
@@ -551,7 +551,7 @@ public partial class BoardWindow
         ArchiveButton.ToolTip = L.F("Archiwum: {0} zadań (upuść tu zadanie, żeby je zarchiwizować)", a);
         foreach (var (btn, on) in new[] { (BacklogButton, shown && !_archiveTab), (ArchiveButton, shown && _archiveTab) })
         {
-            btn.Background = on ? B(Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF)) : Brushes.Transparent;
+            btn.Background = on ? B(Th.Ink(0x26)) : Brushes.Transparent;
             btn.Foreground = on ? Res("Fg") : Res("FgDim");
         }
     }
@@ -601,8 +601,8 @@ public partial class BoardWindow
             BacklogPanel.HorizontalAlignment = HorizontalAlignment.Right;
             BacklogPanel.Width = DrawerWidth();
             Panel.SetZIndex(BacklogPanel, 10);
-            BacklogSurface.Background = B(Color.FromArgb(0xA8, 0x0C, 0x0E, 0x14));
-            BacklogSurface.BorderBrush = B(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF));
+            BacklogSurface.Background = B(Th.Panel(0xA8));
+            BacklogSurface.BorderBrush = B(Th.Ink(0x30));
             if (!_drawerOpen && !DrawerShift.HasAnimatedProperties) DrawerShift.X = DrawerWidth() + 30;
             BacklogPanel.Visibility = _drawerOpen || DrawerShift.HasAnimatedProperties ? Visibility.Visible : Visibility.Collapsed;
             UpdateDrawerGlass();
@@ -618,7 +618,7 @@ public partial class BoardWindow
             DrawerShift.BeginAnimation(TranslateTransform.XProperty, null);
             DrawerShift.X = 0;
             DrawerGlass.Background = null;
-            BacklogSurface.Background = B(Color.FromArgb(0x08, 0xFF, 0xFF, 0xFF));
+            BacklogSurface.Background = B(Th.Ink(0x08));
             BacklogSurface.BorderBrush = Res("Line");
             BacklogPanel.Visibility = _pinnedVisible ? Visibility.Visible : Visibility.Collapsed;
         }
@@ -918,13 +918,13 @@ public partial class BoardWindow
             row.ColumnDefinitions.Add(new ColumnDefinition());
             row.Children.Add(new TextBlock { Text = h.Label, FontSize = 11, Foreground = h.Date == DateTime.Today ? Res("AccentBrush") : Res("FgFaint"), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 8, 0), TextTrimming = TextTrimming.CharacterEllipsis });
             var tb = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 12.5, Foreground = Res("Fg") };
-            if (h.Meeting) tb.Inlines.Add(new Run("  ") { FontFamily = (FontFamily)FindResource("IconFont"), FontSize = 10, Foreground = B(MeetingColor) });
+            if (h.Meeting) tb.Inlines.Add(new Run("  ") { FontFamily = (FontFamily)FindResource("IconFont"), FontSize = 10, Foreground = Tx(MeetingColor) });
             tb.Inlines.Add(new Run(h.Text));
             if (h.Done) { tb.TextDecorations = TextDecorations.Strikethrough; tb.Opacity = 0.5; }
             Grid.SetColumn(tb, 1);
             row.Children.Add(tb);
             var bd = new Border { CornerRadius = new CornerRadius(6), Padding = new Thickness(8, 5, 8, 5), Cursor = Cursors.Hand, Child = row };
-            Anim.HoverBackground(bd, Colors.Transparent, Color.FromArgb(0x1C, 0xFF, 0xFF, 0xFF));
+            Anim.HoverBackground(bd, Colors.Transparent, Th.Ink(0x1C));
             var go = h.Go;
             bd.MouseLeftButtonUp += (_, _) => { CloseSearch(); go(); };
             SearchResults.Children.Add(bd);
