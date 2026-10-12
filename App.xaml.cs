@@ -145,6 +145,8 @@ public partial class App : Application
             AlarmService.Changed += () => Board?.OnExternalChange(quiet: true);
             AlarmService.Start();
             Updater.Start();
+            WeatherService.Changed += () => Board?.OnExternalChange(quiet: true);
+            WeatherService.Start();
             // Notion: each account with a token syncs on its own interval (first run right after start-up)
             _notionTimer.Tick += (_, _) => { NotionSync.Tick(); FullSync(); };
             NotionSync.StateChanged += () => Board?.UpdateSyncIcon();

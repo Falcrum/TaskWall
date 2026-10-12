@@ -529,6 +529,7 @@ public sealed class AppSettings
     public bool CollapseDone { get; set; }
     /// <summary>"dark", "light" or "auto" (from the wallpaper brightness).</summary>
     public string Theme { get; set; } = "dark";
+    public WeatherSettings Weather { get; set; } = new();
     /// <summary>Update the user said "no" to (not offered again; Settings → Info can still install it).</summary>
     public string? SkippedUpdate { get; set; }
     /// <summary>"pl" or "en".</summary>

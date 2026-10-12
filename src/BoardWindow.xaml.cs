@@ -502,6 +502,17 @@ public partial class BoardWindow : GlassWindow
             if (firstCol) dateText.Inlines.Add(new Run(L.F("  ·  tydz. {0}", WeekNo(date))) { Foreground = Res("FgFaint"), FontWeight = FontWeights.Normal });
             left.Children.Add(dateText);
         }
+        // weather layer: "☀ 18° / 9°  ☂ 40%" (Settings → Pogoda)
+        if (WeatherService.On(date) is { } wd)
+        {
+            var (symbol, desc) = WeatherService.Describe(wd.Code);
+            var w = new TextBlock { FontSize = compact ? 9.5 : 10.5, Foreground = Res("FgDim"), Margin = new Thickness(0, 1, 0, 0) };
+            w.Inlines.Add(new Run(symbol + " ") { FontFamily = new FontFamily("Segoe UI Symbol"), Foreground = Res("AccentBrush") });
+            w.Inlines.Add(new Run($"{Math.Round(wd.Max):0}° / {Math.Round(wd.Min):0}°"));
+            if (S.Weather.ShowRain && wd.Rain is >= 20) w.Inlines.Add(new Run($"  ☂ {wd.Rain}%") { Foreground = Res("FgFaint") });
+            w.ToolTip = $"{desc}\n{L.F("max {0}°, min {1}°", Math.Round(wd.Max), Math.Round(wd.Min))}" + (wd.Rain is { } r ? "\n" + L.F("szansa opadów {0}%", r) : "") + $"\n{S.Weather.City}";
+            left.Children.Add(w);
+        }
         if (holidayNames.Count > 0)
             left.Children.Add(new TextBlock
             {

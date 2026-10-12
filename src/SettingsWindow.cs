@@ -36,6 +36,7 @@ public sealed class SettingsWindow : DarkWindow
         AddSection(L.T("Ogólne"), L.T("język, autostart, zegar, alarmy, Notion, skrót klawiszowy"), BuildGeneral);
         AddSection(L.T("Konta"), L.T("Praca i Prywatne: folder, kalendarze Google, kategorie, oznaczenia dni"), BuildAccounts);
         AddSection(L.T("Połączenia"), L.T("Notion: automatyczne wczytywanie zadań z bazy"), BuildConnections);
+        AddSection(L.T("Pogoda"), L.T("warstwa pogody: prognoza w nagłówkach dni"), BuildWeather);
         AddSection(L.T("Ekran i rozmiar"), L.T("monitor, skala, szerokość i wysokość tablicy"), BuildScreen);
         AddSection(L.T("Tablica"), L.T("weekendy, widok roku, zaległe zadania, backlog"), BuildBoard);
         AddSection(L.T("Wygląd"), L.T("matowe szkło, przyciemnienie, kolor akcentu, animacje"), BuildLook);
@@ -393,6 +394,66 @@ public sealed class SettingsWindow : DarkWindow
             last = name;
         }
         if (focusLast && last != null) last.Loaded += (_, _) => { last.Focus(); last.SelectAll(); };
+    }
+
+    /// <summary>Weather layer: city (Open-Meteo search), what to show.</summary>
+    FrameworkElement BuildWeather()
+    {
+        var w = S.Weather;
+        var p = new StackPanel();
+        p.Children.Add(Label(L.T("Prognoza na 16 dni z Open-Meteo (bezpłatnie, bez konta) – w nagłówku każdego dnia: symbol pogody, temperatura najwyższa / najniższa i szansa opadów. Wysyłane są tylko współrzędne wybranego miasta."), 11, "FgFaint"));
+        var status = Label("", 11.5, "FgDim");
+        void ShowStatus() => status.Text = !w.Ready ? L.T("Wybierz miasto, żeby włączyć prognozę.")
+            : WeatherService.Error != null ? L.F("Błąd: {0}", WeatherService.Error)
+            : WeatherService.Fetched is { } f ? L.F("{0} · pobrano {1}", w.City, f.ToString("HH:mm")) : w.City;
+        p.Children.Add(Check(L.T("Pokazuj pogodę w dniach (warstwa pogody)"), w.Enabled, v => { w.Enabled = v; if (v) WeatherService.Refresh(); }));
+        p.Children.Add(Check(L.T("Pokazuj szansę opadów (od 20%)"), w.ShowRain, v => w.ShowRain = v));
+
+        var row = new DockPanel { Margin = new Thickness(0, 8, 0, 0) };
+        var city = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = w.City };
+        var results = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
+        async void Search()
+        {
+            results.Children.Clear();
+            if (city.Text.Trim().Length < 2) return;
+            try
+            {
+                var found = await WeatherService.Find(city.Text);
+                if (found.Count == 0) results.Children.Add(Label(L.T("Nie znalazłem takiego miejsca."), 11.5, "FgFaint"));
+                foreach (var (label, lat, lon) in found)
+                {
+                    var b = Btn(label, "LinkButton", (_, _) =>
+                    {
+                        w.City = label; w.Latitude = lat; w.Longitude = lon; w.Enabled = true;
+                        city.Text = label;
+                        results.Children.Clear();
+                        SettingsStore.Save(S);
+                        WeatherService.Refresh();
+                        ShowStatus();
+                    });
+                    b.HorizontalAlignment = HorizontalAlignment.Left;
+                    b.Margin = new Thickness(-7, 0, 0, 0);
+                    results.Children.Add(b);
+                }
+            }
+            catch (Exception ex) { results.Children.Add(Label(L.F("Błąd: {0}", ex.Message), 11.5, "FgFaint")); }
+        }
+        var find = Btn(L.T("Szukaj"), "SecondaryButton", (_, _) => Search());
+        DockPanel.SetDock(find, Dock.Right);
+        row.Children.Add(find);
+        row.Children.Add(city);
+        city.KeyDown += (_, e) => { if (e.Key == Key.Enter) Search(); };
+        p.Children.Add(Pair(L.T("Miasto"), row));
+        p.Children.Add(results);
+        p.Children.Add(status);
+        var refresh = Btn(L.T("Odśwież prognozę"), "LinkButton", (_, _) => WeatherService.Refresh());
+        refresh.HorizontalAlignment = HorizontalAlignment.Left;
+        refresh.Margin = new Thickness(-7, 4, 0, 0);
+        p.Children.Add(refresh);
+        WeatherService.Changed += ShowStatus;
+        Closed += (_, _) => WeatherService.Changed -= ShowStatus;
+        ShowStatus();
+        return p;
     }
 
     /// <summary>Connections to other services (Notion for now), per layer.</summary>
