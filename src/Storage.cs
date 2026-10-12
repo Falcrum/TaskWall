@@ -194,6 +194,43 @@ public sealed class BoardStore
     public DateTime? LastSaved { get; private set; }
     public DateTime? LastExternalChange { get; private set; }
 
+    // ---------- sync status (the icon in the top bar) ----------
+    public DateTime? LastCheck { get; private set; }
+    public string? LastError { get; private set; }
+    public bool Syncing { get; private set; }
+    /// <summary>Raised when syncing starts / ends or an error appears / clears.</summary>
+    public event Action? SyncStateChanged;
+
+    void SetError(string? error)
+    {
+        if (error == LastError) return;
+        LastError = error;
+        SyncStateChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Full sync now: write what's pending, read the folder (changes from other computers), merge conflict copies.
+    /// Called on a timer as well (the file watcher alone misses changes on some cloud drives).
+    /// </summary>
+    public void SyncNow()
+    {
+        if (Syncing) return;
+        Syncing = true;
+        SyncStateChanged?.Invoke();
+        try
+        {
+            if (!Directory.Exists(Folder)) { SetError(L.F("Folder niedostępny: {0}", Folder)); return; }
+            SaveNow();
+            CheckDisk();
+            LastCheck = DateTime.Now;
+        }
+        finally
+        {
+            Syncing = false;
+            SyncStateChanged?.Invoke();
+        }
+    }
+
     /// <summary>Raised (on the UI thread) when data changed because of another computer.</summary>
     public event Action? ExternalChange;
 
@@ -670,6 +707,7 @@ public sealed class BoardStore
                 File.Move(tmp, FilePath, true);
                 _lastHash = hash;
                 LastSaved = DateTime.Now;
+                SetError(null);
             }
             DailyBackup();
             if (merged)
@@ -682,6 +720,7 @@ public sealed class BoardStore
         catch (Exception ex)
         {
             Log.Error("board save", ex);
+            SetError(L.T("Zapis do folderu nie powiódł się (spróbuję ponownie)") + ": " + ex.Message);
             _saveTimer.Start(); // retry
         }
     }
@@ -720,8 +759,10 @@ public sealed class BoardStore
                 ExternalChange?.Invoke();
             }
             MergeConflictCopies();
+            LastCheck = DateTime.Now;
+            if (LastError != null && Directory.Exists(Folder) && !_saveTimer.IsEnabled) SetError(null);
         }
-        catch (Exception ex) { Log.Error("board reload", ex); }
+        catch (Exception ex) { Log.Error("board reload", ex); SetError(L.T("Nie mogę odczytać danych z folderu") + ": " + ex.Message); }
     }
 
     /// <summary>

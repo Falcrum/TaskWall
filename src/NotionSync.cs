@@ -23,6 +23,9 @@ static class NotionSync
     const string Version = "2025-09-03"; // databases → data sources
     static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
     static readonly HashSet<string> Running = new();
+    public static bool AnyRunning => Running.Count > 0;
+    /// <summary>A sync started or ended (the spinning icon).</summary>
+    public static event Action? StateChanged;
 
     public sealed record Result(int Added, int Updated, int Total, string? Error);
 
@@ -338,6 +341,7 @@ static class NotionSync
         var link = App.Settings.AccountFor(layer).Notion;
         if (!link.Configured) return new Result(0, 0, 0, L.T("Notion nie jest skonfigurowany."));
         if (!Running.Add(layer)) return new Result(0, 0, 0, L.T("Synchronizacja już trwa."));
+        StateChanged?.Invoke();
         try
         {
             var (_, pages, me, viewName, capped) = await Read(link);
@@ -362,7 +366,7 @@ static class NotionSync
             SettingsStore.Save(App.Settings);
             return new Result(0, 0, 0, msg);
         }
-        finally { Running.Remove(layer); }
+        finally { Running.Remove(layer); StateChanged?.Invoke(); }
     }
 
     /// <summary>Accounts with automatic sync whose interval has passed (called by the app's timer).</summary>

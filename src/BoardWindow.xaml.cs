@@ -289,14 +289,12 @@ public partial class BoardWindow : GlassWindow
             btn.Background = on ? B(Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF)) : Brushes.Transparent;
             btn.Foreground = on ? Res("Fg") : Res("FgDim");
         }
+        // the layer (account) on the right: icon + its name; the private one tinted green so it's obvious
+        if (_barCaptions != S.BarCaptions) SetupBarIcons();
         bool priv = S.Layer == "private";
-        WorkLayerButton.Content = App.AccountName("work").ToUpper(Pl);
-        PrivateLayerButton.Content = App.AccountName("private").ToUpper(Pl);
-        foreach (var (btn, on) in new[] { (WorkLayerButton, !priv), (PrivateLayerButton, priv) })
-        {
-            btn.Background = on ? B(priv ? Color.FromArgb(0x40, 0x5C, 0xCB, 0x92) : Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF)) : Brushes.Transparent;
-            btn.Foreground = on ? Res("Fg") : Res("FgDim");
-        }
+        if (_layerName != null) _layerName.Text = L.Up(App.AccountName(S.Layer));
+        LayerButton.Background = priv ? B(Color.FromArgb(0x40, 0x5C, 0xCB, 0x92)) : B(Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF));
+        LayerButton.Foreground = Res("Fg");
         ClearDoneButton.Visibility = _view == ViewMode.Year ? Visibility.Collapsed : Visibility.Visible;
         UpdateBacklogButton();
 
@@ -1464,7 +1462,7 @@ public partial class BoardWindow : GlassWindow
             t = Store.Materialize(t);
             materialized = true;
         }
-        if (_drawerOpen && IsInside(source, BacklogPanel)) SetDrawer(false); // make room for dropping on the days
+        if (_drawerOpen && !S.DrawerLocked && IsInside(source, BacklogPanel)) SetDrawer(false); // make room for dropping on the days (unless pinned)
         source.Opacity = 0.35;
         try
         {

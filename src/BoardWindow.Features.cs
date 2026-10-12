@@ -25,8 +25,140 @@ public partial class BoardWindow
     static int PriorityRank(string p) => PriorityColor(p) is var c && c == Color.FromRgb(0xE0, 0x5A, 0x55) ? 0 : c == Color.FromRgb(0x4A, 0x8B, 0xE8) ? 1 : c == Color.FromRgb(0x46, 0xB0, 0x6E) ? 2 : 3;
     int _backlogShown = 200; // backlog rows built (more on demand)
 
+    // ---------- top bar icons ----------
+
+    TextBlock? _backlogCount, _archiveCount, _layerName;
+    FrameworkElement? _syncSpinner;
+    bool? _barCaptions;
+
+    /// <summary>Vector icons (src/Icons.cs) into the bar buttons; captions next to them when chosen in settings.</summary>
+    void SetupBarIcons()
+    {
+        bool cap = S.BarCaptions;
+        _barCaptions = cap;
+        TodayButton.Content = Icons.Labeled(Icons.Today(), L.T("DZIŚ"), cap);
+        DayViewButton.Content = Icons.Labeled(Icons.Day(), L.T("DZIEŃ"), cap);
+        OneWeekButton.Content = Icons.Labeled(Icons.Week(), L.T("1 TYDZIEŃ"), cap);
+        WeekViewButton.Content = Icons.Labeled(Icons.TwoWeeks(), L.T("2 TYGODNIE"), cap);
+        MonthViewButton.Content = Icons.Labeled(Icons.Month(), L.T("MIESIĄC"), cap);
+        YearButton.Content = Icons.Labeled(Icons.Year(), L.T("ROK"), cap);
+        SearchButton.Content = Icons.Labeled(Icons.Search(), L.T("SZUKAJ"), cap);
+        ClearDoneButton.Content = Icons.Labeled(Icons.Clear(), L.T("WYCZYŚĆ"), cap);
+        BacklogButton.Content = Icons.Labeled(Icons.WithBadge(Icons.Backlog(), out var bc), "BACKLOG", cap);
+        ArchiveButton.Content = Icons.Labeled(Icons.WithBadge(Icons.Archive(), out var ac), L.T("ARCHIWUM"), cap);
+        _backlogCount = bc;
+        _archiveCount = ac;
+        SyncButton.Content = Icons.Sync(out var spinner);
+        _syncSpinner = spinner;
+        var layer = new StackPanel { Orientation = Orientation.Horizontal };
+        layer.Children.Add(Icons.Layers());
+        _layerName = new TextBlock { FontSize = 11.5, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 2, 0) };
+        layer.Children.Add(_layerName);
+        LayerButton.Content = layer;
+        UpdateSyncIcon();
+    }
+
+    DateTime _spinSince;
+    readonly System.Windows.Threading.DispatcherTimer _spinStop = new() { Interval = TimeSpan.FromMilliseconds(200) };
+
+    /// <summary>
+    /// The sync icon: spins while saving / reading the cloud folder (at least ~1 s, so it's noticeable), red on an error;
+    /// the tool tip says when and what was synced (board and Notion) or what went wrong. Click = sync now.
+    /// </summary>
+    public void UpdateSyncIcon()
+    {
+        if (_syncSpinner == null) return;
+        var st = Store;
+        var rot = (RotateTransform)_syncSpinner.RenderTransform;
+        if (st.Syncing || App.Instance.NotionRunning)
+        {
+            if (!rot.HasAnimatedProperties)
+            {
+                _spinSince = DateTime.Now;
+                rot.BeginAnimation(RotateTransform.AngleProperty, new System.Windows.Media.Animation.DoubleAnimation(0, 360, TimeSpan.FromMilliseconds(900)) { RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever });
+            }
+        }
+        else if (rot.HasAnimatedProperties)
+        {
+            // stop on a full turn, after at least one
+            var left = TimeSpan.FromMilliseconds(900) - (DateTime.Now - _spinSince);
+            _spinStop.Stop();
+            _spinStop.Interval = left > TimeSpan.Zero ? left : TimeSpan.FromMilliseconds(1);
+            _spinStop.Tick -= StopSpin;
+            _spinStop.Tick += StopSpin;
+            _spinStop.Start();
+        }
+        string T(DateTime? t) => t is { } v ? (v.Date == DateTime.Today ? v.ToString("HH:mm:ss") : v.ToString("ddd HH:mm", Pl)) : "—";
+        var notion = S.AccountFor(S.Layer).Notion;
+        var tip = L.F("Synchronizacja: {0}", App.AccountName(S.Layer)) + "\n" + st.Folder
+            + "\n\n" + L.F("Zapisano: {0}", T(st.LastSaved))
+            + "\n" + L.F("Sprawdzono folder: {0}", T(st.LastCheck))
+            + "\n" + L.F("Zmiany z innego komputera: {0}", T(st.LastExternalChange))
+            + (notion.Configured ? "\n" + L.F("Notion: {0}", notion.LastResult ?? "—") : "")
+            + (st.LastError != null ? "\n\n⚠ " + st.LastError : "")
+            + "\n\n" + L.T("Kliknij, żeby zsynchronizować teraz");
+        SyncButton.ToolTip = tip;
+        bool error = st.LastError != null || notion.LastResult?.Contains(L.T("błąd")) == true;
+        SyncButton.Foreground = error ? B(Color.FromRgb(0xF2, 0x6D, 0x6D)) : Res("FgDim");
+    }
+
+    void StopSpin(object? s, EventArgs e)
+    {
+        _spinStop.Stop();
+        if (Store.Syncing || App.Instance.NotionRunning || _syncSpinner == null) return;
+        ((RotateTransform)_syncSpinner.RenderTransform).BeginAnimation(RotateTransform.AngleProperty, null);
+    }
+
+    async void Sync_Click(object sender, RoutedEventArgs e)
+    {
+        foreach (var (_, st) in App.OpenStores()) st.SyncNow();
+        if (S.AccountFor(S.Layer).Notion.Configured) await App.Instance.RunNotion(S.Layer);
+        SyncText.Text = L.T("zsynchronizowano");
+        _syncFlash.Stop();
+        _syncFlash.Start();
+        UpdateSyncIcon();
+    }
+
+    /// <summary>The layers (accounts): pick one; Ctrl+1 / Ctrl+2 work too.</summary>
+    void Layer_Click(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu { PlacementTarget = LayerButton, Placement = PlacementMode.Bottom };
+        int i = 1;
+        foreach (var acc in S.Accounts)
+        {
+            var id = acc.Id;
+            var mi = new MenuItem { Header = (id == S.Layer ? "✓  " : "     ") + App.AccountName(id) + $"   (Ctrl+{i++})" };
+            mi.Click += (_, _) => App.Instance.SwitchLayer(id);
+            menu.Items.Add(mi);
+        }
+        menu.Items.Add(new Separator());
+        var settings = new MenuItem { Header = L.T("Ustawienia warstw…") };
+        settings.Click += (_, _) => App.Instance.ShowSettings();
+        menu.Items.Add(settings);
+        menu.IsOpen = true;
+    }
+
+    /// <summary>Pin: the drawer stays open while dragging tasks out of it and when clicking on the board.</summary>
+    void DrawerLock_Click(object sender, RoutedEventArgs e)
+    {
+        S.DrawerLocked = !S.DrawerLocked;
+        SettingsStore.Save(S);
+        UpdateDrawerLock();
+    }
+
+    void UpdateDrawerLock()
+    {
+        DrawerLockButton.Content = S.DrawerLocked ? "" : ""; // pinned / pin
+        DrawerLockButton.Foreground = S.DrawerLocked ? Res("AccentBrush") : Res("FgDim");
+        DrawerLockButton.ToolTip = S.DrawerLocked
+            ? L.T("Przypięty: panel zostaje otwarty przy przeciąganiu i klikaniu na tablicy. Kliknij, żeby odpiąć.")
+            : L.T("Przypnij panel, żeby nie chował się przy przeciąganiu zadań na dni");
+    }
+
     void InitFeatures()
     {
+        SetupBarIcons();
+        UpdateDrawerLock();
         BacklogScroll.DragOver += (_, e) =>
         {
             if (_archiveTab) { AcceptDrop(e); HideDropLine(); }
@@ -395,8 +527,10 @@ public partial class BoardWindow
         int n = Store.Data.Tasks.Count(t => t.IsBacklog && !t.Archived);
         int a = Store.Data.Tasks.Count(t => t.Archived);
         bool shown = S.BacklogMode == "drawer" ? _drawerOpen : _pinnedVisible;
-        BacklogButton.Content = $"BACKLOG ({n})";
-        ArchiveButton.Content = L.F("ARCHIWUM ({0})", a);
+        if (_backlogCount != null) _backlogCount.Text = n > 999 ? "999+" : n.ToString();
+        if (_archiveCount != null) _archiveCount.Text = a > 999 ? "999+" : a.ToString();
+        BacklogButton.ToolTip = L.F("Backlog: {0} zadań", n);
+        ArchiveButton.ToolTip = L.F("Archiwum: {0} zadań (upuść tu zadanie, żeby je zarchiwizować)", a);
         foreach (var (btn, on) in new[] { (BacklogButton, shown && !_archiveTab), (ArchiveButton, shown && _archiveTab) })
         {
             btn.Background = on ? B(Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF)) : Brushes.Transparent;
@@ -504,7 +638,7 @@ public partial class BoardWindow
     void BodyRoot_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
         if (e.OriginalSource is not DependencyObject src) return;
-        if (_drawerOpen && !IsInside(src, BacklogPanel) && !IsInside(src, BacklogButton)) SetDrawer(false);
+        if (_drawerOpen && !S.DrawerLocked && !IsInside(src, BacklogPanel) && !IsInside(src, BacklogButton)) SetDrawer(false);
         if (SearchPanel.Visibility == Visibility.Visible && !IsInside(src, SearchPanel) && !IsInside(src, SearchButton)) CloseSearch();
     }
 

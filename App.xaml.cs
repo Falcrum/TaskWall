@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -144,9 +145,11 @@ public partial class App : Application
             AlarmService.Changed += () => Board?.OnExternalChange(quiet: true);
             AlarmService.Start();
             // Notion: each account with a token syncs on its own interval (first run right after start-up)
-            _notionTimer.Tick += (_, _) => NotionSync.Tick();
+            _notionTimer.Tick += (_, _) => { NotionSync.Tick(); FullSync(); };
+            NotionSync.StateChanged += () => Board?.UpdateSyncIcon();
             _notionTimer.Start();
             NotionSync.Tick(startup: true); // always on start, then on each account's interval
+            FullSync(startup: true);
         }, DispatcherPriority.ApplicationIdle);
         Dev.AfterStartup();
     }
@@ -193,6 +196,27 @@ public partial class App : Application
         }
     }
 
+
+    public bool NotionRunning => NotionSync.AnyRunning;
+    internal Task<NotionSync.Result> RunNotion(string layer) => NotionSync.Run(layer);
+
+    readonly System.Collections.Generic.Dictionary<string, DateTime> _lastFullSync = new();
+
+    /// <summary>
+    /// Board data: besides the file watcher and the 30 s check, a full sync (save + read + conflict copies) on start and
+    /// on the same interval as the account's Notion sync (10 min when Notion isn't set up).
+    /// </summary>
+    void FullSync(bool startup = false)
+    {
+        foreach (var (layer, store) in OpenStores())
+        {
+            var n = Settings.AccountFor(layer).Notion;
+            int minutes = n.Configured && n.Auto ? Math.Max(2, n.Minutes) : 10;
+            if (!startup && _lastFullSync.TryGetValue(layer, out var last) && DateTime.Now - last < TimeSpan.FromMinutes(minutes)) continue;
+            _lastFullSync[layer] = DateTime.Now;
+            store.SyncNow();
+        }
+    }
     /// <summary>Accounts whose data is loaded (for alarms).</summary>
     public static System.Collections.Generic.IEnumerable<(string Layer, BoardStore Store)> OpenStores() =>
         Stores.Select(kv => (kv.Key, kv.Value)).ToList();
@@ -248,6 +272,7 @@ public partial class App : Application
             Dispatcher.BeginInvoke(() => _tray?.Balloon("TaskWall", L.F("Folder „{0}” jest niedostępny ({1}). Zapisuję lokalnie i przeniosę dane, gdy się pojawi.", LayerName(layer), folder)));
         }
         s.ExternalChange += () => { if (ReferenceEquals(s, Store)) Board?.OnExternalChange(); };
+        s.SyncStateChanged += () => Board?.UpdateSyncIcon();
         Stores[layer] = s;
         return s;
     }

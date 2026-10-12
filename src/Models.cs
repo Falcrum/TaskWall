@@ -518,6 +518,10 @@ public sealed class AppSettings
     /// <summary>Minutes before a task with planned hours starts to remind (-1 = off).</summary>
     public int TaskReminder { get; set; } = 5;
     public bool BoardHidden { get; set; }
+    /// <summary>Captions next to the top-bar icons.</summary>
+    public bool BarCaptions { get; set; }
+    /// <summary>The backlog / archive drawer stays open while dragging and clicking elsewhere.</summary>
+    public bool DrawerLocked { get; set; }
     /// <summary>"pl" or "en".</summary>
     public string Language { get; set; } = "pl";
     /// <summary>"Ctrl+Shift+Space", "Ctrl+Alt+D", "Ctrl+Alt+T", "Win+Shift+D" or "" (off).</summary>

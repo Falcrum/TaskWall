@@ -14,8 +14,8 @@
 
         <!-- Board -->
         <DockPanel x:Name="BoardArea" Margin="12,8,12,10">
-            <!-- top bar: navigation + views | account | actions (all caps, like the day names) -->
-            <Grid DockPanel.Dock="Top" Height="30" Margin="0,0,0,4" Background="Transparent" MouseRightButtonUp="Bar_RightClick">
+            <!-- top bar: navigation + views (icons) | actions, sync, layer (icons) – icons are drawn in code (src/Icons.cs) -->
+            <Grid DockPanel.Dock="Top" Height="32" Margin="0,0,0,4" Background="Transparent" MouseRightButtonUp="Bar_RightClick">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
@@ -25,44 +25,35 @@
                     <Button Style="{StaticResource IconButton}" Content="&#xE76B;" Click="Prev_Click" ToolTip="Wstecz"/>
                     <TextBlock x:Name="RangeText" VerticalAlignment="Center" Margin="6,0" FontSize="12"/>
                     <Button Style="{StaticResource IconButton}" Content="&#xE76C;" Click="Next_Click" ToolTip="Dalej"/>
-                    <Button Style="{StaticResource BarButton}" Content="DZIŚ" Click="Today_Click" Margin="4,0,0,0"/>
-                    <Border Width="1" Height="14" Margin="8,0" Background="{StaticResource Line}"/>
+                    <Button x:Name="TodayButton" Style="{StaticResource BarIcon}" Click="Today_Click" Margin="4,0,0,0" ToolTip="Dziś"/>
+                    <Border Width="1" Height="16" Margin="6,0" Background="{StaticResource Line}"/>
                     <Border x:Name="ViewSwitch" CornerRadius="8" Background="#10FFFFFF" Padding="2" VerticalAlignment="Center">
                         <StackPanel Orientation="Horizontal">
-                            <Button x:Name="DayViewButton" Style="{StaticResource BarButton}" Content="DZIEŃ" Click="DayView_Click" Padding="9,2"/>
-                            <Button x:Name="OneWeekButton" Style="{StaticResource BarButton}" Content="1 TYDZIEŃ" Click="OneWeek_Click" Padding="9,2"/>
-                            <Button x:Name="WeekViewButton" Style="{StaticResource BarButton}" Content="2 TYGODNIE" Click="WeekView_Click" Padding="9,2"/>
-                            <Button x:Name="MonthViewButton" Style="{StaticResource BarButton}" Content="MIESIĄC" Click="MonthView_Click" Padding="9,2"/>
-                            <Button x:Name="YearButton" Style="{StaticResource BarButton}" Content="ROK" Click="Year_Click" Padding="9,2"/>
+                            <Button x:Name="DayViewButton" Style="{StaticResource BarIcon}" Click="DayView_Click" ToolTip="Dzień"/>
+                            <Button x:Name="OneWeekButton" Style="{StaticResource BarIcon}" Click="OneWeek_Click" ToolTip="1 tydzień"/>
+                            <Button x:Name="WeekViewButton" Style="{StaticResource BarIcon}" Click="WeekView_Click" ToolTip="2 tygodnie"/>
+                            <Button x:Name="MonthViewButton" Style="{StaticResource BarIcon}" Click="MonthView_Click" ToolTip="Miesiąc"/>
+                            <Button x:Name="YearButton" Style="{StaticResource BarIcon}" Click="Year_Click" ToolTip="Rok"/>
                         </StackPanel>
                     </Border>
                     <Button x:Name="OverdueButton" Style="{StaticResource BarButton}" Click="Overdue_Click" Margin="8,0,0,0"
                             Visibility="Collapsed" ToolTip="Przenieś niezrobione zadania z minionych dni na dziś"/>
                     <TextBlock x:Name="SyncText" VerticalAlignment="Center" Margin="12,0,0,0" FontSize="11" Foreground="{StaticResource FgFaint}"/>
                 </StackPanel>
-                <Border x:Name="LayerSwitch" Grid.Column="1" HorizontalAlignment="Center" CornerRadius="8" Background="#10FFFFFF" Padding="2" VerticalAlignment="Center" Margin="12,0"
-                        ToolTip="Konto (Ctrl+1 / Ctrl+2)">
-                    <StackPanel Orientation="Horizontal">
-                        <Button x:Name="WorkLayerButton" Style="{StaticResource BarButton}" Content="PRACA" Click="WorkLayer_Click" Padding="12,2"/>
-                        <Button x:Name="PrivateLayerButton" Style="{StaticResource BarButton}" Content="PRYWATNE" Click="PrivateLayer_Click" Padding="12,2"/>
-                    </StackPanel>
-                </Border>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Button x:Name="SearchButton" Style="{StaticResource BarButton}" Click="Search_Click" ToolTip="Szukaj wszędzie (Ctrl+F)">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE721;" FontFamily="{StaticResource IconFont}" FontSize="11" FontWeight="Normal" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <TextBlock Text="SZUKAJ"/>
-                        </StackPanel>
-                    </Button>
-                    <Button x:Name="ClearDoneButton" Style="{StaticResource BarButton}" Content="WYCZYŚĆ" Click="ClearDone_Click"
-                            ToolTip="Przenieś zakończone zadania z widocznego okresu i z backlogu do archiwum"/>
-                    <Button x:Name="BacklogButton" Style="{StaticResource BarButton}" Click="ToggleBacklog_Click" AllowDrop="True"/>
-                    <Button x:Name="ArchiveButton" Style="{StaticResource BarButton}" Click="ToggleArchive_Click" AllowDrop="True"
+                    <Button x:Name="SearchButton" Style="{StaticResource BarIcon}" Click="Search_Click" ToolTip="Szukaj wszędzie (Ctrl+F)"/>
+                    <Button x:Name="ClearDoneButton" Style="{StaticResource BarIcon}" Click="ClearDone_Click"
+                            ToolTip="Wyczyść: przenieś zakończone zadania z widocznego okresu i z backlogu do archiwum"/>
+                    <Button x:Name="BacklogButton" Style="{StaticResource BarIcon}" Click="ToggleBacklog_Click" AllowDrop="True" ToolTip="Backlog"/>
+                    <Button x:Name="ArchiveButton" Style="{StaticResource BarIcon}" Click="ToggleArchive_Click" AllowDrop="True"
                             ToolTip="Zarchiwizowane zadania (upuść tu zadanie, żeby je zarchiwizować)"/>
-                    <Button x:Name="AlarmButton" Style="{StaticResource IconButton}" Content="&#xE823;" Click="Alarm_Click" ToolTip="Alarmy i spotkania"/>
-                    <Button x:Name="MoreButton" Style="{StaticResource IconButton}" Content="&#xE712;" Click="More_Click" ToolTip="Więcej"/>
-                    <Button Style="{StaticResource IconButton}" Content="&#xE713;" Click="Settings_Click" ToolTip="Ustawienia"/>
-                    <Button Style="{StaticResource IconButton}" Content="&#xE921;" Click="Hide_Click" ToolTip="Ukryj tablicę (pokażesz ją ikoną w zasobniku albo skrótem)"/>
+                    <Border Width="1" Height="16" Margin="6,0" Background="{StaticResource Line}"/>
+                    <Button x:Name="SyncButton" Style="{StaticResource BarIcon}" Click="Sync_Click"/>
+                    <Button x:Name="AlarmButton" Style="{StaticResource IconButton}" Content="&#xE823;" Click="Alarm_Click" ToolTip="Alarmy i spotkania" FontSize="13"/>
+                    <Button x:Name="LayerButton" Style="{StaticResource BarIcon}" Click="Layer_Click" ToolTip="Warstwa (Ctrl+1 / Ctrl+2)"/>
+                    <Button x:Name="MoreButton" Style="{StaticResource IconButton}" Content="&#xE712;" Click="More_Click" ToolTip="Więcej" FontSize="13"/>
+                    <Button Style="{StaticResource IconButton}" Content="&#xE713;" Click="Settings_Click" ToolTip="Ustawienia" FontSize="13"/>
+                    <Button Style="{StaticResource IconButton}" Content="&#xE921;" Click="Hide_Click" ToolTip="Ukryj tablicę (pokażesz ją ikoną w zasobniku albo skrótem)" FontSize="12"/>
                 </StackPanel>
             </Grid>
             <Grid x:Name="ContentHost">
@@ -94,6 +85,7 @@
                                     <TextBlock x:Name="ArchiveCount" Margin="7,0,0,0" Foreground="{StaticResource FgFaint}" FontSize="11"/>
                                 </StackPanel>
                             </Button>
+                            <Button x:Name="DrawerLockButton" Style="{StaticResource IconButton}" Click="DrawerLock_Click" Margin="4,0,0,0" FontSize="12"/>
                         </StackPanel>
                         <Button x:Name="EmptyArchiveButton" HorizontalAlignment="Right" Style="{StaticResource LinkButton}" Click="EmptyArchive_Click"
                                 Content="Opróżnij" FontSize="12" Visibility="Collapsed" ToolTip="Usuń na zawsze całe archiwum tej warstwy"/>
