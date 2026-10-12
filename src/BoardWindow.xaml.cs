@@ -339,8 +339,12 @@ public partial class BoardWindow : GlassWindow
     /// <summary>All days of a multi-day task (earlier days it was worked on + its current day), sorted; null = a one-day task.</summary>
     static List<string>? SpanDays(TaskItem t)
     {
-        if (t.WorkedDays is not { Count: > 0 } w || t.Day == null) return null;
-        var all = new List<string>(w) { t.Day };
+        if (t.Day == null || (t.WorkedDays is not { Count: > 0 } && t.PlanEnd == null)) return null;
+        var all = new List<string>(t.WorkedDays ?? new()) { t.Day };
+        // planned days ahead: the workdays after its day up to the planned end
+        if (t.PlanEnd != null && DateTime.TryParseExact(t.PlanEnd, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var end))
+            for (var d = ParseKey(t.Day).AddDays(1); d <= end; d = d.AddDays(1))
+                if (!IsWeekend(d) && PolishHolidays.DayOff(d) == null) all.Add(DayKey(d));
         all = all.Distinct().ToList();
         all.Sort(StringComparer.Ordinal);
         return all.Count > 1 ? all : null;
@@ -355,8 +359,8 @@ public partial class BoardWindow : GlassWindow
             var keys = Enumerable.Range(0, days).Select(c => DayKey(first.AddDays(w * 7 + c))).ToList();
             var lanes = new Dictionary<string, int>();
             var used = new List<HashSet<string>>(); // lane → days taken
-            foreach (var (t, sd) in spans.Select(x => (x.t, x.days!.Where(keys.Contains).ToHashSet())).Where(x => x.Item2.Count > 0)
-                         .OrderBy(x => x.Item2.Min(StringComparer.Ordinal), StringComparer.Ordinal).ThenBy(x => x.t.Order))
+            foreach (var (t, sd) in spans.Select(x => (x.t, x.days!.Where(keys.Contains).ToHashSet())).Where(x => x.Item2.Count > 1) // a lane only when it spans 2+ days of this week
+                         .OrderByDescending(x => x.Item2.Count).ThenBy(x => x.Item2.Min(StringComparer.Ordinal), StringComparer.Ordinal).ThenBy(x => x.t.Order))
             {
                 int lane = used.FindIndex(u => !u.Overlaps(sd));
                 if (lane < 0) { lane = used.Count; used.Add(new HashSet<string>()); }
@@ -564,15 +568,30 @@ public partial class BoardWindow : GlassWindow
             foreach (var (t, days) in spanHere)
             {
                 var span = (days.IndexOf(key) + 1, days.Count);
-                var el = t.Day == key && !t.Archived ? BuildTaskRow(t, false, compact, span) : BuildContinuedRow(t, span, compact);
+                var el = t.Day == key && !t.Archived ? BuildTaskRow(t, false, compact, span)
+                    : BuildContinuedRow(t, span, compact, planned: string.CompareOrdinal(key, t.Day) > 0);
                 Grid.SetRow(el, lanes[t.Id] + 1);
                 block.Children.Add(el);
             }
             panel.Children.Add(block);
         }
         else foreach (var (_, el) in timed) panel.Children.Add(el);
-        foreach (var (t, depth) in Nest(tasks.Where(t => !spanIds.Contains(t.Id)))) panel.Children.Add(BuildTaskRow(t, false, compact, depth: depth));
-        panel.Children.Add(BuildAddRow(key, date, compact));
+        // multi-day tasks without a lane in this week (only one of their days is here): a plain row with "↷ k/n"
+        foreach (var t in Store.Data.Tasks.Where(t => !lanes.ContainsKey(t.Id) && t.Day != key && SpanDays(t)?.Contains(key) == true))
+        {
+            var days = SpanDays(t)!;
+            panel.Children.Add(BuildContinuedRow(t, (days.IndexOf(key) + 1, days.Count), compact, planned: string.CompareOrdinal(key, t.Day) > 0));
+        }
+        foreach (var (t, depth) in Nest(tasks.Where(t => !spanIds.Contains(t.Id))))
+            panel.Children.Add(BuildTaskRow(t, false, compact, SpanDays(t) is { } sd ? (sd.IndexOf(key) + 1, sd.Count) : null, depth));
+        var addRow = BuildAddRow(key, date, compact);
+        if (isPast && _addingKey != key) // past days: "+ dodaj zadanie" only on hover (less clutter)
+        {
+            addRow.Opacity = 0;
+            inner.MouseEnter += (_, _) => addRow.Opacity = 1;
+            inner.MouseLeave += (_, _) => addRow.Opacity = 0;
+        }
+        panel.Children.Add(addRow);
         _panels[key] = panel;
 
         var sv = new ScrollViewer
@@ -699,30 +718,44 @@ public partial class BoardWindow : GlassWindow
     }
 
     /// <summary>
-    /// A multi-day task on one of its earlier days: greyed (not struck through – that means done), "↷ 1/3", in the same
-    /// lane as on its other days. Right click: when it started / take this day out.
+    /// A multi-day task on one of its other days (earlier work or planned ahead): "↷ 1/3", one line (the lanes line up),
+    /// in the same lane as on its other days. Done = done on all its days (tick + strike); before that, earlier days are
+    /// a plain greyed row and planned days a dashed circle. Right click: start / end of the task.
     /// </summary>
-    FrameworkElement BuildContinuedRow(TaskItem t, (int Index, int Total) span, bool compact)
+    FrameworkElement BuildContinuedRow(TaskItem t, (int Index, int Total) span, bool compact, bool planned = false)
     {
         double fs = compact ? Math.Max(9.5, S.FontSize - 1.5) : S.FontSize;
-        var grid = new Grid { Margin = new Thickness(0, 0, 0, compact ? 1 : 3), Opacity = 0.45, Background = Brushes.Transparent, Cursor = Cursors.Hand };
+        var grid = new Grid { Margin = new Thickness(0, 0, 0, compact ? 1 : 3), Opacity = t.Done ? 0.5 : planned ? 0.55 : 0.6, Background = Brushes.Transparent, Cursor = Cursors.Hand };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition());
         double cs = compact ? 12 : 14;
-        grid.Children.Add(new Border
+        var circle = new Border
         {
             Width = cs, Height = cs, CornerRadius = new CornerRadius(cs / 2), BorderThickness = new Thickness(1.3), BorderBrush = Res("FgDim"),
             Margin = new Thickness(0, Math.Max(0, (fs * 1.33 - cs) / 2), compact ? 6 : 8, 0), VerticalAlignment = VerticalAlignment.Top,
-        });
-        var text = new TextBlock { TextWrapping = compact ? TextWrapping.NoWrap : TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = fs, Foreground = Res("Fg") };
+        };
+        if (t.Done)
+        {
+            circle.Background = Res("AccentBrush");
+            circle.BorderBrush = Res("AccentBrush");
+            circle.Child = new TextBlock { Text = "", FontFamily = (FontFamily)FindResource("IconFont"), FontSize = compact ? 7.5 : 8.5, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        }
+        else if (planned)
+            circle.Child = new System.Windows.Shapes.Ellipse { Stroke = Res("FgDim"), StrokeThickness = 1.3, StrokeDashArray = new DoubleCollection { 2, 1.6 }, Margin = new Thickness(-1.3) };
+        if (planned && !t.Done) circle.BorderThickness = new Thickness(0);
+        grid.Children.Add(circle);
+        var text = new TextBlock { TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = fs, Foreground = Res("Fg") };
         text.Inlines.Add(new Run($"↷ {span.Index}/{span.Total}  ") { FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush") });
         var tags = TaskItem.Tags(t.Text, out var rest);
         foreach (var tag in tags) text.Inlines.Add(new Run(tag + "  ") { FontWeight = FontWeights.Bold, FontSize = Math.Max(8.5, fs - 3), Foreground = B(TagColor(tag)) });
-        text.Inlines.Add(new Run(tags.Count > 0 ? rest : t.Text));
+        var main = new Run(tags.Count > 0 ? rest : t.Text);
+        if (t.Done) main.TextDecorations = TextDecorations.Strikethrough;
+        text.Inlines.Add(main);
         Grid.SetColumn(text, 1);
         grid.Children.Add(text);
         var where = t.Archived ? L.T("w archiwum") : ParseKey(t.Day!).ToString("dddd d MMM", Pl);
-        grid.ToolTip = L.F("Zadanie wielodniowe: dzień {0} z {1}. Teraz: {2}{3}", span.Index, span.Total, where, t.Done ? " – " + L.T("zrobione") : "");
+        grid.ToolTip = t.Text + "\n" + L.F("Zadanie wielodniowe: dzień {0} z {1}. Teraz: {2}{3}", span.Index, span.Total, where, t.Done ? " – " + L.T("zrobione") : "")
+            + (planned ? "\n" + L.T("Zaplanowane (Potrwa do…). Shift + przeciągnięcie na dzień zmienia koniec.") : "");
         grid.MouseLeftButtonUp += (_, e) =>
         {
             e.Handled = true;
@@ -733,10 +766,35 @@ public partial class BoardWindow : GlassWindow
             e.Handled = true;
             var menu = new ContextMenu();
             menu.Items.Add(StartedMenu(t));
+            menu.Items.Add(PlannedMenu(t));
             menu.PlacementTarget = grid;
             menu.IsOpen = true;
         };
         return grid;
+    }
+
+    /// <summary>"Potrwa do…": the planned last day – the task shows on the workdays up to it (planning ahead).</summary>
+    MenuItem PlannedMenu(TaskItem t)
+    {
+        var item = new MenuItem { Header = L.T("Potrwa do…") };
+        if (t.Day == null) { item.IsEnabled = false; return item; }
+        var day = ParseKey(t.Day);
+        void Add(string header, string? end)
+        {
+            var mi = new MenuItem { Header = (t.PlanEnd == end ? "✓  " : "     ") + header };
+            mi.Click += (_, _) => Do(() => { var real = Store.Materialize(t); real.PlanEnd = end; Store.Changed(real); });
+            item.Items.Add(mi);
+        }
+        Add(L.F("Tylko {0}", day.ToString("ddd d MMM", Pl)), null);
+        item.Items.Add(new Separator());
+        int n = 1;
+        for (var d = day.AddDays(1); n < 15; d = d.AddDays(1))
+        {
+            if (IsWeekend(d) || PolishHolidays.DayOff(d) != null) continue;
+            n++;
+            Add(L.F("do {0}  ({1} dni)", d.ToString("ddd d MMM", Pl), n), DayKey(d));
+        }
+        return item;
     }
 
     /// <summary>
@@ -773,6 +831,18 @@ public partial class BoardWindow : GlassWindow
             });
         }
         return item;
+    }
+
+    /// <summary>The last of <paramref name="workdays"/> workdays starting on <paramref name="day"/> ("3d").</summary>
+    public static string PlanEndAfter(string day, int workdays)
+    {
+        var d = ParseKey(day);
+        for (int n = 1; n < workdays;)
+        {
+            d = d.AddDays(1);
+            if (!IsWeekend(d) && PolishHolidays.DayOff(d) == null) n++;
+        }
+        return DayKey(d);
     }
 
     /// <summary>Workdays (no weekends / public holidays) from <paramref name="from"/> up to the day before <paramref name="to"/>.</summary>
@@ -918,6 +988,10 @@ public partial class BoardWindow : GlassWindow
             {
                 var real = Store.Materialize(t);
                 real.Done = !real.Done;
+                // finished before the planned end: the plan ends today (no future days left hanging)
+                var todayKey = DayKey(DateTime.Today);
+                if (real.Done && real.PlanEnd != null && real.Day != null && string.CompareOrdinal(todayKey, real.PlanEnd) < 0)
+                    real.PlanEnd = string.CompareOrdinal(todayKey, real.Day) > 0 ? todayKey : null;
                 Store.Changed(real);
                 _justToggled = real.Id;
             });
@@ -928,7 +1002,9 @@ public partial class BoardWindow : GlassWindow
         // text with tag chips (+ notion meta in backlog)
         var content = new StackPanel();
         Grid.SetColumn(content, 1);
-        var text = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Res("Fg"), FontSize = fs };
+        // in a multi-day lane: one line (the lanes stay compact and aligned); the full text is in the tool tip
+        var text = new TextBlock { TextWrapping = span != null ? TextWrapping.NoWrap : TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, Foreground = Res("Fg"), FontSize = fs };
+        if (span != null) text.ToolTip = t.Text;
         var tags = TaskItem.Tags(t.Text, out var rest);
         if (span is { } sp) // a multi-day task on its current day: "↷ 3/3"
             text.Inlines.Add(new Run($"↷ {sp.Index}/{sp.Total}  ") { FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush"), ToolTip = L.F("Zadanie wielodniowe: dzień {0} z {1}", sp.Index, sp.Total) });
@@ -950,7 +1026,8 @@ public partial class BoardWindow : GlassWindow
                 Child = chip,
             }) { BaselineAlignment = BaselineAlignment.Center });
         }
-        text.Inlines.Add(new Run(tags.Count > 0 ? rest : t.Text));
+        var mainRun = new Run(tags.Count > 0 ? rest : t.Text);
+        text.Inlines.Add(mainRun);
         if (t.RuleId != null)
             text.Inlines.Add(new Run("  ") { FontFamily = (FontFamily)FindResource("IconFont"), FontSize = Math.Max(8, fs - 4), Foreground = Res("FgFaint") });
         if (t.HasLink)
@@ -981,7 +1058,7 @@ public partial class BoardWindow : GlassWindow
         }
         if (t.Done)
         {
-            text.TextDecorations = TextDecorations.Strikethrough;
+            mainRun.TextDecorations = TextDecorations.Strikethrough; // only the words – not the category chips
             text.Opacity = 0.45;
         }
         content.Children.Add(text);
@@ -1392,7 +1469,7 @@ public partial class BoardWindow : GlassWindow
             {
                 string? day = parsed.Day is { } pd ? DayKey(pd) : key == BacklogKey ? null : key;
                 var siblings = Store.Data.Tasks.Where(x => x.Day == day && !x.Archived);
-                var t = new TaskItem { Text = v, Day = day, Estimate = parsed.Estimate, Time = parsed.Time?.ToString(@"hh\:mm"), End = parsed.End?.ToString(@"hh\:mm"), Priority = parsed.Priority, Order = siblings.Any() ? siblings.Max(x => x.Order) + 1 : 0 };
+                var t = new TaskItem { Text = v, Day = day, Estimate = parsed.Estimate, Time = parsed.Time?.ToString(@"hh\:mm"), End = parsed.End?.ToString(@"hh\:mm"), Priority = parsed.Priority, PlanEnd = parsed.Days is { } nd && day != null ? PlanEndAfter(day, nd) : null, Order = siblings.Any() ? siblings.Max(x => x.Order) + 1 : 0 };
                 _justAdded = t.Id;
                 change = () => Store.Add(t);
                 if (parsed.Day != null && day != key) // went to another day: say where, and show that week if it's off-screen
@@ -1543,6 +1620,21 @@ public partial class BoardWindow : GlassWindow
         var t = Store.Data.Tasks.FirstOrDefault(x => x.Id == id);
         if (t == null) return;
         bool copy = (e.KeyStates & DragDropKeyStates.ControlKey) != 0;
+        // Shift: stretch instead of move – a later day becomes the planned end, an earlier one the start
+        if ((e.KeyStates & DragDropKeyStates.ShiftKey) != 0 && t.Day != null && day != null && day != t.Day && !t.Archived)
+        {
+            var target = ParseKey(day);
+            Do(() =>
+            {
+                var real = Store.Materialize(t);
+                if (string.CompareOrdinal(day, real.Day) > 0) real.PlanEnd = day;
+                else real.WorkedDays = WorkdaysBetween(target, ParseKey(real.Day!)).Select(DayKey)
+                        .Concat(real.WorkedDays?.Where(k => string.CompareOrdinal(k, day) >= 0) ?? Enumerable.Empty<string>())
+                        .Distinct().OrderBy(k => k, StringComparer.Ordinal).ToList();
+                Store.Changed(real);
+            });
+            return;
+        }
 
         var visible = TaskRows(panel).Select(r => (TaskItem)r.Tag).ToList();
         int index = DropIndex(panel, e);

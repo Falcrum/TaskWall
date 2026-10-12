@@ -30,6 +30,8 @@ public sealed class TaskItem
     public string? End { get; set; }
     /// <summary>Earlier days the unfinished task was planned on before it moved on – shown there as "continued", so the board doesn't pretend it took one day.</summary>
     public List<string>? WorkedDays { get; set; }
+    /// <summary>Planned last day of a multi-day task (yyyy-MM-dd, after <see cref="Day"/>): the workdays up to it show the task too.</summary>
+    public string? PlanEnd { get; set; }
 
     /// <summary>Checklist progress 0..1 (done task = 1).</summary>
     [JsonIgnore] public double Progress => Done ? 1 : Checklist is { Count: > 0 } c ? (double)c.Count(x => x.Done) / c.Count : 0;
@@ -38,6 +40,7 @@ public sealed class TaskItem
     public void NoteMove(string? from, string? to, string today)
     {
         if (to != null && WorkedDays != null) WorkedDays.RemoveAll(d => string.CompareOrdinal(d, to) >= 0);
+        if (PlanEnd != null && (to == null || string.CompareOrdinal(PlanEnd, to) <= 0)) PlanEnd = null; // the plan ran out (or went to the backlog)
         if (Done || from == null || to == null || string.CompareOrdinal(from, today) >= 0 || string.CompareOrdinal(to, from) <= 0) return;
         WorkedDays ??= new();
         if (!WorkedDays.Contains(from)) WorkedDays.Add(from);
@@ -82,7 +85,7 @@ public sealed class TaskItem
         Archived = o.Archived; ArchivedAt = o.ArchivedAt; RuleId = o.RuleId; RuleDay = o.RuleDay;
         NotionId = o.NotionId; Url = o.Url; Status = o.Status; Priority = o.Priority; NotionTitle = o.NotionTitle; ParentNotionId = o.ParentNotionId;
         Checklist = CopyList(o.Checklist);
-        Time = o.Time; End = o.End; WorkedDays = o.WorkedDays == null ? null : new List<string>(o.WorkedDays);
+        Time = o.Time; End = o.End; WorkedDays = o.WorkedDays == null ? null : new List<string>(o.WorkedDays); PlanEnd = o.PlanEnd;
     }
 
     static readonly Regex TagRx = new(@"^\s*\[([^\[\]]{1,24})\]");

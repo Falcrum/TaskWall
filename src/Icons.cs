@@ -55,9 +55,13 @@ static class Icons
         return sb.ToString();
     }
 
+    /// <summary>Calendar sheet with a pointer arrow in the middle ("go to today") – readable from a distance.</summary>
     public static FrameworkElement Today(double s = 19) => Box(s, Line(Sheet),
-        Fill("M10.6,14.6 m-1.7,0 a1.7,1.7 0 1 0 3.4,0 a1.7,1.7 0 1 0 -3.4,0"),
-        Fill("M13.2,13.8 L13.2,20.6 L14.9,19 L16.2,21.6 L17.4,21 L16.1,18.5 L18.5,18.3 Z"));
+        Fill("M9.6,11.4 L9.6,19.6 L11.7,17.6 L13.3,20.9 L14.9,20.1 L13.3,16.9 L16.2,16.6 Z"));
+
+    /// <summary>Alarm clock (alarms and meetings).</summary>
+    public static FrameworkElement Alarm(double s = 19) => Box(s,
+        Line("M12,6 a7.2,7.2 0 1 0 0.01,0 Z M12,9.2 V13.4 L14.8,15 M3.6,6.4 L6.4,3.6 M20.4,6.4 L17.6,3.6 M7.2,19.6 L5.6,21.2 M16.8,19.6 L18.4,21.2"));
 
     public static FrameworkElement Day(double s = 19) => Box(s, Line(Sheet), Fill("M8,12.5 H16 V18 H8 Z"));
     public static FrameworkElement Week(double s = 19) => Box(s, Line(Sheet), Fill(Cells(1, 5, 13.6, 2.6, 0)));

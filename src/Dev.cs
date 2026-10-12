@@ -343,6 +343,11 @@ static class Dev
             restoreStore.Add(new TaskItem { Text = "nowe" });
             Check("restore from a backup file (and Ctrl+Z back)", restoreStore.RestoreFrom(copyFile) && restoreStore.Data.Tasks.Single().Text == "z kopii"
                 && restoreStore.Undo() && restoreStore.Data.Tasks.Single().Text == "nowe");
+            Check("multi-day: '3d' = 3 workdays (Fri 9 Oct → Tue 13 Oct)", SmartAdd.Parse("Raport 3d", cats, wed).Days == 3 && SmartAdd.Parse("Raport 3d", cats, wed).Text == "Raport"
+                && BoardWindow.PlanEndAfter("2026-10-09", 3) == "2026-10-13");
+            var planned = new TaskItem { Text = "p", Day = "2026-10-12", PlanEnd = "2026-10-14" };
+            planned.NoteMove("2026-10-12", "2026-10-15", "2026-10-12");
+            Check("multi-day: moving past the planned end drops the plan", planned.PlanEnd == null);
             var sealedToken = NotionSync.Protect("ntn_test_token_1234567890");
             Check("notion: token encrypted (DPAPI), not stored in plain text", sealedToken != null && !sealedToken.Contains("ntn_test"));
 

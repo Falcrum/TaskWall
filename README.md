@@ -4,7 +4,7 @@ A task board that lives on the Windows desktop: day, week, two weeks, month or y
 
 On top of that: two accounts (Work / Private) synced through a cloud folder, a backlog fed from Notion (automatic sync or CSV import), alarms and meetings with reminders, Google Calendar meetings and holidays, day marks (e.g. home office), repeating tasks and marks, checklists, smart add, search, estimates, categories, archive, undo, CSV export. The UI is in Polish or English.
 
-*Polska wersja: [README.pl.md](README.pl.md).* Formerly called DeskWall – the TaskWall installer removes the old version and moves its settings over; data folders stay where they are.
+*Polska wersja: [README.pl.md](README.pl.md).*
 
 ## Install
 

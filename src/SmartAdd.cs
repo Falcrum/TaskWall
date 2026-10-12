@@ -14,7 +14,7 @@ namespace TaskWall;
 /// </summary>
 static class SmartAdd
 {
-    public sealed record Result(string Text, DateTime? Day, double? Estimate, List<string> Categories, TimeSpan? Time = null, TimeSpan? End = null, string? Priority = null)
+    public sealed record Result(string Text, DateTime? Day, double? Estimate, List<string> Categories, TimeSpan? Time = null, TimeSpan? End = null, string? Priority = null, int? Days = null)
     {
         public bool HasAny => Day != null || Estimate != null || Categories.Count > 0;
     }
@@ -57,7 +57,9 @@ static class SmartAdd
     static readonly Regex TimeSingle = new(@"(?<![\w:.,])(?:(?:o|at|godz\.?)\s+(\d{1,2})(?::(\d{2}))?|(\d{1,2}):(\d{2}))(?![\w:.,])", RegexOptions.IgnoreCase);
     // "!!!" high, "!!" medium, "!" low priority (a word of its own)
     static readonly Regex Bang = new(@"(?<!\S)(!{1,3})(?!\S)");
-    static readonly Regex MeetingWord = new(@"\[meeting\]|#meeting", RegexOptions.IgnoreCase);
+    // "3d": a multi-day task over 3 workdays
+    static readonly Regex Span = new(@"(?<!\S)(\d{1,2})d(?!\S)", RegexOptions.IgnoreCase);
+    static readonly Regex MeetingWord =new(@"\[meeting\]|#meeting", RegexOptions.IgnoreCase);
 
     public static string PriorityName(int level) => level switch { 3 => L.T("Wysoki"), 2 => L.T("Średni"), _ => L.T("Niski") };
 
@@ -103,6 +105,9 @@ static class SmartAdd
         var cats = new List<string>();
 
         text = TakeTimeAndPriority(text, out var time, out var end, out var priority).Trim();
+        int? days = null;
+        var sp = Span.Match(text);
+        if (sp.Success && int.Parse(sp.Groups[1].Value) is >= 2 and <= 60) { days = int.Parse(sp.Groups[1].Value); text = Remove(text, sp).Trim(); }
 
         // estimate (first one wins)
         var hm = Hours.Match(text);
@@ -145,7 +150,7 @@ static class SmartAdd
         var prefix = string.Concat(cats.Where(c => !existing.Contains(c.ToUpperInvariant())).Distinct().Select(c => $"[{c}] "));
         // "14-16" without an estimate: the planned hours are the estimate
         if (estimate == null && time is { } ts && end is { } te) estimate = Math.Round((te - ts).TotalHours, 2);
-        return new Result((prefix + text).Trim(), day, estimate, cats, time, end, priority);
+        return new Result((prefix + text).Trim(), day, estimate, cats, time, end, priority, days);
     }
 
     static string Remove(string text, Match m) => text.Remove(m.Index, m.Length);
@@ -235,6 +240,7 @@ static class SmartAdd
         if (r.Time is { } t) parts.Add(r.End is { } e ? $@"{t:hh\:mm}–{e:hh\:mm}" : $@"{t:hh\:mm}");
         if (r.Estimate is { } h) parts.Add(h.ToString("0.#", BoardWindow.Pl) + "h");
         if (r.Priority != null) parts.Add("!" + r.Priority);
+        if (r.Days is { } n) parts.Add(L.F("{0} dni", n));
         parts.AddRange(r.Categories);
         return parts.Count > 0 ? "→ " + string.Join("  ·  ", parts) : "";
     }

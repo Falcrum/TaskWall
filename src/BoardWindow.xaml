@@ -49,11 +49,11 @@
                             ToolTip="Zarchiwizowane zadania (upuść tu zadanie, żeby je zarchiwizować)"/>
                     <Border Width="1" Height="16" Margin="6,0" Background="{StaticResource Line}"/>
                     <Button x:Name="SyncButton" Style="{StaticResource BarIcon}" Click="Sync_Click"/>
-                    <Button x:Name="AlarmButton" Style="{StaticResource IconButton}" Content="&#xE823;" Click="Alarm_Click" ToolTip="Alarmy i spotkania" FontSize="13"/>
+                    <Button x:Name="AlarmButton" Style="{StaticResource BarIcon}" Click="Alarm_Click" ToolTip="Alarmy i spotkania"/>
                     <Button x:Name="LayerButton" Style="{StaticResource BarIcon}" Click="Layer_Click" ToolTip="Warstwa (Ctrl+1 / Ctrl+2)"/>
-                    <Button x:Name="MoreButton" Style="{StaticResource IconButton}" Content="&#xE712;" Click="More_Click" ToolTip="Więcej" FontSize="13"/>
-                    <Button Style="{StaticResource IconButton}" Content="&#xE713;" Click="Settings_Click" ToolTip="Ustawienia" FontSize="13"/>
-                    <Button Style="{StaticResource IconButton}" Content="&#xE921;" Click="Hide_Click" ToolTip="Ukryj tablicę (pokażesz ją ikoną w zasobniku albo skrótem)" FontSize="12"/>
+                    <Button x:Name="MoreButton" Style="{StaticResource IconButton}" Content="&#xE712;" Click="More_Click" ToolTip="Więcej" FontSize="16"/>
+                    <Button Style="{StaticResource IconButton}" Content="&#xE713;" Click="Settings_Click" ToolTip="Ustawienia" FontSize="16"/>
+                    <Button Style="{StaticResource IconButton}" Content="&#xE921;" Click="Hide_Click" ToolTip="Ukryj tablicę (pokażesz ją ikoną w zasobniku albo skrótem)" FontSize="15"/>
                 </StackPanel>
             </Grid>
             <Grid x:Name="ContentHost">

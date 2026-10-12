@@ -43,6 +43,7 @@ public partial class BoardWindow
         MonthViewButton.Content = Icons.Labeled(Icons.Month(), L.T("MIESIĄC"), cap);
         YearButton.Content = Icons.Labeled(Icons.Year(), L.T("ROK"), cap);
         SearchButton.Content = Icons.Labeled(Icons.Search(), L.T("SZUKAJ"), cap);
+        AlarmButton.Content = Icons.Labeled(Icons.Alarm(), L.T("ALARMY"), cap);
         ClearDoneButton.Content = Icons.Labeled(Icons.Clear(), L.T("WYCZYŚĆ"), cap);
         BacklogButton.Content = Icons.Labeled(Icons.WithBadge(Icons.Backlog(), out var bc), "BACKLOG", cap);
         ArchiveButton.Content = Icons.Labeled(Icons.WithBadge(Icons.Archive(), out var ac), L.T("ARCHIWUM"), cap);
@@ -99,7 +100,8 @@ public partial class BoardWindow
             + "\n\n" + L.T("Kliknij, żeby zsynchronizować teraz");
         SyncButton.ToolTip = tip;
         bool error = st.LastError != null || notion.LastResult?.Contains(L.T("błąd")) == true;
-        SyncButton.Foreground = error ? B(Color.FromRgb(0xF2, 0x6D, 0x6D)) : Res("FgDim");
+        SyncButton.Foreground = st.Syncing || App.Instance.NotionRunning || rot.HasAnimatedProperties ? Res("AccentBrush") // in the accent while it works
+            : error ? B(Color.FromRgb(0xF2, 0x6D, 0x6D)) : Res("FgDim");
     }
 
     void StopSpin(object? s, EventArgs e)
@@ -107,6 +109,7 @@ public partial class BoardWindow
         _spinStop.Stop();
         if (Store.Syncing || App.Instance.NotionRunning || _syncSpinner == null) return;
         ((RotateTransform)_syncSpinner.RenderTransform).BeginAnimation(RotateTransform.AngleProperty, null);
+        UpdateSyncIcon(); // back from the accent colour
     }
 
     async void Sync_Click(object sender, RoutedEventArgs e)
@@ -727,6 +730,7 @@ public partial class BoardWindow
             }
             menu.Items.Add(rep);
             menu.Items.Add(StartedMenu(t));
+            menu.Items.Add(PlannedMenu(t));
         }
 
         bool hasList = t.Checklist is { Count: > 0 };

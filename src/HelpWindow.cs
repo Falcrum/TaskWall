@@ -23,6 +23,7 @@ public sealed class HelpWindow : DarkWindow
             ("14-16 · 9:30–11 · od 14 do 16", "godziny od–do (bez estymacji liczy się z nich)"),
             ("o 10 · 10:30 · at 10", "godzina rozpoczęcia"),
             ("!!! · !! · !", "priorytet: wysoki · średni · niski"),
+            ("3d", "zadanie wielodniowe: 3 dni robocze od jego dnia"),
             ("#art · [ART]", "kategoria (klik w etykietę pod polem robi to samo)"),
             ("[Meeting] 14-15:30 Sprint", "spotkanie zamiast zadania (okno spotkania: klik w Meeting)"),
             ("Przykład: jutro Raport 14-16 !! #art", "jutro, 14:00–16:00 (2h), średni priorytet, kategoria ART"),
@@ -50,8 +51,9 @@ public sealed class HelpWindow : DarkWindow
             ("prawy przycisk na zadaniu", "menu: estymacja, priorytet, kategoria, powtarzanie, lista kontrolna, archiwum"),
             ("prawy przycisk na dniu", "oznaczenia dni, powtarzane oznaczenia, alarm"),
             ("przeciągnij", "na dzień, w liście, na BACKLOG lub ARCHIWUM; z Ctrl = kopia"),
+            ("Shift + przeciągnij", "rozciągnij zadanie do tego dnia (w przód: planowany koniec, w tył: początek)"),
             ("środkowy przycisk", "archiwizuj zadanie"),
-            ("↷ wyszarzone zadanie", "kontynuowane: było tu w toku i przeszło na inny dzień (klik = idź tam)"),
+            ("↷ 2/3", "zadanie wielodniowe: dzień 2 z 3 (przerywane kółko = dzień zaplanowany; klik = idź do aktywnego dnia)"),
             ("ikona w zasobniku", "lewy: karta Dziś · prawy: menu"),
         }),
     };

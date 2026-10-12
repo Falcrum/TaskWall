@@ -4,7 +4,7 @@ Tablica zadań na pulpicie Windows: dzień, tydzień, dwa tygodnie, miesiąc alb
 
 Do tego: dwa konta (Praca / Prywatne) z synchronizacją przez folder w chmurze, backlog z Notion (automatyczna synchronizacja albo import CSV), alarmy i spotkania z przypomnieniami, spotkania i święta z Kalendarza Google, oznaczenia dni (np. HO), powtarzane zadania i oznaczenia, checklisty, sprytne dodawanie, wyszukiwarka, estymacje, kategorie, archiwum, cofanie, eksport CSV. Interfejs po polsku albo angielsku.
 
-*English: [README.md](README.md).* Wcześniej program nazywał się DeskWall: instalator TaskWall sam usuwa starą wersję i przenosi jej ustawienia, a foldery z danymi zostają tam, gdzie były.
+*English: [README.md](README.md).*
 
 ## Instalacja
 

@@ -5,6 +5,18 @@ static partial class L
     /// <summary>Polish → English (Dialogs).</summary>
     static readonly (string Pl, string En)[] Dialogs =
     {
+        ("3d", "3d"),
+        ("zadanie wielodniowe: 3 dni robocze od jego dnia", "multi-day task: 3 workdays from its day"),
+        ("Shift + przeciągnij", "Shift + drag"),
+        ("rozciągnij zadanie do tego dnia (w przód: planowany koniec, w tył: początek)", "stretch the task to that day (forward: planned end, back: start)"),
+        ("↷ 2/3", "↷ 2/3"),
+        ("zadanie wielodniowe: dzień 2 z 3 (przerywane kółko = dzień zaplanowany; klik = idź do aktywnego dnia)", "multi-day task: day 2 of 3 (dashed circle = a planned day; click = go to the active day)"),
+        ("Potrwa do…", "Lasts until…"),
+        ("Tylko {0}", "Only {0}"),
+        ("do {0}  ({1} dni)", "until {0}  ({1} days)"),
+        ("{0} dni", "{0} days"),
+        ("Zaplanowane (Potrwa do…). Shift + przeciągnięcie na dzień zmienia koniec.", "Planned (Lasts until…). Shift + drag onto a day changes the end."),
+        ("ALARMY", "ALARMS"),
         ("Komendy i skróty", "Commands and shortcuts"),
         ("Komendy i skróty…  (F1)", "Commands and shortcuts…  (F1)"),
         ("Komendy i skróty…", "Commands and shortcuts…"),
