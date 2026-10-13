@@ -61,6 +61,7 @@ static class Dev
             }, DispatcherPriority.ApplicationIdle);
         else if (open == "ring")App.Current.Dispatcher.BeginInvoke(() => AlarmToast.Ring(new Alarm { Text = "Telefon do Ani w sprawie budżetu", Day = DateTime.Today.ToString("yyyy-MM-dd"), Time = DateTime.Now.ToString("HH:mm") }, App.Settings.Layer, DateTime.Now.AddMinutes(-7)), DispatcherPriority.ApplicationIdle);
         else if (open == "menu") { var mt = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) }; mt.Tick += (_, _) => { mt.Stop(); App.Board?.DevOpenMenu?.Invoke(); }; mt.Start(); }
+        else if (open == "summary") App.Current.Dispatcher.BeginInvoke(() => WeekSummaryWindow.Show(App.Store, BoardWindow.Monday(DateTime.Today), App.Settings.Layer), DispatcherPriority.ApplicationIdle);
         else if (open == "drawer") App.Current.Dispatcher.BeginInvoke(() => App.Board?.RevealBacklog(), DispatcherPriority.ApplicationIdle);
         else if (open == "calendar") App.Current.Dispatcher.BeginInvoke(() => App.Clock?.Open(), DispatcherPriority.ApplicationIdle);
         else if (open?.StartsWith("import=") == true)
@@ -355,6 +356,31 @@ static class Dev
                 pc2.Theme == "light" && pc2.Weather.City == "Testowo" && pc2.AccountFor("work").Name == "Biuro" && pc2.AccountFor("work").Notion.Database == "https://notion.so/db"
                 && pc2.UiScale == 1.1 && pc2.AccountFor("work").Notion.TokenProtected == "secret" && changed.Length > 0 && SharedSettings.Pull(pc2).Length == 0);
             if (Arg("--data") is { } devData2) File.Delete(Path.Combine(devData2, SharedSettings.FileName));
+            Check("estimate over 8 h plans the next workdays: 12h from Fri 9 Oct → Mon 12 Oct, 2d → 2 days, 8h → one day",
+                BoardWindow.AutoPlanEnd("2026-10-09", 12) == "2026-10-12" && BoardWindow.AutoPlanEnd("2026-10-13", 16) == "2026-10-14" && BoardWindow.AutoPlanEnd("2026-10-13", 8) == null);
+            var auto = new TaskItem { Day = "2026-10-13", Estimate = 24 };
+            BoardWindow.ApplyAutoPlan(auto, auto.Day, null);
+            var autoA = auto.PlanEnd;
+            auto.Estimate = 4; BoardWindow.ApplyAutoPlan(auto, auto.Day, 24);
+            var hand = new TaskItem { Day = "2026-10-13", Estimate = 4, PlanEnd = "2026-10-20" };
+            hand.Estimate = 16; BoardWindow.ApplyAutoPlan(hand, hand.Day, 4);
+            Check("auto plan follows the estimate, a hand-picked end stays", autoA == "2026-10-15" && auto.PlanEnd == null && hand.PlanEnd == "2026-10-20");
+            Check("progress: in progress (◐) = half", new TaskItem { Started = true }.Progress == 0.5 && new TaskItem().Progress == 0);
+            var binDir = Path.Combine(Path.GetTempPath(), "taskwall-bin-" + Guid.NewGuid().ToString("N"));
+            var binStore = new BoardStore("work");
+            binStore.Open(binDir);
+            var gone = new TaskItem { Text = "do kosza", Day = "2026-10-13" };
+            binStore.Add(gone);
+            binStore.Discard(gone);
+            bool inBin = binStore.BinItems.Count() == 1 && binStore.Find(gone.Id) == null;
+            var otherPc = BoardStore.Merge(new BoardData { Tasks = { } }, binStore.Data);
+            binStore.RestoreFromBin(binStore.BinItems.First());
+            var afterRestore = BoardStore.Merge(otherPc, binStore.Data);
+            Check("bin: delete keeps a copy, restore brings it back (also after a merge with a PC that still has it in the bin)",
+                inBin && otherPc.Bin!.Count == 1 && binStore.Find(gone.Id) != null && afterRestore.Tasks.Any(t => t.Id == gone.Id) && afterRestore.Bin is not { Count: > 0 });
+            binStore.EmptyBin();
+            Check("bin: emptied entries stay hidden", !binStore.BinItems.Any());
+            try { Directory.Delete(binDir, true); } catch { }
             var carried = new TaskItem { Text = "długie", Day = "2026-10-05", Started = true };
             carried.NoteMove("2026-10-05", "2026-10-06", "2026-10-08");
             carried.NoteMove("2026-10-06", "2026-10-08", "2026-10-08");

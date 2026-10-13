@@ -785,6 +785,7 @@ public sealed class SettingsWindow : DarkWindow
         var p = new StackPanel();
         p.Children.Add(Check(L.T("Pokazuj weekendy"), S.ShowWeekends, v => S.ShowWeekends = v));
         p.Children.Add(Check(L.T("Zwijaj zrobione zadania w dniu do jednej linii („✓ 3 zrobione”)"), S.CollapseDone, v => S.CollapseDone = v));
+        p.Children.Add(Check(L.T("Podsumowanie poprzedniego tygodnia przy pierwszym uruchomieniu w tygodniu"), S.WeeklySummary, v => S.WeeklySummary = v));
         p.Children.Add(Check(L.T("Przycisk widoku roku (365 dni)"), S.ShowYearButton, v => S.ShowYearButton = v));
         p.Children.Add(Check(L.T("Automatycznie przenoś niezrobione zadania z minionych dni na dziś"), S.AutoRollover, v => S.AutoRollover = v));
         var mode = new ComboBox { Width = 320, HorizontalAlignment = HorizontalAlignment.Left };

@@ -88,7 +88,7 @@
                             <Button x:Name="DrawerLockButton" Style="{StaticResource IconButton}" Click="DrawerLock_Click" Margin="4,0,0,0" FontSize="12"/>
                         </StackPanel>
                         <Button x:Name="EmptyArchiveButton" HorizontalAlignment="Right" Style="{StaticResource LinkButton}" Click="EmptyArchive_Click"
-                                Content="Opróżnij" FontSize="12" Visibility="Collapsed" ToolTip="Usuń na zawsze całe archiwum tej warstwy"/>
+                                Content="Opróżnij" FontSize="12" Visibility="Collapsed" ToolTip="Przenieś całe archiwum tej warstwy do kosza"/>
                         <Button x:Name="ImportButton" HorizontalAlignment="Right" Style="{StaticResource LinkButton}" Click="Import_Click"
                                 ToolTip="Wczytaj zadania z eksportu Notion (CSV albo ZIP)">
                             <StackPanel Orientation="Horizontal">

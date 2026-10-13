@@ -41,8 +41,8 @@ public sealed class TaskItem
     public bool? Started { get; set; }
     [JsonIgnore] public bool IsStarted => !Done && Started == true;
 
-    /// <summary>Checklist progress 0..1 (done task = 1).</summary>
-    [JsonIgnore] public double Progress => Done ? 1 : Checklist is { Count: > 0 } c ? (double)c.Count(x => x.Done) / c.Count : 0;
+    /// <summary>Progress 0..1: done = 1, a checklist by its ticked items, otherwise in progress (◐) = half.</summary>
+    [JsonIgnore] public double Progress => Done ? 1 : Checklist is { Count: > 0 } c ? (double)c.Count(x => x.Done) / c.Count : IsStarted ? 0.5 : 0;
 
     /// <summary>Moving an unfinished task forward from a past day leaves that day in its history; moving it back takes it out.</summary>
     public void NoteMove(string? from, string? to, string today)
@@ -392,6 +392,8 @@ public sealed class TrashEntry
 {
     public TaskItem Task { get; set; } = new();
     public DateTime Deleted { get; set; } = DateTime.UtcNow;
+    /// <summary>"Opróżnij kosz": hidden, kept until 30 days after <see cref="Deleted"/> so other computers don't bring it back.</summary>
+    public bool Purged { get; set; }
 }
 
 public sealed class BoardData
@@ -414,6 +416,8 @@ public sealed class BoardData
     /// <summary>Repeating day marks ("HO every Friday", "Urlop 3–14 Aug"); Text = mark code.</summary>
     public List<RecurringRule> MarkRules { get; set; } = new();
     public List<TrashEntry>? Trash { get; set; }
+    /// <summary>Deleted tasks, restorable for 30 days (the task itself is gone from <see cref="Tasks"/> with a tombstone).</summary>
+    public List<TrashEntry>? Bin { get; set; }
 }
 
 /// <summary>A category = a "[Name]" prefix with a colour.</summary>
@@ -541,6 +545,9 @@ public sealed class AppSettings
     public bool DrawerLocked { get; set; }
     /// <summary>Done tasks of a day folded into one line.</summary>
     public bool CollapseDone { get; set; }
+    /// <summary>On the first start of a week: the summary of the week before.</summary>
+    public bool WeeklySummary { get; set; } = true;
+    public string? LastWeekSummary { get; set; }
     /// <summary>"dark", "light" or "auto" (from the wallpaper brightness).</summary>
     public string Theme { get; set; } = "dark";
     public WeatherSettings Weather { get; set; } = new();

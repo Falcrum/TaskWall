@@ -399,7 +399,8 @@ public partial class BoardWindow : GlassWindow
     /// <summary>All days of a multi-day task (earlier days it was worked on + its current day), sorted; null = a one-day task.</summary>
     static List<string>? SpanDays(TaskItem t)
     {
-        if (t.Day == null || (t.WorkedDays is not { Count: > 0 } && t.PlanEnd == null)) return null;
+        // archived: gone from the board on all its days at once
+        if (t.Day == null || t.Archived || (t.WorkedDays is not { Count: > 0 } && t.PlanEnd == null)) return null;
         var all = new List<string>(t.WorkedDays ?? new()) { t.Day };
         // planned days ahead: the workdays after its day up to the planned end
         if (t.PlanEnd != null && DateTime.TryParseExact(t.PlanEnd, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var end))
@@ -457,6 +458,18 @@ public partial class BoardWindow : GlassWindow
                 Grid.SetColumn(cell, c);
                 WeeksGrid.Children.Add(cell);
             }
+    }
+
+    /// <summary>
+    /// Estimated hours of a day: one-day tasks in full, a multi-day task with its share on each of its days
+    /// (16 h over 2 days = 8 h a day).
+    /// </summary>
+    static double DayLoad(string key, IEnumerable<TaskItem> dayTasks, bool openOnly)
+    {
+        double sum = dayTasks.Where(t => (!openOnly || !t.Done) && SpanDays(t) == null).Sum(t => t.Estimate ?? 0);
+        foreach (var t in Store.Data.Tasks.Where(t => t.Estimate is > 0 && (!openOnly || !t.Done)))
+            if (SpanDays(t) is { } days && days.Contains(key)) sum += t.Estimate!.Value / days.Count;
+        return sum;
     }
 
     FrameworkElement BuildDay(DateTime date, List<TaskItem> tasks, int archivedDone, bool firstCol, bool firstRow, bool compact, bool outside, int week = 0)
@@ -582,7 +595,7 @@ public partial class BoardWindow : GlassWindow
         header.Children.Add(left);
 
         // right: estimate sum (+ today's progress count)
-        double hours = tasks.Sum(t => t.Estimate ?? 0);
+        double hours = DayLoad(key, tasks, openOnly: false);
         double meetingHours = events.Where(e => !e.IsHoliday).Sum(e => e.Hours) + Store.Alarms.Where(a => a.IsMeeting && a.Occurs(date)).Sum(a => a.Hours);
         var right = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(4, 1, 2, 0) };
         Grid.SetColumn(right, 1);
@@ -596,13 +609,15 @@ public partial class BoardWindow : GlassWindow
             });
         if (hours > 0 || meetingHours > 0)
         {
-            double left_ = tasks.Where(t => !t.Done).Sum(t => t.Estimate ?? 0);
+            double left_ = DayLoad(key, tasks, openOnly: true);
             right.Children.Add(new TextBlock
             {
-                Text = hours > 0 ? Hours(hours) : "",
+                // the workday limit: tasks + meetings against 8 h ("6,5 / 8h"), orange when over
+                Text = $"{(hours + meetingHours).ToString("0.#", Pl)} / {Hours(DayHours)}",
                 FontSize = 10, HorizontalAlignment = HorizontalAlignment.Right,
-                Foreground = hours + meetingHours > 8 ? B(Color.FromRgb(0xF2, 0xA6, 0x5A)) : Res("FgDim"),
-                ToolTip = L.F("Zadania: {0} (zostało {1})", Hours(hours), Hours(left_)) + (meetingHours > 0 ? "\n" + L.F("Spotkania: {0}", Hours(meetingHours)) : ""),
+                Foreground = hours + meetingHours > DayHours + 0.01 ? B(Color.FromRgb(0xF2, 0xA6, 0x5A)) : Res("FgDim"),
+                ToolTip = L.F("Zadania: {0} (zostało {1})", Hours(hours), Hours(left_)) + (meetingHours > 0 ? "\n" + L.F("Spotkania: {0}", Hours(meetingHours)) : "")
+                    + "\n" + (hours + meetingHours > DayHours + 0.01 ? L.F("Ponad dzień pracy o {0}", Hours(hours + meetingHours - DayHours)) : L.F("Wolne: {0}", Hours(DayHours - hours - meetingHours))),
             });
         }
         header.Children.Add(right);
@@ -873,9 +888,8 @@ public partial class BoardWindow : GlassWindow
         grid.MouseRightButtonUp += (_, e) =>
         {
             e.Handled = true;
-            var menu = new ContextMenu();
-            menu.Items.Add(StartedMenu(t));
-            menu.Items.Add(PlannedMenu(t));
+            if (Store.Find(t.Id) is not { } live) return;
+            var menu = BuildMenu(live, null, null, grid); // the same menu as on its current day: one task, every day of it
             menu.PlacementTarget = grid;
             menu.IsOpen = true;
         };
@@ -941,6 +955,18 @@ public partial class BoardWindow : GlassWindow
             });
         }
         return item;
+    }
+
+    /// <summary>A task longer than a workday (8 h) is planned over the next workdays: 12 h → 2 days, 2d → 2 days.</summary>
+    public static string? AutoPlanEnd(string? day, double? estimate) =>
+        day != null && estimate is > DayHours ? PlanEndAfter(day, (int)Math.Ceiling(estimate.Value / DayHours - 1e-9)) : null;
+
+    /// <summary>After the estimate or the day changed: the planned end follows the estimate, unless it was set by hand.</summary>
+    public static void ApplyAutoPlan(TaskItem t, string? oldDay, double? oldEstimate)
+    {
+        if (t.Done || t.Day == null) return;
+        if (t.PlanEnd != null && t.PlanEnd != AutoPlanEnd(oldDay, oldEstimate)) return; // "Potrwa do…" chosen by hand
+        t.PlanEnd = AutoPlanEnd(t.Day, t.Estimate);
     }
 
     /// <summary>The last of <paramref name="workdays"/> workdays starting on <paramref name="day"/> ("3d").</summary>
@@ -1175,6 +1201,11 @@ public partial class BoardWindow : GlassWindow
             text.Opacity = 0.45;
         }
         content.Children.Add(text);
+        if (_editOnBuild is { } pe && pe.Id == t.Id && !t.IsVirtual)
+        {
+            _editOnBuild = null;
+            Dispatcher.BeginInvoke(() => BeginEdit(t, content, text, pe.Series), System.Windows.Threading.DispatcherPriority.Loaded);
+        }
         // an empty list shows only while its first point is being typed ("Dodaj listę kontrolną"), then it goes away again
         if (_expanded.Contains(t.Id) && (t.Checklist is { Count: > 0 } || _checkAddFor == t.Id)) content.Children.Add(BuildChecklist(t, fs));
 
@@ -1219,6 +1250,7 @@ public partial class BoardWindow : GlassWindow
         grid.Children.Add(del);
 
         wrapper.MouseEnter += (_, _) => del.Visibility = Visibility.Visible;
+        wrapper.MouseEnter += (_, _) => _hover = (t, content, text, wrapper);
         wrapper.MouseLeave += (_, _) => del.Visibility = Visibility.Hidden;
 
         // click / drag / middle-click / context menu
@@ -1258,6 +1290,8 @@ public partial class BoardWindow : GlassWindow
     }
 
     public Action? DevOpenMenu;
+    /// <summary>Task row under the mouse (keyboard shortcuts act on it).</summary>
+    (TaskItem Task, StackPanel Content, TextBlock Text, FrameworkElement Row)? _hover;
     readonly HashSet<string> _expanded = new();  // tasks whose checklist is open
     string? _checkAddFor;                         // task whose "+ punkt" box is open
 
@@ -1408,10 +1442,21 @@ public partial class BoardWindow : GlassWindow
     void DeleteForGood(TaskItem t, FrameworkElement row) => Anim.Leave(row, () => Do(() =>
     {
         if (t.IsVirtual && Store.Rule(t.RuleId) is { } r) { if (!r.Skips.Contains(t.RuleDay!)) r.Skips.Add(t.RuleDay!); Store.Changed(r); }
-        else if (Store.Find(t.Id) is { } live) Store.Remove(live);
-    }, after: () => ShowUndo(L.F("Usunięto: {0}", Short(t.Text)))));
+        else if (Store.Find(t.Id) is { } live) Store.Discard(live); // to the bin (30 days)
+    }, after: () => ShowUndo(L.F("Usunięto do kosza: {0}", Short(t.Text)))));
 
     // ---------- inline editing ----------
+
+    (string Id, bool Series)? _editOnBuild;
+
+    /// <summary>Edit from a menu: in place, or (from another day of a multi-day task) on its current day.</summary>
+    void EditSomewhere(TaskItem t, StackPanel? content, TextBlock? text, bool series = false)
+    {
+        if (content != null && text != null) { BeginEdit(t, content, text, series); return; }
+        if (t.Day == null) return;
+        _editOnBuild = (t.Id, series);
+        if (_panels.ContainsKey(t.Day)) Rebuild(); else JumpTo(ParseKey(t.Day));
+    }
 
     void BeginEdit(TaskItem t, StackPanel content, TextBlock text, bool series)
     {
@@ -1446,7 +1491,7 @@ public partial class BoardWindow : GlassWindow
                     real.Text = p.Text.Length > 0 ? p.Text : v;
                     if (p.Time is { } tm) { real.Time = tm.ToString(@"hh\:mm"); real.End = p.End?.ToString(@"hh\:mm"); }
                     if (p.Priority != null) real.Priority = p.Priority;
-                    if (p.Estimate != null) real.Estimate = p.Estimate;
+                    if (p.Estimate != null) { var oldEst = real.Estimate; real.Estimate = p.Estimate; ApplyAutoPlan(real, real.Day, oldEst); }
                     Store.Changed(real);
                 };
             Commit(change, null);
@@ -1585,7 +1630,7 @@ public partial class BoardWindow : GlassWindow
             {
                 string? day = parsed.Day is { } pd ? DayKey(pd) : key == BacklogKey ? null : key;
                 var siblings = Store.Data.Tasks.Where(x => x.Day == day && !x.Archived);
-                var t = new TaskItem { Text = v, Day = day, Estimate = parsed.Estimate, Time = parsed.Time?.ToString(@"hh\:mm"), End = parsed.End?.ToString(@"hh\:mm"), Priority = parsed.Priority, PlanEnd = parsed.Days is { } nd && day != null ? PlanEndAfter(day, nd) : null, Order = siblings.Any() ? siblings.Max(x => x.Order) + 1 : 0 };
+                var t = new TaskItem { Text = v, Day = day, Estimate = parsed.Estimate, Time = parsed.Time?.ToString(@"hh\:mm"), End = parsed.End?.ToString(@"hh\:mm"), Priority = parsed.Priority, PlanEnd = parsed.Days is { } nd && day != null ? PlanEndAfter(day, nd) : AutoPlanEnd(day, parsed.Estimate), Order = siblings.Any() ? siblings.Max(x => x.Order) + 1 : 0 };
                 _justAdded = t.Id;
                 change = () => Store.Add(t);
                 if (parsed.Day != null && day != key) // went to another day: say where, and show that week if it's off-screen
@@ -1810,6 +1855,7 @@ public partial class BoardWindow : GlassWindow
         }
         double order = OrderBetween(index > 0 ? visible[index - 1] : null, index < visible.Count ? visible[index] : null);
 
+        var dayBefore = t.Day;
         Store.Checkpoint();
         if (copy)
         {
@@ -1844,10 +1890,28 @@ public partial class BoardWindow : GlassWindow
             }
             t.Day = day;
             t.Order = order;
+            ApplyAutoPlan(t, from, t.Estimate);
             Store.Changed(t);
             _justAdded = t.Id;
         }
+        if (day != null && (copy || dayBefore != day)) WarnIfFull(day);
         Dispatcher.BeginInvoke(Rebuild); // let DoDragDrop unwind before replacing the visuals
+    }
+
+    /// <summary>Tasks + meetings of a day, in hours.</summary>
+    double DayTotal(string key)
+    {
+        var date = ParseKey(key);
+        double meetings = CalendarService.On(date).Where(e => !e.IsHoliday).Sum(e => e.Hours) + Store.Alarms.Where(a => a.IsMeeting && a.Occurs(date)).Sum(a => a.Hours);
+        return DayLoad(key, Store.Data.Tasks.Where(x => x.Day == key && !x.Archived), openOnly: false) + meetings;
+    }
+
+    /// <summary>After a drop: a day over 8 h says so (the bar's "Cofnij" takes the move back).</summary>
+    void WarnIfFull(string key)
+    {
+        var total = DayTotal(key);
+        if (total > DayHours + 0.01)
+            ShowUndo(L.F("{0}: {1} z {2} – ponad dzień pracy", ParseKey(key).ToString("dddd d MMM", Pl), Hours(total), Hours(DayHours)));
     }
 
     /// <summary>Link / text / file dropped from another program.</summary>
@@ -1887,9 +1951,11 @@ public partial class BoardWindow : GlassWindow
     {
         t = Store.Materialize(t);
         var siblings = Store.Data.Tasks.Where(x => x.Day == day && x != t && !x.Archived).ToList();
+        var oldDay = t.Day;
         t.NoteMove(t.Day, day, DayKey(DateTime.Today));
         t.Day = day;
         t.Order = siblings.Count > 0 ? siblings.Max(x => x.Order) + 1 : 0;
+        ApplyAutoPlan(t, oldDay, t.Estimate);
         Store.Changed(t);
     }
 }

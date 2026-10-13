@@ -411,7 +411,39 @@ public sealed class BoardStore
     {
         t.Touch();
         Data.Deleted.Remove(t.Id);
+        Data.Bin?.RemoveAll(e => e.Task.Id == t.Id); // back from the bin (or Ctrl+Z)
         Data.Tasks.Add(t);
+        MarkDirty();
+    }
+
+    // ---------- bin: deleted tasks, restorable for 30 days ----------
+
+    public const int BinDays = 30;
+    public IEnumerable<TrashEntry> BinItems => (Data.Bin ?? new()).Where(e => !e.Purged && Data.Tasks.All(t => t.Id != e.Task.Id));
+
+    /// <summary>"Usuń": out of the board (tombstone for the other computers), a copy in the bin for 30 days.</summary>
+    public void Discard(TaskItem t)
+    {
+        var copy = t.Clone();
+        copy.Touch();
+        Data.Bin ??= new();
+        Data.Bin.RemoveAll(e => e.Task.Id == t.Id);
+        Data.Bin.Add(new TrashEntry { Task = copy, Deleted = DateTime.UtcNow });
+        Remove(t);
+    }
+
+    public void RestoreFromBin(TrashEntry e)
+    {
+        var t = e.Task.Clone();
+        t.Archived = false;
+        Add(t);
+    }
+
+    /// <summary>Empties the bin: entries are only marked, so a computer that hasn't seen it yet doesn't bring them back.</summary>
+    public void EmptyBin()
+    {
+        foreach (var e in Data.Bin ?? new())
+            if (!e.Purged) { e.Purged = true; e.Task.Touch(); }
         MarkDirty();
     }
 
@@ -936,6 +968,16 @@ public sealed class BoardStore
             cur.Skips = skips;
         }
         result.Alarms = alarms.Values.ToList();
+
+        // bin: the newest copy of each entry; one restored somewhere (live again, newer than the copy) leaves it
+        if (a.Bin != null || b.Bin != null)
+        {
+            var bin = new Dictionary<string, TrashEntry>();
+            foreach (var e in (a.Bin ?? new()).Concat(b.Bin ?? new()))
+                if (!bin.TryGetValue(e.Task.Id, out var cur) || e.Task.Modified > cur.Task.Modified) bin[e.Task.Id] = e;
+            var live = result.Tasks.ToDictionary(t => t.Id, t => t.Modified);
+            result.Bin = bin.Values.Where(e => !(live.TryGetValue(e.Task.Id, out var m) && m >= e.Task.Modified)).ToList();
+        }
         return result;
     }
 
@@ -966,6 +1008,8 @@ public sealed class BoardStore
         foreach (var key in Data.Days.Where(kv => kv.Value.Mark == null && kv.Value.Modified < cutoff).Select(kv => kv.Key).ToList())
             Data.Days.Remove(key);
         Data.Alarms.RemoveAll(x => x.Deleted && x.Modified < cutoff);
+        Data.Bin?.RemoveAll(e => e.Deleted < DateTime.UtcNow.AddDays(-BinDays));
+        if (Data.Bin is { Count: 0 }) Data.Bin = null;
     }
 
     readonly record struct DiskState(BoardData? Data, string? Hash, bool Unreadable);

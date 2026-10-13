@@ -317,9 +317,9 @@ public partial class BoardWindow
     {
         var all = Store.Data.Tasks.Where(t => t.Archived).ToList();
         if (all.Count == 0) return;
-        if (MessageBox.Show(L.F("Usunąć na zawsze {0} zarchiwizowanych zadań z warstwy „{1}”?\nZnikną też z widoku roku. Ctrl+Z na tablicy cofa.", all.Count, App.LayerName(S.Layer)),
+        if (MessageBox.Show(L.F("Przenieść {0} zarchiwizowanych zadań z warstwy „{1}” do kosza?\nZnikną z widoku roku; z kosza można je przywrócić przez 30 dni.", all.Count, App.LayerName(S.Layer)),
                 "TaskWall", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-        Do(() => { foreach (var t in all) Store.Remove(t); });
+        Do(() => { foreach (var t in all) Store.Discard(t); });
     }
 
     /// <summary>Called by App after Praca ⇄ Prywatne.</summary>
@@ -430,9 +430,82 @@ public partial class BoardWindow
     }
 
     /// <summary>Archive tab: newest first; drag a row onto a day (or the Backlog tab) to restore it.</summary>
+    bool _binView;
+
+    /// <summary>"Archiwum · Kosz (n)" switch at the top of the archive tab.</summary>
+    void AddBinSwitch()
+    {
+        int n = Store.BinItems.Count();
+        var bar = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+        TextBlock Tab(string label, bool on, Action click)
+        {
+            var tb = new TextBlock
+            {
+                Text = label, FontSize = 11, FontWeight = on ? FontWeights.Bold : FontWeights.Normal, Cursor = Cursors.Hand,
+                Foreground = on ? Res("Fg") : Res("FgDim"), Margin = new Thickness(0, 0, 14, 0),
+            };
+            tb.MouseLeftButtonUp += (_, e) => { e.Handled = true; click(); };
+            return tb;
+        }
+        var tabs = new StackPanel { Orientation = Orientation.Horizontal };
+        tabs.Children.Add(Tab(L.T("Zarchiwizowane"), !_binView, () => { _binView = false; BuildBacklog(); }));
+        tabs.Children.Add(Tab(L.F("Kosz ({0})", n), _binView, () => { _binView = true; BuildBacklog(); }));
+        if (_binView && n > 0)
+        {
+            var empty = Tab(L.T("Opróżnij kosz"), false, () =>
+            {
+                if (MessageBox.Show(L.F("Usunąć na zawsze {0} zadań z kosza?", n), "TaskWall", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+                Store.EmptyBin();
+                BuildBacklog();
+            });
+            empty.Margin = new Thickness(0);
+            DockPanel.SetDock(empty, Dock.Right);
+            bar.Children.Add(empty);
+        }
+        bar.Children.Add(tabs);
+        BacklogList.Children.Add(bar);
+    }
+
+    void BuildBinList(string q)
+    {
+        var list = Store.BinItems.Where(e => q.Length == 0 || Matches(e.Task.Text, q)).OrderByDescending(e => e.Deleted).ToList();
+        foreach (var e in list)
+        {
+            var row = new Border { CornerRadius = new CornerRadius(6), Padding = new Thickness(4, 3, 1, 3), Margin = new Thickness(-4, 0, 0, 1) };
+            Anim.HoverBackground(row, Colors.Transparent, Th.Ink(0x16));
+            var g = new Grid();
+            g.ColumnDefinitions.Add(new ColumnDefinition());
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var sp = new StackPanel();
+            sp.Children.Add(new TextBlock { Text = e.Task.Text, TextWrapping = TextWrapping.Wrap, Foreground = Res("FgDim"), FontSize = S.FontSize });
+            int left = Math.Max(0, BoardStore.BinDays - (int)(DateTime.UtcNow - e.Deleted).TotalDays);
+            sp.Children.Add(new TextBlock
+            {
+                Text = L.F("usunięte {0} · zostanie jeszcze {1} dni", e.Deleted.ToLocalTime().ToString("d MMM, HH:mm", Pl), left),
+                FontSize = 10.5, Foreground = Res("FgFaint"), Margin = new Thickness(0, 2, 0, 1),
+            });
+            g.Children.Add(sp);
+            var restore = new Button { Style = (Style)FindResource("LinkButton"), Content = L.T("Przywróć"), FontSize = 11.5, VerticalAlignment = VerticalAlignment.Top, Padding = new Thickness(6, 2, 6, 2) };
+            var entry = e;
+            restore.Click += (_, _) => Do(() => { Store.RestoreFromBin(entry); _flashId = entry.Task.Id; });
+            Grid.SetColumn(restore, 1);
+            g.Children.Add(restore);
+            row.Child = g;
+            BacklogList.Children.Add(row);
+        }
+        if (list.Count == 0)
+            BacklogList.Children.Add(new TextBlock
+            {
+                Text = q.Length > 0 ? L.T("Nic nie znaleziono.") : L.F("Kosz jest pusty. Usunięte zadania można tu przywrócić przez {0} dni.", BoardStore.BinDays),
+                TextWrapping = TextWrapping.Wrap, Foreground = Res("FgFaint"), FontSize = 11.5, Margin = new Thickness(2, 10, 6, 0),
+            });
+    }
+
     void BuildArchiveList(string q)
     {
         TagChips.Visibility = Visibility.Collapsed;
+        AddBinSwitch();
+        if (_binView) { BuildBinList(q); return; }
         var list = Store.Data.Tasks.Where(t => t.Archived && (q.Length == 0 || Matches(t.Text, q)))
             .OrderByDescending(t => t.ArchivedAt ?? t.Modified).Take(300).ToList();
         string? lastGroup = null;
@@ -509,7 +582,7 @@ public partial class BoardWindow
             return b;
         }
         buttons.Children.Add(Icon("\uE7A7", L.T("Przywróć na swoje miejsce"), () => Do(() => Store.Unarchive(Store.Materialize(t)))));
-        buttons.Children.Add(Icon("\uE74D", L.T("Usuń całkowicie (Ctrl+Z cofa)"), () => DeleteForGood(t, row)));
+        buttons.Children.Add(Icon("\uE74D", L.T("Usuń do kosza (30 dni)"), () => DeleteForGood(t, row)));
         g.Children.Add(buttons);
         row.Child = g;
         row.MouseEnter += (_, _) => buttons.Visibility = Visibility.Visible;
@@ -657,7 +730,7 @@ public partial class BoardWindow
 
     // ---------- task context menu ----------
 
-    ContextMenu BuildMenu(TaskItem t, StackPanel content, TextBlock text, FrameworkElement row)
+    ContextMenu BuildMenu(TaskItem t, StackPanel? content, TextBlock? text, FrameworkElement row)
     {
         // order: status and priority (one click, no sub-menus) · edit · when · details · archive / delete
         var menu = new ContextMenu();
@@ -687,7 +760,7 @@ public partial class BoardWindow
 
         // ----- edit -----
         if (t.HasLink) menu.Items.Add(Item(L.T("Otwórz w Notion"), () => OpenLink(t)));
-        menu.Items.Add(Item(t.HasLink ? L.T("Edytuj tekst") : L.T("Edytuj"), () => BeginEdit(t, content, text, series: false)));
+        menu.Items.Add(Item(t.HasLink ? L.T("Edytuj tekst") : L.T("Edytuj"), () => EditSomewhere(t, content, text)));
         bool hasList = t.Checklist is { Count: > 0 };
         menu.Items.Add(Item(hasList ? (_expanded.Contains(t.Id) ? L.T("Zwiń listę kontrolną") : L.T("Pokaż listę kontrolną")) : L.T("Dodaj listę kontrolną"), () =>
         {
@@ -784,14 +857,14 @@ public partial class BoardWindow
         menu.Items.Add(Item(t.IsVirtual ? L.T("Pomiń to wystąpienie") : L.T("Archiwizuj"), () => ArchiveRow(t, row)));
         if (!t.IsVirtual)
         {
-            var del = Item(L.T("Usuń całkowicie"), () => DeleteForGood(t, row));
+            var del = Item(L.T("Usuń"), () => DeleteForGood(t, row), value: L.T("kosz, 30 dni"));
             del.Foreground = Tx(Color.FromRgb(0xF2, 0x6D, 0x6D));
             menu.Items.Add(del);
         }
         return menu;
     }
 
-    MenuItem RepeatMenu(TaskItem t, StackPanel content, TextBlock text)
+    MenuItem RepeatMenu(TaskItem t, StackPanel? content, TextBlock? text)
     {
         MenuItem Item(string header, Action action)
         {
@@ -826,7 +899,7 @@ public partial class BoardWindow
         if (rule != null)
         {
             rep.Items.Add(new Separator());
-            rep.Items.Add(Item(L.T("Zmień nazwę serii"), () => BeginEdit(t, content, text, series: true)));
+            rep.Items.Add(Item(L.T("Zmień nazwę serii"), () => EditSomewhere(t, content, text, series: true)));
             rep.Items.Add(Item(L.T("Zakończ serię na tym dniu"), () => Do(() => { rule.End = t.RuleDay ?? t.Day; Store.Changed(rule); })));
             rep.Items.Add(Item(L.T("Usuń serię (wykonane zostają)"), () => Do(() => { rule.Deleted = true; Store.Changed(rule); })));
         }
@@ -834,7 +907,14 @@ public partial class BoardWindow
     }
 
     void SetPriority(TaskItem t, string? value) => Do(() => { var real = Store.Materialize(t); real.Priority = value; Store.Changed(real); });
-    void SetEstimate(TaskItem t, double? hours) => Do(() => { var real = Store.Materialize(t); real.Estimate = hours; Store.Changed(real); });
+    void SetEstimate(TaskItem t, double? hours) => Do(() =>
+    {
+        var real = Store.Materialize(t);
+        var old = real.Estimate;
+        real.Estimate = hours;
+        ApplyAutoPlan(real, real.Day, old); // more than 8 h: planned over the next workdays
+        Store.Changed(real);
+    });
 
     sealed record MenuChip(string Text, bool Selected, Color? Color, Action Click);
 
@@ -1024,6 +1104,23 @@ public partial class BoardWindow
         if (e.Key == Key.Escape && SearchPanel.Visibility == Visibility.Visible) { e.Handled = true; CloseSearch(); return; }
         if (e.Key == Key.F1) { e.Handled = true; HelpWindow.ShowHelp(); return; }
         if (Keyboard.FocusedElement is TextBox) return;
+        // the task under the mouse: Space = next state (○ → ◐ → ✓), Shift+1/2/3 = priority (! !! !!!), Shift+0 = none,
+        // F2 = edit, Delete = to the bin
+        if (_hover is { } h && h.Row.IsMouseOver && Store.Find(h.Task.Id) is { } ht)
+        {
+            Action? act = (e.Key, Keyboard.Modifiers) switch
+            {
+                (Key.Space, ModifierKeys.None) => () => SetState(ht, ht.Done ? TaskState.Todo : ht.IsStarted ? TaskState.Done : TaskState.Started),
+                (Key.D1 or Key.NumPad1, ModifierKeys.Shift) => () => SetPriority(ht, SmartAdd.PriorityName(1)),
+                (Key.D2 or Key.NumPad2, ModifierKeys.Shift) => () => SetPriority(ht, SmartAdd.PriorityName(2)),
+                (Key.D3 or Key.NumPad3, ModifierKeys.Shift) => () => SetPriority(ht, SmartAdd.PriorityName(3)),
+                (Key.D0 or Key.NumPad0, ModifierKeys.Shift) => () => SetPriority(ht, null),
+                (Key.F2, ModifierKeys.None) => () => EditSomewhere(ht, h.Content, h.Text),
+                (Key.Delete, ModifierKeys.None) => () => DeleteForGood(ht, h.Row),
+                _ => null,
+            };
+            if (act != null) { e.Handled = true; act(); return; }
+        }
         // keyboard navigation (not while typing): ← → periods, T / Home today, 1–5 views, B backlog, A archive
         if (Keyboard.Modifiers == ModifierKeys.None)
         {
@@ -1133,6 +1230,7 @@ public partial class BoardWindow
         if (S.AccountFor(S.Layer).Notion.Configured)
             Add(L.T("Synchronizuj Notion teraz"), async () => { var r = await NotionSync.Run(S.Layer); SyncText.Text = r.Error ?? L.F("Notion: nowe {0}, zmienione {1}", r.Added, r.Updated); _syncFlash.Stop(); _syncFlash.Start(); });
         Add(L.T("Importuj z Notion…"), () => App.Instance.ImportNotion());
+        Add(L.T("Podsumowanie tygodnia…"), () => WeekSummaryWindow.Show(Store, IsWeekView ? FirstMonday : Monday(DateTime.Today), S.Layer));
         Add(L.T("Eksportuj widoczny okres do CSV…"), () => Export_Click(this, new RoutedEventArgs()));
         Add(L.T("Odśwież kalendarze"), () => App.Instance.RefreshCalendars());
         Add(L.T("Otwórz folder danych"), () => OpenUrl(Store.Folder));
