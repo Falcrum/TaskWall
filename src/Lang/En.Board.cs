@@ -5,6 +5,19 @@ static partial class L
     /// <summary>Polish → English (Board).</summary>
     static readonly (string Pl, string En)[] Board =
     {
+        // 0.14: task states, menu, estimates
+        ("Zrobione – kliknij, aby przywrócić", "Done – click to reopen"),
+        ("W trakcie – kliknij: zrobione", "In progress – click: done"),
+        ("Kliknij: w trakcie  ·  Shift+klik: od razu zrobione", "Click: in progress  ·  Shift+click: done right away"),
+        ("Status", "Status"),
+        ("Do zrobienia", "To do"),
+        ("W trakcie", "In progress"),
+        ("Zrobione", "Done"),
+        ("Inna…", "Other…"),
+        ("Czas zadania, np. 45min, 1,5h, 1h30, 2d (dzień = 8 h):", "Task time, e.g. 45min, 1.5h, 1h30, 2d (a day = 8 h):"),
+        ("Nie rozpoznano – np. 45min, 2h, 3d", "Not recognised – e.g. 45min, 2h, 3d"),
+        ("{0}d", "{0}d"),
+        ("Synchronizacja między komputerami: zadania, alarmy i oznaczenia są w folderze konta (board.json), ustawienia programu – w pliku taskwall-settings.json w folderze konta Praca. Lokalne zostają: foldery, ekran i rozmiar, autostart, adresy kalendarzy i tokeny Notion. Folder na Dysku Google jest rozpoznawany niezależnie od litery dysku (G:, H:…).", "Sync between computers: tasks, alarms and marks are in the account folder (board.json), the app settings in taskwall-settings.json in the Work account folder. Kept per computer: folders, screen and size, autostart, calendar addresses and Notion tokens. A Google Drive folder is found whatever its drive letter (G:, H:…)."),
         // BoardWindow.xaml (static texts, translated by L.Tree)
         ("Wstecz", "Back"),
         ("Dalej", "Next"),
@@ -40,8 +53,8 @@ static partial class L
 
         // BoardWindow.xaml.cs
         ("↻ zsynchronizowano", "↻ synced"),
-        ("↷ KONTYNUUJ DZIŚ ({0})", "↷ CONTINUE TODAY ({0})"),
-        ("Niezrobione zadania z minionych dni ({0}) przejdą na dziś. W dniach, w których były, zostaną jako wyszarzone „↷ 1/3” – widać, że praca trwała kilka dni.", "Unfinished tasks from past days ({0}) move to today. The days they were on keep them greyed as “↷ 1/3” – so it shows the work took several days."),
+        ("↷ NA DZIŚ ({0})", "↷ TO TODAY ({0})"),
+        ("Niezrobione zadania z minionych dni ({0}) przejdą na dziś. Zadania w trakcie (◐) zostają też w dniach, w których były, jako „↷ 1/3”; nierozpoczęte (○) po prostu się przenoszą.", "Unfinished tasks from past days ({0}) move to today. Tasks in progress (◐) also stay on the days they were on, as “↷ 1/3”; tasks not started (○) simply move."),
         ("Rozpoczęte…", "Started…"),
         ("Tylko {0} (bez wcześniejszych dni)", "Only {0} (no earlier days)"),
         ("od {0}  ({1} dni)", "from {0}  ({1} days)"),

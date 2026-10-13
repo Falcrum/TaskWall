@@ -40,6 +40,7 @@ public partial class App : Application
     Mutex? _mutex;
     bool _importOpen;
     Color? _autoAccent;
+    Color? _surfaceTint;
     bool _glassReady;
     string _cornerKey = "";
     HwndSource? _hotkeySource;
@@ -58,7 +59,7 @@ public partial class App : Application
     {
         base.OnStartup(e);
         if (Dev.Arg("--data") == null) SettingsStore.MigrateFromDeskWall();
-        try { L.Set(SettingsStore.Load().Language); } catch { /* Polish */ }
+        try { var boot = SettingsStore.Load(); SharedSettings.Pull(boot); L.Set(boot.Language); } catch { /* Polish */ }
         // installer switches (TaskWall-Setup.exe, --install, --uninstall) run before anything else
         try { if (Installer.HandleCommandLine()) { Shutdown(); return; } }
         catch (Exception ex) { Log.Error("installer", ex); Shutdown(); return; }
@@ -92,6 +93,8 @@ public partial class App : Application
     {
 
         Settings = SettingsStore.Load();
+        SharedSettings.Pull(Settings); // settings saved on another computer (language, theme, weather, Notion…)
+        SharedSettings.Pulled += _ => Dispatcher.BeginInvoke(ApplySharedSettings);
         Th.Apply(Resources, Settings.Theme); // before any window is built
         if (string.IsNullOrWhiteSpace(Settings.DataFolder)) Settings.DataFolder = SettingsStore.DefaultDataFolder();
         SettingsStore.Save(Settings);
@@ -149,7 +152,7 @@ public partial class App : Application
             WeatherService.Changed += () => Board?.OnExternalChange(quiet: true);
             WeatherService.Start();
             // Notion: each account with a token syncs on its own interval (first run right after start-up)
-            _notionTimer.Tick += (_, _) => { NotionSync.Tick(); FullSync(); };
+            _notionTimer.Tick += (_, _) => { PullSharedSettings(); NotionSync.Tick(); FullSync(); };
             NotionSync.StateChanged += () => Board?.UpdateSyncIcon();
             _notionTimer.Start();
             NotionSync.Tick(startup: true); // always on start, then on each account's interval
@@ -221,6 +224,21 @@ public partial class App : Application
             store.SyncNow();
         }
     }
+    /// <summary>Settings changed on another computer (checked every minute).</summary>
+    void PullSharedSettings()
+    {
+        if (SharedSettings.Pull(Settings).Length > 0) ApplySharedSettings();
+    }
+
+    /// <summary>Language and theme take effect after a restart (like when changed here); everything else right away.</summary>
+    void ApplySharedSettings()
+    {
+        SettingsStore.Save(Settings);
+        WeatherService.Refresh();
+        ApplySettings();
+        Board?.UpdateSyncIcon();
+    }
+
     /// <summary>Accounts whose data is loaded (for alarms).</summary>
     public static System.Collections.Generic.IEnumerable<(string Layer, BoardStore Store)> OpenStores() =>
         Stores.Select(kv => (kv.Key, kv.Value)).ToList();
@@ -235,10 +253,13 @@ public partial class App : Application
     /// <summary>A cloud folder that wasn't reachable at start (e.g. Google Drive mounting after logon) is picked up later.</summary>
     void RetryPendingFolders()
     {
-        foreach (var (layer, folder) in _pendingFolders.ToList())
+        foreach (var (layer, saved) in _pendingFolders.ToList())
         {
+            if (SettingsStore.IsGoogleDrivePath(saved) && SettingsStore.GoogleDriveMount() == null) continue;
+            var folder = SettingsStore.ResolveCloudFolder(saved);
             var root = Path.GetPathRoot(folder);
             if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) continue;
+            Settings.AccountFor(layer).Folder = folder;
             try
             {
                 Stores[layer].SwitchFolder(folder); // merges what was written to the local fallback meanwhile
@@ -263,9 +284,20 @@ public partial class App : Application
         s = new BoardStore(layer);
         var folder = LayerFolder(layer);
         // at logon Google Drive / OneDrive may mount their drive a bit after us: wait up to ~90 s for the drive itself
-        var root = Path.GetPathRoot(folder);
-        for (int i = 0; i < 45 && !string.IsNullOrEmpty(root) && !Directory.Exists(root); i++) Thread.Sleep(2000);
-        try { s.Open(folder); }
+        // (for a Google Drive folder: for Google Drive – the same letter may be a local disk on this computer)
+        bool Waiting(string f)
+        {
+            var root = Path.GetPathRoot(f);
+            return !string.IsNullOrEmpty(root) && (!Directory.Exists(root) || (Dev.Arg("--data") == null && SettingsStore.IsGoogleDrivePath(f) && SettingsStore.GoogleDriveMount() == null));
+        }
+        for (int i = 0; i < 45 && Waiting(folder); i++) Thread.Sleep(2000);
+        if (Dev.Arg("--data") == null && SettingsStore.ResolveCloudFolder(folder) is var resolved && resolved != folder)
+            folder = Settings.AccountFor(layer).Folder = resolved;
+        try
+        {
+            if (Waiting(folder)) throw new IOException("Google Drive not mounted: " + folder);
+            s.Open(folder);
+        }
         catch (Exception ex)
         {
             Log.Error("open data folder " + folder, ex);
@@ -354,6 +386,13 @@ public partial class App : Application
         Resources["AccentSoft"] = new SolidColorBrush(Color.FromArgb(0x38, accent.R, accent.G, accent.B));
         byte a = (byte)Math.Clamp(Settings.TintOpacity * 255, Settings.Blur ? 0 : 40, 255);
         Resources["GlassTint"] = new SolidColorBrush(Th.Glass(a));
+        // menus, tool tips and dialogs: the hue of the wallpaper behind the board, so they sit with the glass
+        if (_surfaceTint is { } tint)
+        {
+            Resources["MenuBg"] = new SolidColorBrush(Th.Light ? Wallpaper.Surface(tint, 0.975, 0.06) : Wallpaper.Surface(tint, 0.13, 0.32));
+            Resources["DialogBg"] = new SolidColorBrush(Th.Light ? Wallpaper.Surface(tint, 0.955, 0.06) : Wallpaper.Surface(tint, 0.105, 0.30));
+            Resources["CardBg"] = new SolidColorBrush(Th.Light ? Wallpaper.Surface(tint, 0.99, 0.03) : Wallpaper.Surface(tint, 0.15, 0.28));
+        }
     }
 
     // ---------- placement ----------
@@ -431,6 +470,11 @@ public partial class App : Application
             _clock.SetGlass(Settings.Blur && cr.Width > 0 ? Wallpaper.RenderGlass(src, cr, blurPx) : null);
             Board.UpdateDrawerGlass();
 
+            if (Wallpaper.Average(src, br) is { } avg && avg != _surfaceTint)
+            {
+                _surfaceTint = avg;
+                ApplyTheme();
+            }
             if (Settings.Accent == "auto")
             {
                 var col = Wallpaper.Accent(src, br);

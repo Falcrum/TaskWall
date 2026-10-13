@@ -116,6 +116,7 @@ static class SettingsStore
             if (string.IsNullOrWhiteSpace(acc.Folder)) acc.Folder = id == "work" ? s.DataFolder : s.PrivateFolder;
             if (s.SettingsVersion < 7 && acc.Calendars.Count == 0)
                 acc.Calendars.Add(new CalendarFeed { Name = "Święta w Polsce", Url = CalendarFeed.PolishHolidaysUrl, Kind = "holidays" });
+            acc.Folder = ResolveCloudFolder(acc.Folder);
         }
         s.SettingsVersion = CurrentVersion;
         return s;
@@ -125,12 +126,69 @@ static class SettingsStore
     {
         try
         {
+            SharedSettings.Push(s); // the part that follows the user to other computers (when it changed)
             Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
             var tmp = FilePath + ".tmp";
             File.WriteAllText(tmp, JsonSerializer.Serialize(s, Json.Options));
             File.Move(tmp, FilePath, true);
         }
         catch (Exception ex) { Log.Error("settings save", ex); }
+    }
+
+    static readonly string[] DriveNames = { "Mój dysk", "My Drive" };
+    static readonly string[] SharedNames = { "Dyski współdzielone", "Shared drives" };
+
+    /// <summary>"X:\Mój dysk\…" / "X:\My Drive\…": a folder on Google Drive, whatever letter it was saved with.</summary>
+    public static bool IsGoogleDrivePath(string folder)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(folder ?? "", @"^[A-Za-z]:\\([^\\]+)");
+        return m.Success && DriveNames.Concat(SharedNames).Contains(m.Groups[1].Value, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// A cloud folder saved on one computer, pointed at the same cloud folder on this one: Google Drive may be mounted
+    /// under another letter (H: instead of G:) or in another language ("My Drive" / "Mój dysk"), OneDrive may sit in
+    /// another user profile. Without this the other computer would write to a local folder that never syncs.
+    /// </summary>
+    public static string ResolveCloudFolder(string folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder)) return folder;
+        try
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(folder, @"^[A-Za-z]:\\([^\\]+)(\\.*)?$");
+            if (m.Success && IsGoogleDrivePath(folder) && GoogleDriveMount() is { } mount)
+            {
+                var top = m.Groups[1].Value;
+                var names = DriveNames.Contains(top, StringComparer.OrdinalIgnoreCase) ? DriveNames : SharedNames;
+                var name = names.FirstOrDefault(n => Directory.Exists(Path.Combine(mount, n))) ?? top;
+                var resolved = Path.Combine(mount, name) + m.Groups[2].Value;
+                if (!string.Equals(resolved, folder, StringComparison.OrdinalIgnoreCase)) Log.Error($"cloud folder {folder} → {resolved}");
+                return resolved;
+            }
+            if (!Directory.Exists(folder) && OneDriveRoot() is { } od)
+            {
+                var o = System.Text.RegularExpressions.Regex.Match(folder, @"\\OneDrive(?: - [^\\]+)?(\\.*)?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (o.Success && Directory.Exists(od + o.Groups[1].Value)) return od + o.Groups[1].Value;
+            }
+        }
+        catch (Exception ex) { Log.Error("cloud folder", ex); }
+        return folder;
+    }
+
+    /// <summary>Root of the Google Drive for desktop drive ("H:\"), whatever letter it got on this computer.</summary>
+    public static string? GoogleDriveMount()
+    {
+        try
+        {
+            foreach (var d in DriveInfo.GetDrives())
+            {
+                if (!d.IsReady || !d.VolumeLabel.Contains("Google", StringComparison.OrdinalIgnoreCase)) continue;
+                if (DriveNames.Concat(SharedNames).Any(n => Directory.Exists(Path.Combine(d.RootDirectory.FullName, n))))
+                    return d.RootDirectory.FullName;
+            }
+        }
+        catch (Exception ex) { Log.Error("google drive detect", ex); }
+        return null;
     }
 
     /// <summary>Google Drive for desktop mount ("G:\Mój dysk"), if installed.</summary>
@@ -268,8 +326,26 @@ public sealed class BoardStore
         }
         MergeConflictCopies();
         EnsureCategories();
+        ForgetAutoCarry();
         if (!File.Exists(FilePath)) SaveNow();
         StartWatching();
+    }
+
+    /// <summary>
+    /// Before the "in progress" state (0.14) every unfinished task carried on as a multi-day one when the day ended.
+    /// Unfinished tasks never marked as started lose those "↷" days once (Rozpoczęte… puts them back by hand).
+    /// </summary>
+    void ForgetAutoCarry()
+    {
+        bool any = false;
+        foreach (var t in Data.Tasks.Where(t => !t.Done && t.Started == null && t.WorkedDays is { Count: > 0 }))
+        {
+            t.WorkedDays = null;
+            t.Started = false;
+            t.Touch();
+            any = true;
+        }
+        if (any) MarkDirty();
     }
 
     /// <summary>Default categories carry the oldest possible timestamp, so any real edit (from any PC) wins.</summary>
@@ -802,7 +878,7 @@ public sealed class BoardStore
 
     public static BoardData Merge(BoardData a, BoardData b)
     {
-        var result = new BoardData();
+        var result = new BoardData { Extra = b.Extra ?? a.Extra };
         foreach (var kv in a.Deleted.Concat(b.Deleted))
             if (!result.Deleted.TryGetValue(kv.Key, out var t) || kv.Value > t)
                 result.Deleted[kv.Key] = kv.Value;
@@ -820,6 +896,17 @@ public sealed class BoardStore
         result.Tasks = byId.Values
             .Where(t => !result.Deleted.TryGetValue(t.Id, out var del) || del < t.Modified)
             .ToList();
+
+        // the same Notion page imported on two computers before they saw each other's file: one task stays
+        foreach (var dup in result.Tasks.Where(t => t.NotionId != null).GroupBy(t => t.NotionId).Where(g => g.Count() > 1).ToList())
+        {
+            var keep = dup.OrderByDescending(t => t.Modified).ThenBy(t => t.Id, StringComparer.Ordinal).First();
+            foreach (var t in dup.Where(t => !ReferenceEquals(t, keep)))
+            {
+                result.Deleted[t.Id] = t.Modified;
+                result.Tasks.Remove(t);
+            }
+        }
 
         foreach (var kv in a.Days.Concat(b.Days))
             if (!result.Days.TryGetValue(kv.Key, out var d) || kv.Value.Modified > d.Modified)

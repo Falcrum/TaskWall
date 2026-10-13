@@ -88,7 +88,39 @@ public partial class BoardWindow : GlassWindow
     static string DayName(DateTime d) => Pl.DateTimeFormat.GetAbbreviatedDayName(d.DayOfWeek).TrimEnd('.').ToUpper(Pl);
     static bool IsWeekend(DateTime d) => d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
     public static int WeekNo(DateTime d) => ISOWeek.GetWeekOfYear(d);
-    public static string Hours(double h) => h.ToString("0.#", Pl) + "h";
+    public enum TaskState { Todo, Started, Done }
+
+    public void SetState(TaskItem t, TaskState state) => Do(() =>
+    {
+        var real = Store.Materialize(t);
+        real.Done = state == TaskState.Done;
+        if (state != TaskState.Done) real.Started = state == TaskState.Started;
+        // finished before the planned end: the plan ends today (no future days left hanging)
+        var todayKey = DayKey(DateTime.Today);
+        if (real.Done && real.PlanEnd != null && real.Day != null && string.CompareOrdinal(todayKey, real.PlanEnd) < 0)
+            real.PlanEnd = string.CompareOrdinal(todayKey, real.Day) > 0 ? todayKey : null;
+        Store.Changed(real);
+        _justToggled = real.Id;
+    });
+
+    public static string Hours(double h) => h is > 0 and < 1 ? $"{Math.Round(h * 60)}min" : h.ToString("0.#", Pl) + "h";
+    public const double DayHours = 8;
+    /// <summary>A task's estimate: minutes, hours, or whole working days (8 h) from 2 days up.</summary>
+    public static string Est(double h, bool longForm = false) => h >= 2 * DayHours && h % DayHours == 0
+        ? (longForm ? L.F("{0} dni", h / DayHours) : L.F("{0}d", h / DayHours)) : Hours(h);
+
+    /// <summary>"45min", "1,5h", "1h30", "2d", "3 dni", "2 days"; a bare number = hours.</summary>
+    public static double? ParseEstimate(string text)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(text.Trim().ToLowerInvariant(),
+            @"^(\d+(?:[.,]\d+)?)\s*(min\w*|m|h|godz\w*|hours?|d|dni|dzie\w*|days?)?\s*(?:(\d{1,2})\s*(?:min\w*|m)?)?$");
+        if (!m.Success) return null;
+        var n = double.Parse(m.Groups[1].Value.Replace(',', '.'), CultureInfo.InvariantCulture);
+        var unit = m.Groups[2].Value;
+        double h = unit.StartsWith("m") ? n / 60 : unit.StartsWith("d") ? n * DayHours : n;
+        if (m.Groups[3].Success) h += int.Parse(m.Groups[3].Value) / 60.0;
+        return h is > 0 and <= 2000 ? Math.Round(h, 3) : null;
+    }
     static SolidColorBrush B(Color c) => new(c);
     /// <summary>Coloured text: as is on the dark glass, darker on the light theme (pastels are unreadable on white).</summary>
     static SolidColorBrush Tx(Color c) => new(Th.Light ? Color.FromArgb(c.A, (byte)(c.R * 0.6), (byte)(c.G * 0.6), (byte)(c.B * 0.6)) : c);
@@ -306,8 +338,8 @@ public partial class BoardWindow : GlassWindow
     {
         var overdue = Overdue().Count;
         OverdueButton.Visibility = overdue > 0 && _view != ViewMode.Year ? Visibility.Visible : Visibility.Collapsed;
-        OverdueButton.Content = L.F("↷ KONTYNUUJ DZIŚ ({0})", overdue);
-        OverdueButton.ToolTip = L.F("Niezrobione zadania z minionych dni ({0}) przejdą na dziś. W dniach, w których były, zostaną jako wyszarzone „↷ 1/3” – widać, że praca trwała kilka dni.", overdue);
+        OverdueButton.Content = L.F("↷ NA DZIŚ ({0})", overdue);
+        OverdueButton.ToolTip = L.F("Niezrobione zadania z minionych dni ({0}) przejdą na dziś. Zadania w trakcie (◐) zostają też w dniach, w których były, jako „↷ 1/3”; nierozpoczęte (○) po prostu się przenoszą.", overdue);
         OverdueButton.Foreground = Tx(Color.FromRgb(0xF2, 0xA6, 0x5A));
 
         YearButton.Visibility = S.ShowYearButton ? Visibility.Visible : Visibility.Collapsed;
@@ -505,13 +537,48 @@ public partial class BoardWindow : GlassWindow
             left.Children.Add(dateText);
         }
         if (holidayNames.Count > 0)
-            left.Children.Add(new TextBlock
+        {
+            // the holiday goes into the date line (the header keeps its three lines)
+            var holiday = new TextBlock
             {
                 Text = string.Join(" · ", holidayNames.Distinct()),
-                FontSize = 10, TextTrimming = TextTrimming.CharacterEllipsis,
+                FontSize = 10, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap,
                 Foreground = dayOff != null ? B(A(WeekendRed, 0xD0)) : Res("FgFaint"),
                 ToolTip = string.Join("\n", holidayNames.Distinct()) + (dayOff != null ? "\n" + L.T("(dzień ustawowo wolny)") : ""),
-            });
+            };
+            if (left.Children.Count > 1 && left.Children[^1] is TextBlock dateLine)
+            {
+                left.Children.RemoveAt(left.Children.Count - 1);
+                var line = new DockPanel { LastChildFill = true };
+                DockPanel.SetDock(dateLine, Dock.Left);
+                holiday.Margin = new Thickness(6, 0, 0, 0);
+                holiday.VerticalAlignment = VerticalAlignment.Bottom;
+                line.Children.Add(dateLine);
+                line.Children.Add(holiday);
+                left.Children.Add(line);
+            }
+            else left.Children.Add(holiday);
+        }
+        // weather (Settings → Pogoda): the third line on the left – "☁ 13° / 4°   ☂ 35%   ≋ 12 km/h"
+        if (WeatherService.On(date) is { } wd)
+        {
+            var (symbol, desc) = WeatherService.Describe(wd.Code);
+            double fsw = compact ? 9.5 : 10;
+            var w = new TextBlock { FontSize = fsw, Foreground = Res("FgDim"), TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, compact ? 0 : 1, 0, 0) };
+            w.Inlines.Add(new Run(symbol + " ") { FontFamily = new FontFamily("Segoe UI Symbol"), Foreground = Res("AccentBrush") });
+            w.Inlines.Add(new Run($"{Math.Round(wd.Max):0}°" + (double.IsNaN(wd.Min) ? "" : $" / {Math.Round(wd.Min):0}°")));
+            if (S.Weather.ShowRain && wd.Rain is { } rain) w.Inlines.Add(new Run($"    ☂ {rain}%") { Foreground = Res("FgFaint") });
+            if (S.Weather.ShowWind && wd.Wind is { } wind)
+            {
+                w.Inlines.Add(new Run("    "));
+                w.Inlines.Add(new InlineUIContainer(Icons.Wind(Res("FgFaint"), fsw + 1)) { BaselineAlignment = BaselineAlignment.Center });
+                w.Inlines.Add(new Run($" {Math.Round(wind):0} km/h") { Foreground = Res("FgFaint") });
+            }
+            w.ToolTip = $"{desc}\n{L.F("max {0}°, min {1}°", Math.Round(wd.Max), Math.Round(wd.Min))}"
+                + (wd.Rain is { } r ? "\n" + L.F("szansa opadów {0}%", r) : "")
+                + (wd.Wind is { } wi ? "\n" + L.F("wiatr do {0} km/h", Math.Round(wi)) : "") + $"\n{S.Weather.City}";
+            left.Children.Add(w);
+        }
         header.Children.Add(left);
 
         // right: estimate sum (+ today's progress count)
@@ -527,30 +594,6 @@ public partial class BoardWindow : GlassWindow
                 Foreground = done == total ? Res("AccentBrush") : Res("FgDim"),
                 ToolTip = L.F("Zrobione {0} z {1}", done, total) + (archivedDone > 0 ? L.F(" (w tym {0} w archiwum)", archivedDone) : ""),
             });
-        // weather (Settings → Pogoda): right under the counter – "☁ 13° / 4°", then "☂ 35%  ≈ 12 km/h"
-        if (WeatherService.On(date) is { } wd)
-        {
-            var (symbol, desc) = WeatherService.Describe(wd.Code);
-            double fsw = compact ? 9.5 : 10;
-            var w = new TextBlock { FontSize = fsw, Foreground = Res("FgDim"), HorizontalAlignment = HorizontalAlignment.Right };
-            w.Inlines.Add(new Run(symbol + " ") { FontFamily = new FontFamily("Segoe UI Symbol"), Foreground = Res("AccentBrush") });
-            w.Inlines.Add(new Run($"{Math.Round(wd.Max):0}°" + (double.IsNaN(wd.Min) ? "" : $" / {Math.Round(wd.Min):0}°")));
-            right.Children.Add(w);
-            var line2 = new TextBlock { FontSize = fsw - 0.5, Foreground = Res("FgFaint"), HorizontalAlignment = HorizontalAlignment.Right };
-            if (S.Weather.ShowRain && wd.Rain is { } rain) line2.Inlines.Add(new Run($"☂ {rain}%"));
-            if (S.Weather.ShowWind && wd.Wind is { } wind)
-            {
-                if (line2.Inlines.Count > 0) line2.Inlines.Add(new Run("   "));
-                line2.Inlines.Add(new InlineUIContainer(Icons.Wind(Res("FgFaint"), fsw + 1)) { BaselineAlignment = BaselineAlignment.Center });
-                line2.Inlines.Add(new Run($" {Math.Round(wind):0} km/h"));
-            }
-            bool hasExtra = line2.Inlines.Count > 0;
-            if (hasExtra) right.Children.Add(line2);
-            var tip = $"{desc}\n{L.F("max {0}°, min {1}°", Math.Round(wd.Max), Math.Round(wd.Min))}"
-                + (wd.Rain is { } r ? "\n" + L.F("szansa opadów {0}%", r) : "")
-                + (wd.Wind is { } wi ? "\n" + L.F("wiatr do {0} km/h", Math.Round(wi)) : "") + $"\n{S.Weather.City}";
-            foreach (var el in right.Children.OfType<TextBlock>().Skip(right.Children.Count - (hasExtra ? 2 : 1))) el.ToolTip = tip;
-        }
         if (hours > 0 || meetingHours > 0)
         {
             double left_ = tasks.Where(t => !t.Done).Sum(t => t.Estimate ?? 0);
@@ -894,6 +937,7 @@ public partial class BoardWindow : GlassWindow
                 var real = Store.Materialize(t);
                 var keep = real.WorkedDays?.Where(k => string.CompareOrdinal(k, DayKey(from)) >= 0) ?? Enumerable.Empty<string>(); // weekend days worked on stay
                 real.WorkedDays = span.Select(DayKey).Concat(keep).Distinct().OrderBy(k => k, StringComparer.Ordinal).ToList();
+                if (!real.Done) real.Started = true; // started earlier = in progress
             });
         }
         return item;
@@ -1033,7 +1077,8 @@ public partial class BoardWindow : GlassWindow
             Margin = new Thickness(0, Math.Max(0, (fs * 1.33 - cs) / 2), compact ? 6 : 8, 0),
             VerticalAlignment = VerticalAlignment.Top,
             Cursor = Cursors.Hand,
-            ToolTip = (t.Done ? L.T("Oznacz jako niezrobione") : L.T("Oznacz jako zrobione")) + (t.Priority != null ? "\n" + L.F("Priorytet: {0}", t.Priority) : ""),
+            ToolTip = (t.Done ? L.T("Zrobione – kliknij, aby przywrócić") : t.IsStarted ? L.T("W trakcie – kliknij: zrobione") : L.T("Kliknij: w trakcie  ·  Shift+klik: od razu zrobione"))
+                + (t.Priority != null ? "\n" + L.F("Priorytet: {0}", t.Priority) : ""),
         };
         if (t.Done)
         {
@@ -1045,22 +1090,24 @@ public partial class BoardWindow : GlassWindow
                 Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
             };
         }
+        else if (t.IsStarted) // in progress: the left half filled, in the priority colour
+        {
+            double ring = prioColor != null ? 1.8 : 1.3, inset = 1.4;
+            double d = cs - 2 * ring - 2 * inset;
+            circle.Child = new System.Windows.Shapes.Path
+            {
+                Data = new PathGeometry(new[] { new PathFigure(new Point(d / 2, 0), new PathSegment[] { new ArcSegment(new Point(d / 2, d), new Size(d / 2, d / 2), 0, false, SweepDirection.Counterclockwise, true) }, true) }),
+                Fill = prioColor != null ? ringBrush : Res("AccentBrush"),
+                Width = d, Height = d, Margin = new Thickness(inset), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
+            };
+        }
         circle.MouseEnter += (_, _) => { if (!t.Done) circle.BorderBrush = Res("AccentBrush"); };
         circle.MouseLeave += (_, _) => { if (!t.Done) circle.BorderBrush = ringBrush; };
         circle.MouseLeftButtonDown += (_, e) =>
         {
             e.Handled = true;
-            Do(() =>
-            {
-                var real = Store.Materialize(t);
-                real.Done = !real.Done;
-                // finished before the planned end: the plan ends today (no future days left hanging)
-                var todayKey = DayKey(DateTime.Today);
-                if (real.Done && real.PlanEnd != null && real.Day != null && string.CompareOrdinal(todayKey, real.PlanEnd) < 0)
-                    real.PlanEnd = string.CompareOrdinal(todayKey, real.Day) > 0 ? todayKey : null;
-                Store.Changed(real);
-                _justToggled = real.Id;
-            });
+            // three states: not started → in progress → done → not started (Shift: straight to done)
+            SetState(t, t.Done ? TaskState.Todo : t.IsStarted || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? TaskState.Done : TaskState.Started);
         };
         grid.Children.Add(circle);
         if (_justToggled == t.Id) Anim.Pop(circle);
@@ -1145,7 +1192,7 @@ public partial class BoardWindow : GlassWindow
         {
             var est = new TextBlock
             {
-                Text = Hours(t.Estimate.Value),
+                Text = Est(t.Estimate.Value),
                 FontSize = Math.Max(9, fs - 2.5),
                 Foreground = Res("FgFaint"),
                 VerticalAlignment = VerticalAlignment.Top,
@@ -1203,11 +1250,14 @@ public partial class BoardWindow : GlassWindow
             menu.PlacementTarget = wrapper;
             menu.IsOpen = true;
         };
+        if (Dev.Arg("--open") == "menu" && t.Day == DayKey(DateTime.Today) && !t.Done && wrapper.IsLoaded == false)
+            DevOpenMenu = () => { var m = BuildMenu(t, content, text, wrapper); m.PlacementTarget = wrapper; m.IsOpen = true; };
         if (_justAdded == t.Id) Anim.Enter(wrapper, 0, -6, 240);
         if (_flashId == t.Id) Flash(wrapper);
         return wrapper;
     }
 
+    public Action? DevOpenMenu;
     readonly HashSet<string> _expanded = new();  // tasks whose checklist is open
     string? _checkAddFor;                         // task whose "+ punkt" box is open
 
@@ -1743,6 +1793,7 @@ public partial class BoardWindow : GlassWindow
                 else real.WorkedDays = WorkdaysBetween(target, ParseKey(real.Day!)).Select(DayKey)
                         .Concat(real.WorkedDays?.Where(k => string.CompareOrdinal(k, day) >= 0) ?? Enumerable.Empty<string>())
                         .Distinct().OrderBy(k => k, StringComparer.Ordinal).ToList();
+                if (string.CompareOrdinal(day, real.Day) < 0 && !real.Done) real.Started = true; // stretched back: it started earlier
                 Store.Changed(real);
             });
             return;

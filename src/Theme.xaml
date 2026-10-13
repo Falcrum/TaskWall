@@ -135,7 +135,7 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ToolTip">
-                    <Border Background="{StaticResource MenuBg}" BorderBrush="{StaticResource FieldBorder}" BorderThickness="1" CornerRadius="6" Padding="8,4">
+                    <Border Background="{DynamicResource MenuBg}" BorderBrush="{DynamicResource MenuBorder}" BorderThickness="1" CornerRadius="6" Padding="8,4">
                         <ContentPresenter TextElement.FontSize="11.5"/>
                     </Border>
                 </ControlTemplate>
@@ -143,7 +143,7 @@
         </Setter>
     </Style>
 
-    <!-- Dark context menu -->
+    <!-- Context menu: the surface colour follows the wallpaper (App.ApplyTheme), so it sits with the glass board -->
     <Style TargetType="ContextMenu">
         <Setter Property="OverridesDefaultStyle" Value="True"/>
         <Setter Property="HasDropShadow" Value="True"/>
@@ -151,8 +151,13 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ContextMenu">
-                    <Border Background="{StaticResource MenuBg}" BorderBrush="{StaticResource FieldBorder}" BorderThickness="1" CornerRadius="8" Padding="4" MinWidth="170">
-                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                    <Border Margin="0,0,10,12">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="16" ShadowDepth="4" Direction="270" Opacity="0.45" Color="Black"/>
+                        </Border.Effect>
+                        <Border Background="{DynamicResource MenuBg}" BorderBrush="{DynamicResource MenuBorder}" BorderThickness="1" CornerRadius="10" Padding="4,5" MinWidth="200">
+                            <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                        </Border>
                     </Border>
                 </ControlTemplate>
             </Setter.Value>
@@ -166,26 +171,42 @@
             <Setter.Value>
                 <ControlTemplate TargetType="MenuItem">
                     <Grid>
-                        <Border x:Name="Bd" Padding="10,5,10,5" CornerRadius="5" Background="Transparent">
+                        <Border x:Name="Bd" Padding="10,5,10,5" CornerRadius="6" Background="Transparent">
                             <Grid>
                                 <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <ContentPresenter ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="Arrow" Grid.Column="1" Text="›" Margin="18,0,0,0" Visibility="Collapsed" Foreground="{StaticResource FgDim}"/>
+                                <ContentPresenter x:Name="IconHost" ContentSource="Icon" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="Value" Grid.Column="2" Text="{TemplateBinding InputGestureText}" Margin="18,0,0,0" FontSize="11"
+                                           Foreground="{StaticResource FgFaint}" VerticalAlignment="Center" MaxWidth="160" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock x:Name="Arrow" Grid.Column="3" Text="›" Margin="10,0,0,0" Visibility="Collapsed" Foreground="{StaticResource FgDim}"/>
                             </Grid>
                         </Border>
-                        <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsSubmenuOpen}" Placement="Right" HorizontalOffset="2"
+                        <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsSubmenuOpen}" Placement="Right" HorizontalOffset="2" VerticalOffset="-5"
                                AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
-                            <Border Background="{StaticResource MenuBg}" BorderBrush="{StaticResource FieldBorder}" BorderThickness="1" CornerRadius="8" Padding="4" MinWidth="150">
-                                <ScrollViewer MaxHeight="420" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                    <StackPanel IsItemsHost="True"/>
-                                </ScrollViewer>
+                            <Border Margin="0,0,10,12">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="16" ShadowDepth="4" Direction="270" Opacity="0.45" Color="Black"/>
+                                </Border.Effect>
+                                <Border Background="{DynamicResource MenuBg}" BorderBrush="{DynamicResource MenuBorder}" BorderThickness="1" CornerRadius="10" Padding="4,5" MinWidth="160">
+                                    <ScrollViewer MaxHeight="420" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                        <StackPanel IsItemsHost="True"/>
+                                    </ScrollViewer>
+                                </Border>
                             </Border>
                         </Popup>
                     </Grid>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="Icon" Value="{x:Null}">
+                            <Setter TargetName="IconHost" Property="Visibility" Value="Collapsed"/>
+                        </Trigger>
+                        <Trigger Property="InputGestureText" Value="">
+                            <Setter TargetName="Value" Property="Visibility" Value="Collapsed"/>
+                        </Trigger>
                         <Trigger Property="Role" Value="SubmenuHeader">
                             <Setter TargetName="Arrow" Property="Visibility" Value="Visible"/>
                         </Trigger>
@@ -316,7 +337,7 @@
                         <ContentPresenter IsHitTestVisible="False" Content="{TemplateBinding SelectionBoxItem}"
                                           ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" Margin="9,0,26,0" VerticalAlignment="Center"/>
                         <Popup IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" VerticalOffset="2" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
-                            <Border Background="{StaticResource MenuBg}" BorderBrush="{StaticResource FieldBorder}" BorderThickness="1" CornerRadius="6" Padding="3"
+                            <Border Background="{DynamicResource MenuBg}" BorderBrush="{DynamicResource MenuBorder}" BorderThickness="1" CornerRadius="6" Padding="3"
                                     MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
                                 <ScrollViewer MaxHeight="320" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                     <StackPanel IsItemsHost="True"/>

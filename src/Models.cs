@@ -9,6 +9,8 @@ namespace TaskWall;
 /// <summary>Single task. Day == null means the task lives in the backlog.</summary>
 public sealed class TaskItem
 {
+    /// <summary>Fields written by a newer version of the app: kept as they are, so an older copy on another computer doesn't drop them.</summary>
+    [JsonExtensionData] public Dictionary<string, System.Text.Json.JsonElement>? Extra { get; set; }
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string Text { get; set; } = "";
     public bool Done { get; set; }
@@ -32,6 +34,12 @@ public sealed class TaskItem
     public List<string>? WorkedDays { get; set; }
     /// <summary>Planned last day of a multi-day task (yyyy-MM-dd, after <see cref="Day"/>): the workdays up to it show the task too.</summary>
     public string? PlanEnd { get; set; }
+    /// <summary>
+    /// The middle state of the circle ("in progress"). Only a started task that isn't done carries on to the next day as a
+    /// multi-day one (its earlier days stay as "↷ 1/3"); a task not started yet just moves on.
+    /// </summary>
+    public bool? Started { get; set; }
+    [JsonIgnore] public bool IsStarted => !Done && Started == true;
 
     /// <summary>Checklist progress 0..1 (done task = 1).</summary>
     [JsonIgnore] public double Progress => Done ? 1 : Checklist is { Count: > 0 } c ? (double)c.Count(x => x.Done) / c.Count : 0;
@@ -41,6 +49,7 @@ public sealed class TaskItem
     {
         if (to != null && WorkedDays != null) WorkedDays.RemoveAll(d => string.CompareOrdinal(d, to) >= 0);
         if (PlanEnd != null && (to == null || string.CompareOrdinal(PlanEnd, to) <= 0)) PlanEnd = null; // the plan ran out (or went to the backlog)
+        if (!IsStarted) return; // not started: it simply moves, the board doesn't pretend it was worked on
         if (Done || from == null || to == null || string.CompareOrdinal(from, today) >= 0 || string.CompareOrdinal(to, from) <= 0) return;
         WorkedDays ??= new();
         if (!WorkedDays.Contains(from)) WorkedDays.Add(from);
@@ -86,6 +95,8 @@ public sealed class TaskItem
         NotionId = o.NotionId; Url = o.Url; Status = o.Status; Priority = o.Priority; NotionTitle = o.NotionTitle; ParentNotionId = o.ParentNotionId;
         Checklist = CopyList(o.Checklist);
         Time = o.Time; End = o.End; WorkedDays = o.WorkedDays == null ? null : new List<string>(o.WorkedDays); PlanEnd = o.PlanEnd;
+        Started = o.Started;
+        Extra = o.Extra;
     }
 
     static readonly Regex TagRx = new(@"^\s*\[([^\[\]]{1,24})\]");
@@ -246,6 +257,7 @@ public sealed class RecurringRule
 /// </summary>
 public sealed class Alarm
 {
+    [JsonExtensionData] public Dictionary<string, System.Text.Json.JsonElement>? Extra { get; set; }
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     /// <summary>"alarm" (rings at <see cref="Time"/>) or "meeting" (Time–End, rings <see cref="Remind"/> minutes before).</summary>
     public string Kind { get; set; } = "alarm";
@@ -354,6 +366,7 @@ public sealed class Alarm
         Kind = o.Kind; Text = o.Text; Day = o.Day; Time = o.Time; End = o.End; Remind = o.Remind; Repeat = o.Repeat;
         Skips = o.Skips == null ? null : new List<string>(o.Skips);
         Rang = o.Rang; Armed = o.Armed; Deleted = o.Deleted; Modified = o.Modified;
+        Extra = o.Extra;
     }
 }
 
@@ -383,6 +396,7 @@ public sealed class TrashEntry
 
 public sealed class BoardData
 {
+    [JsonExtensionData] public Dictionary<string, System.Text.Json.JsonElement>? Extra { get; set; }
     public int Version { get; set; } = 3;
     public List<TaskItem> Tasks { get; set; } = new();
     /// <summary>Tombstones: task id -> deletion time (UTC). Needed so deletions survive merging.</summary>
@@ -536,6 +550,9 @@ public sealed class AppSettings
     public string Language { get; set; } = "pl";
     /// <summary>"Ctrl+Shift+Space", "Ctrl+Alt+D", "Ctrl+Alt+T", "Win+Shift+D" or "" (off).</summary>
     public string Hotkey { get; set; } = "Ctrl+Shift+Space";
+    /// <summary>Last version of the shared settings (taskwall-settings.json in the work folder) this computer has – UTC.</summary>
+    public DateTime? SharedModified { get; set; }
+    public string? SharedHash { get; set; }
 
     /// <summary>"#RRGGBB" or "auto" (picked from the wallpaper).</summary>
     public string Accent { get; set; } = "auto";

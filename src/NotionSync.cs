@@ -305,8 +305,10 @@ static class NotionSync
                 if (page.Status != null && (skip.Contains(page.Status) || (link.SkipStatuses == null && !viewFiltered && NotionImport.LooksDone(page.Status)))) continue;
                 store.Add(new TaskItem
                 {
+                    Id = "notion-" + page.Id.Replace("-", ""), // the same id on every computer: two PCs importing the same page merge into one task
                     Text = title, NotionTitle = title, NotionId = page.Id, Url = page.Url,
                     Status = page.Status, Priority = page.Priority, Estimate = page.Estimate, Order = order++, ParentNotionId = page.ParentId,
+                    Started = LooksInProgress(page.Status) ? true : null,
                 });
                 added++;
                 continue;
@@ -324,7 +326,7 @@ static class NotionSync
                 t.NotionTitle = title;
                 changed = true;
             }
-            if (page.Status != t.Status) { t.Status = page.Status; changed = true; }
+            if (page.Status != t.Status) { t.Status = page.Status; changed = true; if (t.Started == null && !t.Done && LooksInProgress(page.Status)) t.Started = true; }
             if (page.Priority != t.Priority) { t.Priority = page.Priority; changed = true; }
             if (page.Estimate != null && page.Estimate != t.Estimate) { t.Estimate = page.Estimate; changed = true; }
             if (link.SyncDone && !t.Done && NotionImport.LooksDone(page.Status)) { t.Done = true; changed = true; }
@@ -334,6 +336,10 @@ static class NotionSync
         }
         return (added, updated);
     }
+
+    /// <summary>A Notion status meaning the work has begun ("W trakcie", "In progress", "Doing").</summary>
+    public static bool LooksInProgress(string? status) => status != null &&
+        System.Text.RegularExpressions.Regex.IsMatch(status, @"w trakcie|in progress|doing|started|rozpocz|realizacj|wip", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     /// <summary>Reads and applies one account's database; the result also lands in <see cref="NotionLink.LastResult"/>.</summary>
     public static async Task<Result> Run(string layer)

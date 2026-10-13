@@ -61,17 +61,25 @@ public sealed class SettingsWindow : DarkWindow
 
     void AddSection(string title, string subtitle, Func<FrameworkElement> build, bool open = false)
     {
-        var chevron = new TextBlock { Text = "", FontFamily = Ui.Font("IconFont"), FontSize = 11, Foreground = Ui.Res("FgDim"), VerticalAlignment = VerticalAlignment.Center };
+        // one card per section (like the day cells of the board): header, and the body inside the same card when open
+        var chevron = new TextBlock { Text = "", FontFamily = Ui.Font("IconFont"), FontSize = 11, Foreground = Ui.Res("FgDim"), VerticalAlignment = VerticalAlignment.Center };
         var head = new DockPanel();
         DockPanel.SetDock(chevron, Dock.Right);
         head.Children.Add(chevron);
         var titles = new StackPanel();
-        titles.Children.Add(Label(title.ToUpper(BoardWindow.Pl), 12, "Fg", FontWeights.Bold));
+        var name = Label(title.ToUpper(BoardWindow.Pl), 12, "Fg", FontWeights.Bold);
+        titles.Children.Add(name);
         titles.Children.Add(Label(subtitle, 11.5, "FgFaint"));
         head.Children.Add(titles);
-        var header = new Border { Child = head, Padding = new Thickness(14, 10, 14, 10), CornerRadius = new CornerRadius(8), Cursor = Cursors.Hand, Margin = new Thickness(0, 0, 0, 6) };
-        Anim.HoverBackground(header, Th.Ink(0x0C), Th.Ink(0x18));
-        var body = new Border { Padding = new Thickness(14, 4, 14, 14), Visibility = Visibility.Collapsed };
+        var header = new Border { Child = head, Padding = new Thickness(14, 10, 14, 10), CornerRadius = new CornerRadius(10), Cursor = Cursors.Hand };
+        Anim.HoverBackground(header, Colors.Transparent, Th.Ink(0x0E));
+        var body = new Border { Padding = new Thickness(14, 2, 14, 14), Visibility = Visibility.Collapsed };
+        var card = new Border
+        {
+            CornerRadius = new CornerRadius(10), Margin = new Thickness(0, 0, 0, 8), BorderThickness = new Thickness(1),
+            Background = new SolidColorBrush(Th.Ink(0x09)), BorderBrush = new SolidColorBrush(Th.Ink(0x12)),
+            Child = new StackPanel { Children = { header, body } },
+        };
         bool built = false;
         void Open()
         {
@@ -80,19 +88,20 @@ public sealed class SettingsWindow : DarkWindow
             {
                 bool me = ReferenceEquals(b, body);
                 b.Visibility = me ? Visibility.Visible : Visibility.Collapsed;
-                c.Text = me ? "" : "";
+                c.Text = me ? "" : "";
+                if (h.Child is DockPanel dp && dp.Children[1] is StackPanel sp && sp.Children[0] is TextBlock tb)
+                    tb.Foreground = me ? Ui.Res("AccentBrush") : Ui.Res("Fg");
             }
             Anim.Enter(body, 0, -6, 200);
         }
         header.MouseLeftButtonUp += (_, _) =>
         {
-            if (body.Visibility == Visibility.Visible) { body.Visibility = Visibility.Collapsed; chevron.Text = ""; }
+            if (body.Visibility == Visibility.Visible) { body.Visibility = Visibility.Collapsed; chevron.Text = ""; name.Foreground = Ui.Res("Fg"); }
             else Open();
         };
         _accordion.Add((header, body, chevron));
         _openers.Add(Open);
-        _sections.Children.Add(header);
-        _sections.Children.Add(body);
+        _sections.Children.Add(card);
         if (open) Dispatcher.BeginInvoke(Open);
     }
 
@@ -123,6 +132,9 @@ public sealed class SettingsWindow : DarkWindow
         Paint();
         panel.Children.Add(switcher);
         panel.Children.Add(Label(L.T("Każde konto ma osobny folder danych, kalendarze, kategorie i oznaczenia dni. Przełączanie: ikona warstwy na górnym pasku, Ctrl+1 / Ctrl+2."), 11.5, "FgDim"));
+        var syncNote = Label(L.T("Synchronizacja między komputerami: zadania, alarmy i oznaczenia są w folderze konta (board.json), ustawienia programu – w pliku taskwall-settings.json w folderze konta Praca. Lokalne zostają: foldery, ekran i rozmiar, autostart, adresy kalendarzy i tokeny Notion. Folder na Dysku Google jest rozpoznawany niezależnie od litery dysku (G:, H:…)."), 11.5, "FgFaint");
+        syncNote.Margin = new Thickness(0, 6, 0, 0);
+        panel.Children.Add(syncNote);
         panel.Children.Add(_accountBody);
         FillAccount(Paint);
         return panel;

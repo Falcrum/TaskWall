@@ -60,6 +60,7 @@ static class Dev
                 AlarmService.Reschedule();
             }, DispatcherPriority.ApplicationIdle);
         else if (open == "ring")App.Current.Dispatcher.BeginInvoke(() => AlarmToast.Ring(new Alarm { Text = "Telefon do Ani w sprawie budżetu", Day = DateTime.Today.ToString("yyyy-MM-dd"), Time = DateTime.Now.ToString("HH:mm") }, App.Settings.Layer, DateTime.Now.AddMinutes(-7)), DispatcherPriority.ApplicationIdle);
+        else if (open == "menu") { var mt = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) }; mt.Tick += (_, _) => { mt.Stop(); App.Board?.DevOpenMenu?.Invoke(); }; mt.Start(); }
         else if (open == "drawer") App.Current.Dispatcher.BeginInvoke(() => App.Board?.RevealBacklog(), DispatcherPriority.ApplicationIdle);
         else if (open == "calendar") App.Current.Dispatcher.BeginInvoke(() => App.Clock?.Open(), DispatcherPriority.ApplicationIdle);
         else if (open?.StartsWith("import=") == true)
@@ -73,6 +74,9 @@ static class Dev
             timer.Stop();
             Directory.CreateDirectory(shotDir);
             int n = 0;
+            // open menus / pop-ups of this app only (never the whole screen)
+            foreach (var src in PresentationSource.CurrentSources.OfType<HwndSource>().Where(s => s.RootVisual is FrameworkElement { Parent: System.Windows.Controls.Primitives.Popup } || s.RootVisual?.GetType().Name == "PopupRoot"))
+                if (GetWindowRect(src.Handle, out var pr) && pr.Right - pr.Left > 2) SaveScreen(pr.Left, pr.Top, pr.Right - pr.Left, pr.Bottom - pr.Top, Path.Combine(shotDir, $"0-popup-{++n}.png"));
             foreach (Window w in Application.Current.Windows)
             {
                 if (!w.IsVisible) continue;
@@ -321,7 +325,37 @@ static class Dev
             Check("smart add: a bare '3-4' stays text, 'o 9:30' is the start, !!! high",
                 st2.Text == "Odcinki 3-4" && st2.Time == new TimeSpan(9, 30, 0) && st2.End == null && st2.Priority == SmartAdd.PriorityName(3));
             Check("smart add: a meeting keeps its own times", SmartAdd.Parse("[Meeting] 14-15 Sprint", cats, wed).Text.Contains("14-15"));
-            var carried = new TaskItem { Text = "długie", Day = "2026-10-05" };
+            var notStarted = new TaskItem { Text = "zwykłe", Day = "2026-10-05" };
+            notStarted.NoteMove("2026-10-05", "2026-10-06", "2026-10-08");
+            Check("not started (○): moving it on leaves no '↷' days", notStarted.WorkedDays == null);
+            Check("estimates: 15min / 1.5h / 1h30 / 2d / 3 dni / bare 2 = hours; 2 days shown as 2d",
+                BoardWindow.ParseEstimate("15min") == 0.25 && BoardWindow.ParseEstimate("1,5h") == 1.5 && BoardWindow.ParseEstimate("1h30") == 1.5
+                && BoardWindow.ParseEstimate("2d") == 16 && BoardWindow.ParseEstimate("3 dni") == 24 && BoardWindow.ParseEstimate("2") == 2
+                && BoardWindow.ParseEstimate("abc") == null && BoardWindow.Est(16) == L.F("{0}d", 2) && BoardWindow.Est(0.5) == "30min" && BoardWindow.Est(8) == "8h");
+            Check("cloud folder: Google Drive paths recognised whatever the letter / language",
+                SettingsStore.IsGoogleDrivePath(@"H:\Mój dysk\TaskWall") && SettingsStore.IsGoogleDrivePath(@"G:\My Drive\TaskWall") && !SettingsStore.IsGoogleDrivePath(@"D:\Dane\TaskWall"));
+            var dupA = new BoardData { Tasks = { new TaskItem { Id = "a1", Text = "N", NotionId = "p1", Modified = new DateTime(2026, 10, 1) } } };
+            var dupB = new BoardData { Tasks = { new TaskItem { Id = "b1", Text = "N", NotionId = "p1", Modified = new DateTime(2026, 10, 2) } } };
+            var dupM = BoardStore.Merge(dupA, dupB);
+            Check("merge: one Notion page imported on two PCs stays one task (tombstone for the other)",
+                dupM.Tasks.Count == 1 && dupM.Tasks[0].Id == "b1" && dupM.Deleted.ContainsKey("a1"));
+            var futureJson = """{"Tasks":[{"Id":"f1","Text":"x","FutureField":{"a":1}}],"FutureTop":5}""";
+            var future = System.Text.Json.JsonSerializer.Deserialize<BoardData>(futureJson, Json.Options)!;
+            var back = System.Text.Json.JsonSerializer.Serialize(future, Json.Options);
+            Check("fields of a newer version survive a save by this one", back.Contains("FutureField") && back.Contains("FutureTop"));
+            if (Arg("--data") is { } devData) File.Delete(Path.Combine(devData, SharedSettings.FileName)); // a fresh start for the shared-settings test
+            var pc1 = new AppSettings { Theme = "light", UiScale = 2, Weather = new WeatherSettings { City = "Testowo", Enabled = true } };
+            pc1.AccountFor("work").Name = "Biuro";
+            pc1.AccountFor("work").Notion.Database = "https://notion.so/db";
+            SharedSettings.Push(pc1);
+            var pc2 = new AppSettings { UiScale = 1.1 };
+            pc2.AccountFor("work").Notion.TokenProtected = "secret";
+            var changed = SharedSettings.Pull(pc2);
+            Check("shared settings: theme, weather, account name, Notion link come over; screen size and token stay local",
+                pc2.Theme == "light" && pc2.Weather.City == "Testowo" && pc2.AccountFor("work").Name == "Biuro" && pc2.AccountFor("work").Notion.Database == "https://notion.so/db"
+                && pc2.UiScale == 1.1 && pc2.AccountFor("work").Notion.TokenProtected == "secret" && changed.Length > 0 && SharedSettings.Pull(pc2).Length == 0);
+            if (Arg("--data") is { } devData2) File.Delete(Path.Combine(devData2, SharedSettings.FileName));
+            var carried = new TaskItem { Text = "długie", Day = "2026-10-05", Started = true };
             carried.NoteMove("2026-10-05", "2026-10-06", "2026-10-08");
             carried.NoteMove("2026-10-06", "2026-10-08", "2026-10-08");
             Check("continued: past days kept when moving forward, dropped when moving back",

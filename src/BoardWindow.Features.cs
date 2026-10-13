@@ -659,24 +659,62 @@ public partial class BoardWindow
 
     ContextMenu BuildMenu(TaskItem t, StackPanel content, TextBlock text, FrameworkElement row)
     {
+        // order: status and priority (one click, no sub-menus) · edit · when · details · archive / delete
         var menu = new ContextMenu();
-        MenuItem Item(string header, Action action, bool enabled = true)
+        MenuItem Item(string header, Action action, bool enabled = true, string? value = null)
         {
-            var mi = new MenuItem { Header = header, IsEnabled = enabled };
+            var mi = new MenuItem { Header = header, IsEnabled = enabled, InputGestureText = value ?? "" };
             mi.Click += (_, _) => action();
             return mi;
         }
 
+        // ----- status: three states of the circle -----
+        menu.Items.Add(ChipRow(menu, L.T("Status"), new[]
+        {
+            new MenuChip("○  " + L.T("Do zrobienia"), !t.Done && !t.IsStarted, null, () => SetState(t, TaskState.Todo)),
+            new MenuChip("◐  " + L.T("W trakcie"), t.IsStarted, null, () => SetState(t, TaskState.Started)),
+            new MenuChip("✓  " + L.T("Zrobione"), t.Done, null, () => SetState(t, TaskState.Done)),
+        }));
+        // ----- priority (own tasks too; Notion tasks get theirs back from Notion on the next sync) -----
+        var prios = new List<MenuChip> { new("—", string.IsNullOrEmpty(t.Priority), null, () => SetPriority(t, null)) };
+        foreach (var level in new[] { 1, 2, 3 })
+        {
+            var name = SmartAdd.PriorityName(level);
+            prios.Add(new MenuChip(new string('!', level) + "  " + name, string.Equals(t.Priority, name, StringComparison.OrdinalIgnoreCase), PriorityColor(name), () => SetPriority(t, name)));
+        }
+        menu.Items.Add(ChipRow(menu, L.T("Priorytet"), prios));
+        menu.Items.Add(new Separator());
+
+        // ----- edit -----
         if (t.HasLink) menu.Items.Add(Item(L.T("Otwórz w Notion"), () => OpenLink(t)));
         menu.Items.Add(Item(t.HasLink ? L.T("Edytuj tekst") : L.T("Edytuj"), () => BeginEdit(t, content, text, series: false)));
-        menu.Items.Add(Item(t.Done ? L.T("Oznacz jako niezrobione") : L.T("Oznacz jako zrobione"), () => Do(() =>
+        bool hasList = t.Checklist is { Count: > 0 };
+        menu.Items.Add(Item(hasList ? (_expanded.Contains(t.Id) ? L.T("Zwiń listę kontrolną") : L.T("Pokaż listę kontrolną")) : L.T("Dodaj listę kontrolną"), () =>
         {
-            var real = Store.Materialize(t);
-            real.Done = !real.Done;
-            Store.Changed(real);
-            _justToggled = real.Id;
-        })));
+            if (hasList && _expanded.Contains(t.Id)) _expanded.Remove(t.Id);
+            else { _expanded.Add(t.Id); if (!hasList) _checkAddFor = t.Id; }
+            Rebuild();
+        }, value: hasList ? $"{t.Checklist!.Count(x => x.Done)}/{t.Checklist!.Count}" : null));
+        if (hasList)
+            menu.Items.Add(Item(L.F("Usuń listę kontrolną ({0} pkt)", t.Checklist!.Count), () =>
+            {
+                _expanded.Remove(t.Id);
+                Do(() => { var real = Store.Materialize(t); real.Checklist = null; Store.Changed(real); });
+            }));
+        menu.Items.Add(Item(L.T("Duplikuj"), () =>
+        {
+            var copy = t.Clone();
+            copy.Id = Guid.NewGuid().ToString("N");
+            copy.IsVirtual = false;
+            copy.RuleId = copy.RuleDay = null;
+            copy.NotionId = null; // re-imports keep updating only the original
+            copy.Order = t.Order + 0.001;
+            _justAdded = copy.Id;
+            Do(() => Store.Add(copy));
+        }));
+        menu.Items.Add(new Separator());
 
+        // ----- when -----
         var todayKey = DayKey(DateTime.Today);
         if (t.Day != todayKey) menu.Items.Add(Item(L.T("Przenieś na dziś"), () => Do(() => MoveToEnd(t, todayKey))));
         var move = new MenuItem { Header = L.T("Przenieś do") };
@@ -696,114 +734,145 @@ public partial class BoardWindow
             move.Items.Add(Item(label, () => Do(() => MoveToEnd(t, key)), key != t.Day));
         }
         menu.Items.Add(move);
-
-        // recurring series
         if (t.Day != null)
         {
-            var rule = Store.Rule(t.RuleId);
-            var rep = new MenuItem { Header = rule != null ? L.T("Seria:") + " " + rule.Summary : L.T("Powtarzaj") };
-            rep.Items.Add(Item(rule != null ? L.T("Zmień powtarzanie…") : L.T("Powtarzaj…  (co N, wybrane dni, okres od–do)"), () => RepeatWindow.ForTask(Store, t)));
-            rep.Items.Add(new Separator());
-            foreach (var (code, label) in RecurringRule.Patterns)
-            {
-                var d = ParseKey(t.Day);
-                var detail = code switch
-                {
-                    "weekly" or "biweekly" => $" ({d.ToString("dddd", Pl)})",
-                    "monthly" => " " + L.F("({0}. dnia)", d.Day),
-                    _ => "",
-                };
-                rep.Items.Add(Item((rule?.Pattern == code ? "✓  " : "     ") + label + detail, () => Do(() =>
-                {
-                    if (rule != null) { rule.Pattern = code; rule.Interval = 1; rule.Weekdays = null; rule.Start = t.RuleDay ?? t.Day; Store.Changed(rule); return; }
-                    var real = Store.Materialize(t);
-                    var r = new RecurringRule { Text = real.Text, Pattern = code, Start = real.Day!, Estimate = real.Estimate, Order = real.Order };
-                    Store.AddRule(r);
-                    real.RuleId = r.Id;
-                    real.RuleDay = real.Day;
-                    Store.Changed(real);
-                })));
-            }
-            if (rule != null)
-            {
-                rep.Items.Add(new Separator());
-                rep.Items.Add(Item(L.T("Zmień nazwę serii"), () => BeginEdit(t, content, text, series: true)));
-                rep.Items.Add(Item(L.T("Zakończ serię na tym dniu"), () => Do(() => { rule.End = t.RuleDay ?? t.Day; Store.Changed(rule); })));
-                rep.Items.Add(Item(L.T("Usuń serię (wykonane zostają)"), () => Do(() => { rule.Deleted = true; Store.Changed(rule); })));
-            }
-            menu.Items.Add(rep);
             menu.Items.Add(StartedMenu(t));
             menu.Items.Add(PlannedMenu(t));
+            menu.Items.Add(RepeatMenu(t, content, text));
         }
-
-        bool hasList = t.Checklist is { Count: > 0 };
-        menu.Items.Add(Item(hasList ? (_expanded.Contains(t.Id) ? L.T("Zwiń listę kontrolną") : L.T("Pokaż listę kontrolną")) : L.T("Dodaj listę kontrolną"), () =>
-        {
-            if (hasList && _expanded.Contains(t.Id)) _expanded.Remove(t.Id);
-            else { _expanded.Add(t.Id); if (!hasList) _checkAddFor = t.Id; }
-            Rebuild();
-        }));
-        if (hasList)
-            menu.Items.Add(Item(L.F("Usuń listę kontrolną ({0} pkt)", t.Checklist!.Count), () =>
-            {
-                _expanded.Remove(t.Id);
-                Do(() => { var real = Store.Materialize(t); real.Checklist = null; Store.Changed(real); });
-            }));
-
-        var est = new MenuItem { Header = L.T("Estymacja") +(t.Estimate is > 0 ? $"  ({Hours(t.Estimate.Value)})" : "") };
-        foreach (var h in new double?[] { null, 0.5, 1, 1.5, 2, 3, 4, 6, 8 })
-        {
-            var label = h == null ? L.T("Brak") : Hours(h.Value);
-            if (t.Estimate == h) label = "✓  " + label;
-            est.Items.Add(Item(label, () => Do(() => { var real = Store.Materialize(t); real.Estimate = h; Store.Changed(real); })));
-        }
-        menu.Items.Add(est);
-
-        // priority (also for own / private tasks; Notion tasks get theirs from Notion on the next sync)
-        var prio = new MenuItem { Header = L.T("Priorytet") + (t.Priority != null ? $"  ({t.Priority})" : "") };
-        foreach (var (level, name) in new[] { (3, SmartAdd.PriorityName(3)), (2, SmartAdd.PriorityName(2)), (1, SmartAdd.PriorityName(1)), (0, L.T("Brak")) })
-        {
-            var value = level == 0 ? null : name;
-            var label = (string.Equals(t.Priority, value, StringComparison.OrdinalIgnoreCase) ? "✓  " : "     ") + name + (level > 0 ? $"   {new string('!', level)}" : "");
-            prio.Items.Add(Item(label, () => Do(() => { var real = Store.Materialize(t); real.Priority = value; Store.Changed(real); })));
-        }
-        menu.Items.Add(prio);
         if (t.Time != null)
             menu.Items.Add(Item(L.F("Usuń godziny ({0})", t.End != null ? $"{t.Time}–{t.End}" : t.Time), () => Do(() => { var real = Store.Materialize(t); real.Time = real.End = null; Store.Changed(real); })));
+        menu.Items.Add(new Separator());
+
+        // ----- details -----
+        var est = new MenuItem { Header = L.T("Estymacja"), InputGestureText = t.Estimate is > 0 ? Est(t.Estimate.Value) : "" };
+        foreach (var h in new double?[] { null, 0.25, 0.5, 1, 2, 3, 4, 6, 8, 16, 24, 32, 40 })
+        {
+            var label = h == null ? L.T("Brak") : Est(h.Value, longForm: true);
+            est.Items.Add(Item((t.Estimate == h ? "✓  " : "     ") + label, () => SetEstimate(t, h)));
+        }
+        est.Items.Add(new Separator());
+        bool custom = t.Estimate is { } ce && !new[] { 0.25, 0.5, 1, 2, 3, 4, 6, 8, 16, 24, 32, 40 }.Contains(ce);
+        est.Items.Add(Item((custom ? "✓  " : "     ") + L.T("Inna…") + (custom ? $"  ({Est(t.Estimate!.Value, true)})" : ""), () =>
+        {
+            var answer = AskWindow.Ask(L.T("Estymacja"), L.T("Czas zadania, np. 45min, 1,5h, 1h30, 2d (dzień = 8 h):"),
+                t.Estimate is { } cur ? Est(cur) : "", s => s.Trim().Length == 0 || ParseEstimate(s) != null ? "" : L.T("Nie rozpoznano – np. 45min, 2h, 3d"));
+            if (answer != null && ParseEstimate(answer) is { } v) SetEstimate(t, v);
+        }));
+        menu.Items.Add(est);
 
         var tags = TaskItem.Tags(t.Text, out _);
-        var cats = new MenuItem { Header = L.T("Kategoria") +(tags.Count > 0 ? $"  ({string.Join(", ", tags.Select(x => Store.CategoryFor(x)?.Name ?? x))})" : "") };
+        var cats = new MenuItem { Header = L.T("Kategoria"), InputGestureText = string.Join(", ", tags.Select(x => Store.CategoryFor(x)?.Name ?? x)) };
         foreach (var c in Store.Categories)
         {
             bool has = tags.Contains(c.Key);
-            var mi = Item((has ? "✓  " : "     ") + c.Name, () => Do(() =>
+            var mi = Item(c.Name, () => Do(() =>
             {
                 var real = Store.Materialize(t);
                 real.Text = ToggleCategory(real.Text, c.Name);
                 Store.Changed(real);
-            }));
+            }), value: has ? "✓" : null);
             try { mi.Icon = new System.Windows.Shapes.Ellipse { Width = 9, Height = 9, Fill = B((Color)ColorConverter.ConvertFromString(c.Color)) }; } catch { }
             cats.Items.Add(mi);
         }
         cats.Items.Add(new Separator());
         cats.Items.Add(Item(L.T("Edytuj kategorie…"), () => App.Instance.ShowSettings()));
         menu.Items.Add(cats);
-
-        menu.Items.Add(Item(L.T("Duplikuj"), () =>
-        {
-            var copy = t.Clone();
-            copy.Id = Guid.NewGuid().ToString("N");
-            copy.IsVirtual = false;
-            copy.RuleId = copy.RuleDay = null;
-            copy.NotionId = null; // re-imports keep updating only the original
-            copy.Order = t.Order + 0.001;
-            _justAdded = copy.Id;
-            Do(() => Store.Add(copy));
-        }));
         menu.Items.Add(new Separator());
+
+        // ----- archive / delete -----
         menu.Items.Add(Item(t.IsVirtual ? L.T("Pomiń to wystąpienie") : L.T("Archiwizuj"), () => ArchiveRow(t, row)));
-        if (!t.IsVirtual) menu.Items.Add(Item(L.T("Usuń całkowicie"), () => DeleteForGood(t, row)));
+        if (!t.IsVirtual)
+        {
+            var del = Item(L.T("Usuń całkowicie"), () => DeleteForGood(t, row));
+            del.Foreground = Tx(Color.FromRgb(0xF2, 0x6D, 0x6D));
+            menu.Items.Add(del);
+        }
         return menu;
+    }
+
+    MenuItem RepeatMenu(TaskItem t, StackPanel content, TextBlock text)
+    {
+        MenuItem Item(string header, Action action)
+        {
+            var mi = new MenuItem { Header = header };
+            mi.Click += (_, _) => action();
+            return mi;
+        }
+        var rule = Store.Rule(t.RuleId);
+        var rep = new MenuItem { Header = L.T("Powtarzaj"), InputGestureText = rule?.Summary ?? "" };
+        rep.Items.Add(Item(rule != null ? L.T("Zmień powtarzanie…") : L.T("Powtarzaj…  (co N, wybrane dni, okres od–do)"), () => RepeatWindow.ForTask(Store, t)));
+        rep.Items.Add(new Separator());
+        foreach (var (code, label) in RecurringRule.Patterns)
+        {
+            var d = ParseKey(t.Day!);
+            var detail = code switch
+            {
+                "weekly" or "biweekly" => $" ({d.ToString("dddd", Pl)})",
+                "monthly" => " " + L.F("({0}. dnia)", d.Day),
+                _ => "",
+            };
+            rep.Items.Add(Item((rule?.Pattern == code ? "✓  " : "     ") + label + detail, () => Do(() =>
+            {
+                if (rule != null) { rule.Pattern = code; rule.Interval = 1; rule.Weekdays = null; rule.Start = t.RuleDay ?? t.Day!; Store.Changed(rule); return; }
+                var real = Store.Materialize(t);
+                var r = new RecurringRule { Text = real.Text, Pattern = code, Start = real.Day!, Estimate = real.Estimate, Order = real.Order };
+                Store.AddRule(r);
+                real.RuleId = r.Id;
+                real.RuleDay = real.Day;
+                Store.Changed(real);
+            })));
+        }
+        if (rule != null)
+        {
+            rep.Items.Add(new Separator());
+            rep.Items.Add(Item(L.T("Zmień nazwę serii"), () => BeginEdit(t, content, text, series: true)));
+            rep.Items.Add(Item(L.T("Zakończ serię na tym dniu"), () => Do(() => { rule.End = t.RuleDay ?? t.Day; Store.Changed(rule); })));
+            rep.Items.Add(Item(L.T("Usuń serię (wykonane zostają)"), () => Do(() => { rule.Deleted = true; Store.Changed(rule); })));
+        }
+        return rep;
+    }
+
+    void SetPriority(TaskItem t, string? value) => Do(() => { var real = Store.Materialize(t); real.Priority = value; Store.Changed(real); });
+    void SetEstimate(TaskItem t, double? hours) => Do(() => { var real = Store.Materialize(t); real.Estimate = hours; Store.Changed(real); });
+
+    sealed record MenuChip(string Text, bool Selected, Color? Color, Action Click);
+
+    /// <summary>A row of one-click choices inside a context menu (status, priority) – no sub-menu to open.</summary>
+    static MenuItem ChipRow(ContextMenu menu, string caption, IEnumerable<MenuChip> chips)
+    {
+        var panel = new StackPanel { Margin = new Thickness(8, 4, 8, 4) };
+        panel.Children.Add(new TextBlock { Text = L.Up(caption), FontSize = 9.5, FontWeight = FontWeights.Bold, Foreground = Res("FgFaint"), Margin = new Thickness(2, 0, 0, 4) });
+        var wrap = new WrapPanel();
+        foreach (var c in chips)
+        {
+            var fg = c.Color is { } col ? Tx(col) : c.Selected ? Res("Fg") : Res("FgDim");
+            var chip = new Border
+            {
+                CornerRadius = new CornerRadius(6), Padding = new Thickness(8, 3, 8, 4), Margin = new Thickness(0, 0, 4, 0), Cursor = Cursors.Hand,
+                BorderThickness = new Thickness(1),
+                BorderBrush = c.Selected ? Res("AccentBrush") : Res("Line"),
+                Background = c.Selected ? Res("AccentSoft") : Brushes.Transparent,
+                Child = new TextBlock { Text = c.Text, FontSize = 11.5, FontWeight = c.Selected ? FontWeights.SemiBold : FontWeights.Normal, Foreground = fg },
+            };
+            if (!c.Selected) Anim.HoverBackground(chip, Colors.Transparent, Th.Ink(0x1C));
+            var click = c.Click;
+            chip.MouseLeftButtonUp += (_, e) => { e.Handled = true; menu.IsOpen = false; click(); };
+            wrap.Children.Add(chip);
+        }
+        panel.Children.Add(wrap);
+        return new MenuItem { Header = panel, Template = PlainItem, Focusable = false };
+    }
+
+    /// <summary>Menu item without hover / highlight – a container for custom content.</summary>
+    static readonly ControlTemplate PlainItem = MakePlainItem();
+    static ControlTemplate MakePlainItem()
+    {
+        var t = new ControlTemplate(typeof(MenuItem));
+        var cp = new FrameworkElementFactory(typeof(ContentPresenter));
+        cp.SetValue(ContentPresenter.ContentSourceProperty, "Header");
+        t.VisualTree = cp;
+        return t;
     }
 
     /// <summary>Adds "[Name] " at the front, or removes it when it's already there.</summary>

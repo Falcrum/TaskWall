@@ -16,12 +16,17 @@ public class DarkWindow : Window
 {
     public DarkWindow()
     {
-        Background = Ui.Res("DialogBg");
+        SetResourceReference(BackgroundProperty, "DialogBg"); // follows the wallpaper's hue (App.ApplyTheme)
         Foreground = Ui.Res("Fg");
         FontFamily = Ui.Font("UiFont");
         FontSize = 12.5;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        SourceInitialized += (_, _) => Native.UseDarkTitleBar(new WindowInteropHelper(this).Handle);
+        SourceInitialized += (_, _) =>
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            Native.UseDarkTitleBar(hwnd);
+            if (Background is SolidColorBrush bg) Native.TintFrame(hwnd, bg.Color); // the title bar in the same colour as the window
+        };
     }
 
     protected static TextBlock Label(string text, double size = 12.5, string brush = "Fg", FontWeight? weight = null) => new()

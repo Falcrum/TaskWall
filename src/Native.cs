@@ -84,6 +84,16 @@ static class Native
         DwmSetWindowAttribute(hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, ref on, sizeof(int));
     }
 
+    /// <summary>Windows 11: title bar and frame in the dialog's own colour (no separate grey bar), rounded corners.</summary>
+    public static void TintFrame(IntPtr hwnd, System.Windows.Media.Color c)
+    {
+        int rgb = c.R | (c.G << 8) | (c.B << 16);
+        DwmSetWindowAttribute(hwnd, 35 /* DWMWA_CAPTION_COLOR */, ref rgb, sizeof(int));
+        DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, ref rgb, sizeof(int));
+        int round = 2; // DWMWCP_ROUND
+        DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, ref round, sizeof(int));
+    }
+
     // ----- foreground tracking (for "show desktop") -----
     public delegate void WinEventProc(IntPtr hook, uint evt, IntPtr hwnd, int idObject, int idChild, uint thread, uint time);
     [DllImport("user32.dll")] public static extern IntPtr SetWinEventHook(uint min, uint max, IntPtr mod, WinEventProc proc, uint pid, uint tid, uint flags);

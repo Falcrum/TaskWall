@@ -140,7 +140,7 @@ public sealed class TodayWindow : Window
             if (t.Done) { text.TextDecorations = TextDecorations.Strikethrough; text.Opacity = 0.5; }
             if (t.Estimate is > 0)
             {
-                var est = new TextBlock { Text = t.Estimate.Value.ToString("0.#", BoardWindow.Pl) + "h", Foreground = Ui.Res("FgFaint"), FontSize = 11, Margin = new Thickness(6, 1, 0, 0) };
+                var est = new TextBlock { Text = BoardWindow.Est(t.Estimate.Value), Foreground = Ui.Res("FgFaint"), FontSize = 11, Margin = new Thickness(6, 1, 0, 0) };
                 DockPanel.SetDock(est, Dock.Right);
                 row.Children.Add(est);
             }
@@ -152,7 +152,7 @@ public sealed class TodayWindow : Window
         var overdue = Store.Data.Tasks.Count(t => !t.Done && !t.Archived && t.Day != null && string.CompareOrdinal(t.Day, key) < 0);
         if (overdue > 0)
         {
-            var roll = new Button { Style = (Style)Application.Current.Resources["BarButton"], Content = L.F("↷ KONTYNUUJ DZIŚ ({0})", overdue), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(-8, 4, 0, 0) };
+            var roll = new Button { Style = (Style)Application.Current.Resources["BarButton"], Content = L.F("↷ NA DZIŚ ({0})", overdue), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(-8, 4, 0, 0) };
             roll.Foreground = new SolidColorBrush(Color.FromRgb(0xF2, 0xA6, 0x5A));
             roll.Click += (_, _) => { App.Board?.RollOverdue(); Fill(); };
             _body.Children.Add(roll);

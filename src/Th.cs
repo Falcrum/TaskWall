@@ -41,6 +41,7 @@ static class Th
         Set("MenuBg", "#F5F7F8FA");
         Set("DialogBg", "#FFF3F4F7");
         Set("CardBg", "#FFFFFFFF");
+        Set("MenuBorder", "#2410141C");
         Set("InkSoft", "#1C10141C");
         Set("InkMid", "#3310141C");
         Set("InkLine", "#5C10141C");

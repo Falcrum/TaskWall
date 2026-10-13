@@ -331,6 +331,29 @@ static class Wallpaper
         return FromHsv(h2, Math.Clamp(s2 * 1.25, 0.5, 0.85), 0.96);
     }
 
+    /// <summary>Average colour of the wallpaper behind the area – menus and dialogs take its hue, so they sit with the glass.</summary>
+    public static Color? Average(Source s, Int32Rect area)
+    {
+        var small = Render(s, area, 0, 0.05);
+        if (small == null) return null;
+        var bmp = new FormatConvertedBitmap(small, PixelFormats.Bgra32, null, 0);
+        int stride = bmp.PixelWidth * 4;
+        var px = new byte[stride * bmp.PixelHeight];
+        bmp.CopyPixels(px, stride, 0);
+        double r = 0, g = 0, b = 0;
+        int n = 0;
+        for (int i = 0; i < px.Length; i += 16, n++) { b += px[i]; g += px[i + 1]; r += px[i + 2]; }
+        return n > 0 ? Color.FromRgb((byte)(r / n), (byte)(g / n), (byte)(b / n)) : null;
+    }
+
+    /// <summary>A surface of the given brightness in the hue of <paramref name="tint"/> (saturation kept low).</summary>
+    public static Color Surface(Color tint, double value, double maxSat, byte alpha = 255)
+    {
+        ToHsv(tint.R / 255.0, tint.G / 255.0, tint.B / 255.0, out var h, out var sat, out _);
+        var c = FromHsv(h, Math.Min(sat * 0.7, maxSat), value);
+        return Color.FromArgb(alpha, c.R, c.G, c.B);
+    }
+
     /// <summary>Average brightness (0..1) of the wallpaper behind the area – for the automatic light / dark theme.</summary>
     public static double? Luminance(Source s, Int32Rect area)
     {
