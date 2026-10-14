@@ -350,8 +350,38 @@ public sealed class SettingsWindow : DarkWindow
         return panel;
     }
 
+    /// <summary>
+    /// Guards against a wrong pick: the backup sub-folder, a folder with TaskWall data one level down, the other
+    /// account's folder, or a busy folder without any TaskWall data. Returns the folder to use, or null to cancel.
+    /// </summary>
+    string? CheckDataFolder(string layer, string path)
+    {
+        path = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar);
+        bool HasData(string dir) => File.Exists(Path.Combine(dir, BoardStore.FileName));
+        MessageBoxResult Ask(string text) => MessageBox.Show(this, text, "TaskWall", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+        if (SettingsStore.DataFolderFix(path) is { } parent && parent != path)
+            return Ask(L.F("Wybrany folder to kopie zapasowe TaskWall.\nUżyć folderu z danymi:\n{0}?", parent)) == MessageBoxResult.Yes ? parent : null;
+        foreach (var other in S.Accounts.Where(a => a.Id != layer))
+            if (string.Equals(Path.GetFullPath(App.LayerFolder(other.Id)).TrimEnd(Path.DirectorySeparatorChar), path, StringComparison.OrdinalIgnoreCase))
+            {
+                MessageBox.Show(this, L.F("Ten folder należy już do konta „{0}”. Każde konto potrzebuje osobnego folderu.", App.AccountName(other.Id)), "TaskWall", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return null;
+            }
+        if (HasData(path)) return path;
+        foreach (var name in new[] { "TaskWall", "TaskWall Prywatne" })
+            if (HasData(Path.Combine(path, name)) && Ask(L.F("W tym folderze nie ma danych TaskWall, ale są w podfolderze:\n{0}\nUżyć go?", Path.Combine(path, name))) == MessageBoxResult.Yes)
+                return Path.Combine(path, name);
+        if (Directory.Exists(path) && Directory.EnumerateFileSystemEntries(path).Take(4).Count() > 3
+            && Ask(L.F("Folder „{0}” nie zawiera danych TaskWall, a są w nim inne pliki.\nZacząć tutaj nową, pustą tablicę?", path)) != MessageBoxResult.Yes)
+            return null;
+        return path;
+    }
+
     void UseFolder(string layer, string path, TextBox box)
     {
+        if (CheckDataFolder(layer, path) is not { } checkedPath) return;
+        path = checkedPath;
         if (string.Equals(Path.GetFullPath(path), Path.GetFullPath(App.LayerFolder(layer)), StringComparison.OrdinalIgnoreCase)) return;
         try
         {
@@ -423,7 +453,7 @@ public sealed class SettingsWindow : DarkWindow
             : WeatherService.Error != null ? L.F("Błąd: {0}", WeatherService.Error)
             : WeatherService.Fetched is { } f ? L.F("{0} · pobrano {1}", w.City, f.ToString("HH:mm")) : w.City;
         p.Children.Add(Check(L.T("Pokazuj pogodę w nagłówkach dni"), w.Enabled, v => { w.Enabled = v; if (v) WeatherService.Refresh(); }));
-        p.Children.Add(Check(L.T("Szansa opadów (0–100%)"), w.ShowRain, v => w.ShowRain = v));
+        p.Children.Add(Check(L.T("Opady: szansa (0–100%) i przewidywana ilość (mm)"), w.ShowRain, v => w.ShowRain = v));
         p.Children.Add(Check(L.T("Prędkość wiatru (km/h)"), w.ShowWind, v => w.ShowWind = v));
 
         var row = new DockPanel { Margin = new Thickness(0, 8, 0, 0) };

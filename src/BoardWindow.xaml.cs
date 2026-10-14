@@ -579,16 +579,18 @@ public partial class BoardWindow : GlassWindow
             double fsw = compact ? 9.5 : 10;
             var w = new TextBlock { FontSize = fsw, Foreground = Res("FgDim"), TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, compact ? 0 : 1, 0, 0) };
             w.Inlines.Add(new Run(symbol + " ") { FontFamily = new FontFamily("Segoe UI Symbol"), Foreground = Res("AccentBrush") });
-            w.Inlines.Add(new Run($"{Math.Round(wd.Max):0}°" + (double.IsNaN(wd.Min) ? "" : $" / {Math.Round(wd.Min):0}°")));
-            if (S.Weather.ShowRain && wd.Rain is { } rain) w.Inlines.Add(new Run($"    ☂ {rain}%") { Foreground = Res("FgFaint") });
+            w.Inlines.Add(new Run($"{Math.Round(wd.Max):0}°" + (double.IsNaN(wd.Min) ? "" : $"/{Math.Round(wd.Min):0}°")));
+            if (S.Weather.ShowRain && wd.Rain is { } rain) // chance and the expected amount: "☂ 88% · 3,2 mm"
+                w.Inlines.Add(new Run($"  ☂ {rain}%" + (wd.Mm is >= 0.1 and var mm ? " · " + mm.ToString(mm < 10 ? "0.#" : "0", Pl) + "mm" : "")) { Foreground = Res("FgFaint") });
             if (S.Weather.ShowWind && wd.Wind is { } wind)
             {
-                w.Inlines.Add(new Run("    "));
+                w.Inlines.Add(new Run("  "));
                 w.Inlines.Add(new InlineUIContainer(Icons.Wind(Res("FgFaint"), fsw + 1)) { BaselineAlignment = BaselineAlignment.Center });
-                w.Inlines.Add(new Run($" {Math.Round(wind):0} km/h") { Foreground = Res("FgFaint") });
+                w.Inlines.Add(new Run($" {Math.Round(wind):0}km/h") { Foreground = Res("FgFaint") });
             }
             w.ToolTip = $"{desc}\n{L.F("max {0}°, min {1}°", Math.Round(wd.Max), Math.Round(wd.Min))}"
                 + (wd.Rain is { } r ? "\n" + L.F("szansa opadów {0}%", r) : "")
+                + (wd.Mm is { } mmTip ? "\n" + L.F("opady: {0} mm", mmTip.ToString("0.#", Pl)) : "")
                 + (wd.Wind is { } wi ? "\n" + L.F("wiatr do {0} km/h", Math.Round(wi)) : "") + $"\n{S.Weather.City}";
             left.Children.Add(w);
         }
@@ -1177,6 +1179,8 @@ public partial class BoardWindow : GlassWindow
         }
         if (t.RuleId != null && Store.Rule(t.RuleId) is { } rule)
             text.ToolTip = (text.ToolTip is string s0 ? s0 + "\n" : "") + L.T("Seria: ") + rule.Summary;
+        var side = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top };
+        Grid.SetColumn(side, 2);
         if (t.Checklist is { Count: > 0 } cl)
         {
             int cd = cl.Count(x => x.Done);
@@ -1186,14 +1190,17 @@ public partial class BoardWindow : GlassWindow
                 Background = B(Th.Ink(0x1E)), ToolTip = _expanded.Contains(t.Id) ? L.T("Zwiń listę") : L.T("Rozwiń listę"),
                 Child = new TextBlock { Text = $"☑ {cd}/{cl.Count}", FontSize = Math.Max(8.5, fs - 2.5), Foreground = cd == cl.Count ? Res("AccentBrush") : Res("FgDim") },
             };
+            // its own column next to the estimate: never cut off by a one-line (multi-day) row, never over the estimate
+            chip.Margin = new Thickness(6, Math.Max(0, (fs * 1.33 - (fs + 1)) / 2), 0, 0);
+            chip.VerticalAlignment = VerticalAlignment.Top;
             chip.PreviewMouseLeftButtonDown += (_, e) => e.Handled = true;
-            chip.MouseLeftButtonUp += (_, e) =>
+            chip.PreviewMouseLeftButtonUp += (_, e) =>
             {
                 e.Handled = true;
                 if (!_expanded.Remove(t.Id)) _expanded.Add(t.Id);
                 Rebuild();
             };
-            text.Inlines.Add(new InlineUIContainer(chip) { BaselineAlignment = BaselineAlignment.Center });
+            side.Children.Add(chip);
         }
         if (t.Done)
         {
@@ -1230,9 +1237,9 @@ public partial class BoardWindow : GlassWindow
                 Margin = new Thickness(6, 1, 0, 0),
                 Opacity = t.Done ? 0.5 : 1,
             };
-            Grid.SetColumn(est, 2);
-            grid.Children.Add(est);
+            side.Children.Add(est);
         }
+        grid.Children.Add(side);
 
         // archive (on hover)
         var del = new Button
@@ -1290,6 +1297,7 @@ public partial class BoardWindow : GlassWindow
     }
 
     public Action? DevOpenMenu;
+    public void DevExpandAll() { foreach (var t in Store.Data.Tasks.Where(t => t.Checklist is { Count: > 0 })) _expanded.Add(t.Id); Rebuild(); }
     /// <summary>Task row under the mouse (keyboard shortcuts act on it).</summary>
     (TaskItem Task, StackPanel Content, TextBlock Text, FrameworkElement Row)? _hover;
     readonly HashSet<string> _expanded = new();  // tasks whose checklist is open

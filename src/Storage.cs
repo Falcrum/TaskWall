@@ -117,6 +117,7 @@ static class SettingsStore
             if (s.SettingsVersion < 7 && acc.Calendars.Count == 0)
                 acc.Calendars.Add(new CalendarFeed { Name = "Święta w Polsce", Url = CalendarFeed.PolishHolidaysUrl, Kind = "holidays" });
             acc.Folder = ResolveCloudFolder(acc.Folder);
+            if (DataFolderFix(acc.Folder) is { } fixedFolder && fixedFolder != acc.Folder) { Log.Error($"data folder {acc.Folder} is a backup folder → {fixedFolder}"); acc.Folder = fixedFolder; }
         }
         s.SettingsVersion = CurrentVersion;
         return s;
@@ -134,6 +135,23 @@ static class SettingsStore
         }
         catch (Exception ex) { Log.Error("settings save", ex); }
     }
+
+    /// <summary>"…\TaskWall\backup" (or a folder inside it) picked by mistake → the data folder above it; otherwise null.</summary>
+    public static string? DataFolderFix(string folder)
+    {
+        try
+        {
+            var dir = new DirectoryInfo(Path.GetFullPath(folder));
+            for (var d = dir; d?.Parent != null; d = d.Parent)
+                if (d.Name.Equals("backup", StringComparison.OrdinalIgnoreCase) && File.Exists(Path.Combine(d.Parent.FullName, BoardStore.FileName)))
+                    return d.Parent.FullName;
+        }
+        catch { }
+        return null;
+    }
+
+    /// <summary>This computer's copy of an account's data: the board starts from it while the cloud drive isn't there yet.</summary>
+    public static string CacheFolder(string layer) => Path.Combine(Dir, "cache", layer);
 
     static readonly string[] DriveNames = { "Mój dysk", "My Drive" };
     static readonly string[] SharedNames = { "Dyski współdzielone", "Shared drives" };
@@ -251,6 +269,28 @@ public sealed class BoardStore
     public string BackupFolder => Path.Combine(Folder, "backup");
     public DateTime? LastSaved { get; private set; }
     public DateTime? LastExternalChange { get; private set; }
+    /// <summary>This computer's copy of the data (outside the cloud folder): the board starts from it when the cloud drive isn't mounted yet.</summary>
+    public string? MirrorFolder { get; set; }
+    /// <summary>The cloud folder this account waits for (working on the local copy meanwhile); null = connected.</summary>
+    public string? Offline { get; set; }
+    string? _mirrorHash;
+
+    public void WriteMirror(string? json)
+    {
+        if (MirrorFolder == null) return;
+        try
+        {
+            json ??= JsonSerializer.Serialize(Data, Json.Options);
+            var hash = Hash(json);
+            if (hash == _mirrorHash) return;
+            Directory.CreateDirectory(MirrorFolder);
+            var path = Path.Combine(MirrorFolder, FileName);
+            File.WriteAllText(path + ".tmp", json, new UTF8Encoding(false));
+            File.Move(path + ".tmp", path, true);
+            _mirrorHash = hash;
+        }
+        catch (Exception ex) { Log.Error("local copy", ex); }
+    }
 
     // ---------- sync status (the icon in the top bar) ----------
     public DateTime? LastCheck { get; private set; }
@@ -818,6 +858,7 @@ public sealed class BoardStore
                 SetError(null);
             }
             DailyBackup();
+            WriteMirror(json);
             if (merged)
             {
                 _undo.Clear();
@@ -864,6 +905,7 @@ public sealed class BoardStore
                 // If we hold changes the other side doesn't have yet, push them back.
                 EnsureCategories();
                 if (Hash(JsonSerializer.Serialize(merged, Json.Options)) != disk.Hash) MarkDirty();
+                WriteMirror(null);
                 ExternalChange?.Invoke();
             }
             MergeConflictCopies();

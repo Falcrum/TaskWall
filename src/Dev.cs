@@ -62,6 +62,7 @@ static class Dev
         else if (open == "ring")App.Current.Dispatcher.BeginInvoke(() => AlarmToast.Ring(new Alarm { Text = "Telefon do Ani w sprawie budżetu", Day = DateTime.Today.ToString("yyyy-MM-dd"), Time = DateTime.Now.ToString("HH:mm") }, App.Settings.Layer, DateTime.Now.AddMinutes(-7)), DispatcherPriority.ApplicationIdle);
         else if (open == "menu") { var mt = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) }; mt.Tick += (_, _) => { mt.Stop(); App.Board?.DevOpenMenu?.Invoke(); }; mt.Start(); }
         else if (open == "summary") App.Current.Dispatcher.BeginInvoke(() => WeekSummaryWindow.Show(App.Store, BoardWindow.Monday(DateTime.Today), App.Settings.Layer), DispatcherPriority.ApplicationIdle);
+        else if (open == "expand") App.Current.Dispatcher.BeginInvoke(() => App.Board?.DevExpandAll(), DispatcherPriority.ApplicationIdle);
         else if (open == "drawer") App.Current.Dispatcher.BeginInvoke(() => App.Board?.RevealBacklog(), DispatcherPriority.ApplicationIdle);
         else if (open == "calendar") App.Current.Dispatcher.BeginInvoke(() => App.Clock?.Open(), DispatcherPriority.ApplicationIdle);
         else if (open?.StartsWith("import=") == true)
@@ -381,6 +382,14 @@ static class Dev
             binStore.EmptyBin();
             Check("bin: emptied entries stay hidden", !binStore.BinItems.Any());
             try { Directory.Delete(binDir, true); } catch { }
+            var fixDir = Path.Combine(Path.GetTempPath(), "taskwall-fix-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path.Combine(fixDir, "backup"));
+            File.WriteAllText(Path.Combine(fixDir, BoardStore.FileName), "{}");
+            Check("data folder: the backup sub-folder picked by mistake points back to the data folder",
+                SettingsStore.DataFolderFix(Path.Combine(fixDir, "backup")) == fixDir && SettingsStore.DataFolderFix(fixDir) == null);
+            try { Directory.Delete(fixDir, true); } catch { }
+            var wxMm = WeatherService.Parse("""{"daily":{"time":["2026-10-14"],"weather_code":[61],"temperature_2m_max":[12],"temperature_2m_min":[7],"precipitation_probability_max":[88],"precipitation_sum":[3.2],"wind_speed_10m_max":[20]}}""");
+            Check("weather: rain amount in mm read", wxMm.Values.Single().Mm == 3.2 && wxMm.Values.Single().Rain == 88);
             var carried = new TaskItem { Text = "długie", Day = "2026-10-05", Started = true };
             carried.NoteMove("2026-10-05", "2026-10-06", "2026-10-08");
             carried.NoteMove("2026-10-06", "2026-10-08", "2026-10-08");

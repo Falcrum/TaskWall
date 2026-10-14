@@ -5,6 +5,14 @@ static partial class L
     /// <summary>Polish → English (Board).</summary>
     static readonly (string Pl, string En)[] Board =
     {
+        // 0.15.1: rain amount, folder checks, local copy
+        ("Opady: szansa (0–100%) i przewidywana ilość (mm)", "Rain: chance (0–100%) and expected amount (mm)"),
+        ("opady: {0} mm", "rain: {0} mm"),
+        ("Wybrany folder to kopie zapasowe TaskWall.\nUżyć folderu z danymi:\n{0}?", "This is the TaskWall backup folder.\nUse the data folder instead:\n{0}?"),
+        ("Ten folder należy już do konta „{0}”. Każde konto potrzebuje osobnego folderu.", "This folder already belongs to the \"{0}\" account. Each account needs its own folder."),
+        ("W tym folderze nie ma danych TaskWall, ale są w podfolderze:\n{0}\nUżyć go?", "There is no TaskWall data in this folder, but there is in a sub-folder:\n{0}\nUse it?"),
+        ("Folder „{0}” nie zawiera danych TaskWall, a są w nim inne pliki.\nZacząć tutaj nową, pustą tablicę?", "\"{0}\" has no TaskWall data but other files.\nStart a new, empty board here?"),
+        ("Czekam na folder {0} – do tego czasu tablica pracuje na kopii z tego komputera; zmiany trafią do folderu, gdy się pojawi.", "Waiting for {0} – meanwhile the board works on this computer's copy; changes go to the folder once it's there."),
         // 0.15: bin, workday limit, weekly summary, keyboard on the hovered task
         ("Usunięto do kosza: {0}", "Moved to the bin: {0}"),
         ("kosz, 30 dni", "bin, 30 days"),

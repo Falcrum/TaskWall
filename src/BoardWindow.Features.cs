@@ -96,10 +96,11 @@ public partial class BoardWindow
             + "\n" + L.F("Sprawdzono folder: {0}", T(st.LastCheck))
             + "\n" + L.F("Zmiany z innego komputera: {0}", T(st.LastExternalChange))
             + (notion.Configured ? "\n" + L.F("Notion: {0}", notion.LastResult ?? "—") : "")
+            + (st.Offline != null ? "\n\n⚠ " + L.F("Czekam na folder {0} – do tego czasu tablica pracuje na kopii z tego komputera; zmiany trafią do folderu, gdy się pojawi.", st.Offline) : "")
             + (st.LastError != null ? "\n\n⚠ " + st.LastError : "")
             + "\n\n" + L.T("Kliknij, żeby zsynchronizować teraz");
         SyncButton.ToolTip = tip;
-        bool error = st.LastError != null || notion.LastResult?.Contains(L.T("błąd")) == true;
+        bool error = st.LastError != null || st.Offline != null || notion.LastResult?.Contains(L.T("błąd")) == true;
         SyncButton.Foreground = st.Syncing || App.Instance.NotionRunning || rot.HasAnimatedProperties ? Res("AccentBrush") // in the accent while it works
             : error ? B(Color.FromRgb(0xF2, 0x6D, 0x6D)) : Res("FgDim");
     }

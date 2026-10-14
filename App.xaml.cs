@@ -50,7 +50,7 @@ public partial class App : Application
     readonly DispatcherTimer _notionTimer = new() { Interval = TimeSpan.FromMinutes(1) };
 
     bool _started;
-    readonly DispatcherTimer _folderRetry = new() { Interval = TimeSpan.FromSeconds(30) };
+    readonly DispatcherTimer _folderRetry = new() { Interval = TimeSpan.FromSeconds(10) };
     readonly System.Collections.Generic.Dictionary<string, string> _pendingFolders = new(); // layer -> folder not reachable at start
     bool _lastAutostart;
     readonly DispatcherTimer _applySoon = new() { Interval = TimeSpan.FromMilliseconds(150) };
@@ -256,15 +256,18 @@ public partial class App : Application
     {
         foreach (var (layer, saved) in _pendingFolders.ToList())
         {
-            if (SettingsStore.IsGoogleDrivePath(saved) && SettingsStore.GoogleDriveMount() == null) continue;
             var folder = SettingsStore.ResolveCloudFolder(saved);
-            var root = Path.GetPathRoot(folder);
-            if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) continue;
+            if (!FolderReady(folder)) continue;
             Settings.AccountFor(layer).Folder = folder;
             try
             {
                 Stores[layer].SwitchFolder(folder); // merges what was written to the local fallback meanwhile
+                Stores[layer].Offline = null;
+                Stores[layer].MirrorFolder = SettingsStore.CacheFolder(layer);
+                Stores[layer].WriteMirror(null);
+                if (layer == "work") PullSharedSettings();
                 _pendingFolders.Remove(layer);
+                Board?.UpdateSyncIcon();
                 Log.Error($"folder {folder} is reachable again – data merged back");
             }
             catch (Exception ex) { Log.Error("retry folder " + folder, ex); }
@@ -284,34 +287,36 @@ public partial class App : Application
         if (Stores.TryGetValue(layer, out var s)) return s;
         s = new BoardStore(layer);
         var folder = LayerFolder(layer);
-        // at logon Google Drive / OneDrive may mount their drive a bit after us: wait up to ~90 s for the drive itself
-        // (for a Google Drive folder: for Google Drive – the same letter may be a local disk on this computer)
-        bool Waiting(string f)
-        {
-            var root = Path.GetPathRoot(f);
-            return !string.IsNullOrEmpty(root) && (!Directory.Exists(root) || (Dev.Arg("--data") == null && SettingsStore.IsGoogleDrivePath(f) && SettingsStore.GoogleDriveMount() == null));
-        }
-        for (int i = 0; i < 45 && Waiting(folder); i++) Thread.Sleep(2000);
-        if (Dev.Arg("--data") == null && SettingsStore.ResolveCloudFolder(folder) is var resolved && resolved != folder)
+        bool dev = Dev.Arg("--data") != null;
+        if (!dev && SettingsStore.ResolveCloudFolder(folder) is var resolved && resolved != folder)
             folder = Settings.AccountFor(layer).Folder = resolved;
         try
         {
-            if (Waiting(folder)) throw new IOException("Google Drive not mounted: " + folder);
+            // never wait at start: a cloud drive that isn't mounted yet (logon) means this computer's copy for now
+            if (!dev && !FolderReady(folder)) throw new IOException("cloud folder not reachable yet: " + folder);
             s.Open(folder);
+            if (!dev) { s.MirrorFolder = SettingsStore.CacheFolder(layer); s.WriteMirror(null); }
         }
         catch (Exception ex)
         {
             Log.Error("open data folder " + folder, ex);
-            var fallback = Path.Combine(SettingsStore.Dir, layer);
-            s.Open(fallback);
-            _pendingFolders[layer] = folder; // keep trying; once reachable, the fallback data is merged into it
+            s.Open(SettingsStore.CacheFolder(layer)); // the last state this computer saw
+            s.Offline = folder;
+            _pendingFolders[layer] = folder; // checked quietly every few seconds; once there, merged into it
             _folderRetry.Start();
-            Dispatcher.BeginInvoke(() => _tray?.Balloon("TaskWall", L.F("Folder „{0}” jest niedostępny ({1}). Zapisuję lokalnie i przeniosę dane, gdy się pojawi.", LayerName(layer), folder)));
         }
         s.ExternalChange += () => { if (ReferenceEquals(s, Store)) Board?.OnExternalChange(); };
         s.SyncStateChanged += () => Board?.UpdateSyncIcon();
         Stores[layer] = s;
         return s;
+    }
+
+    /// <summary>The folder's drive is there (for Google Drive: Google Drive itself – the same letter may be a local disk).</summary>
+    static bool FolderReady(string folder)
+    {
+        var root = Path.GetPathRoot(folder);
+        if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) return false;
+        return !SettingsStore.IsGoogleDrivePath(folder) || SettingsStore.GoogleDriveMount() != null;
     }
 
     /// <summary>Praca ⇄ Prywatne.</summary>
