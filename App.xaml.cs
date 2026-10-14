@@ -149,7 +149,7 @@ public partial class App : Application
             AlarmService.Changed += () => Board?.OnExternalChange(quiet: true);
             AlarmService.Start();
             Updater.Start();
-            if (Dev.Arg("--data") == null) WeekSummaryWindow.ShowWeeklyIfDue();
+            if (Dev.Arg("--data") == null) ReportWindow.ShowWeeklyIfDue();
             WeatherService.Changed += () => Board?.OnExternalChange(quiet: true);
             WeatherService.Start();
             // Notion: each account with a token syncs on its own interval (first run right after start-up)

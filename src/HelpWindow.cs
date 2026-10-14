@@ -43,6 +43,7 @@ public sealed class HelpWindow : DarkWindow
             ("T · Home", "dziś"),
             ("1 2 3 4 5", "widok: dzień · tydzień · 2 tygodnie · miesiąc · rok"),
             ("B · A", "backlog · archiwum"),
+            ("R", "raport tygodnia (w widoku miesiąca: miesiąca) – podgląd, zapis HTML i CSV"),
             ("Ctrl+F", "szukaj wszędzie"),
             ("Ctrl+Z", "cofnij"),
             ("Spacja (kursor na zadaniu)", "następny stan: ○ do zrobienia → ◐ w trakcie → ✓ zrobione"),

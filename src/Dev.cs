@@ -61,7 +61,8 @@ static class Dev
             }, DispatcherPriority.ApplicationIdle);
         else if (open == "ring")App.Current.Dispatcher.BeginInvoke(() => AlarmToast.Ring(new Alarm { Text = "Telefon do Ani w sprawie budżetu", Day = DateTime.Today.ToString("yyyy-MM-dd"), Time = DateTime.Now.ToString("HH:mm") }, App.Settings.Layer, DateTime.Now.AddMinutes(-7)), DispatcherPriority.ApplicationIdle);
         else if (open == "menu") { var mt = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) }; mt.Tick += (_, _) => { mt.Stop(); App.Board?.DevOpenMenu?.Invoke(); }; mt.Start(); }
-        else if (open == "summary") App.Current.Dispatcher.BeginInvoke(() => WeekSummaryWindow.Show(App.Store, BoardWindow.Monday(DateTime.Today), App.Settings.Layer), DispatcherPriority.ApplicationIdle);
+        else if (open == "report-month") App.Current.Dispatcher.BeginInvoke(() => ReportWindow.Show(App.Store, App.Settings.Layer, DateTime.Today, month: true), DispatcherPriority.ApplicationIdle);
+        else if (open == "summary") App.Current.Dispatcher.BeginInvoke(() => ReportWindow.Show(App.Store, App.Settings.Layer, DateTime.Today, month: false), DispatcherPriority.ApplicationIdle);
         else if (open == "expand") App.Current.Dispatcher.BeginInvoke(() => App.Board?.DevExpandAll(), DispatcherPriority.ApplicationIdle);
         else if (open == "drawer") App.Current.Dispatcher.BeginInvoke(() => App.Board?.RevealBacklog(), DispatcherPriority.ApplicationIdle);
         else if (open == "calendar") App.Current.Dispatcher.BeginInvoke(() => App.Clock?.Open(), DispatcherPriority.ApplicationIdle);
@@ -390,6 +391,19 @@ static class Dev
             try { Directory.Delete(fixDir, true); } catch { }
             var wxMm = WeatherService.Parse("""{"daily":{"time":["2026-10-14"],"weather_code":[61],"temperature_2m_max":[12],"temperature_2m_min":[7],"precipitation_probability_max":[88],"precipitation_sum":[3.2],"wind_speed_10m_max":[20]}}""");
             Check("weather: rain amount in mm read", wxMm.Values.Single().Mm == 3.2 && wxMm.Values.Single().Rain == 88);
+            var repDir = Path.Combine(Path.GetTempPath(), "taskwall-report-" + Guid.NewGuid().ToString("N"));
+            var repStore = new BoardStore("work");
+            repStore.Open(repDir);
+            repStore.Add(new TaskItem { Text = "[ART] Skały", Day = "2026-10-13", Done = true, Estimate = 2 });
+            repStore.Add(new TaskItem { Text = "Woda <b>", Day = "2026-10-14", Estimate = 16 });
+            var rep = Report.Build(repStore, "work", new DateTime(2026, 10, 12), new DateTime(2026, 10, 18), month: false);
+            var html = rep.Html();
+            Check("report: numbers, categories, HTML (escaped) and CSV",
+                rep.Tasks == 2 && rep.Done == 1 && rep.DoneHours == 2 && rep.Categories.Any(c => c.Name == "ART" && c.Done == 1)
+                && html.Contains("<html") && html.Contains("Woda &lt;b&gt;") && !html.Contains("Woda <b>") && rep.Csv().Contains("2026-10-13"));
+            if (Arg("--selftest") is { } stOut) File.WriteAllText(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(stOut))!, "report-sample.html"),
+                Report.Build(App.Store ?? repStore, "work", BoardWindow.Monday(DateTime.Today), BoardWindow.Monday(DateTime.Today).AddDays(6), month: false).Html());
+            try { Directory.Delete(repDir, true); } catch { }
             var carried = new TaskItem { Text = "długie", Day = "2026-10-05", Started = true };
             carried.NoteMove("2026-10-05", "2026-10-06", "2026-10-08");
             carried.NoteMove("2026-10-06", "2026-10-08", "2026-10-08");

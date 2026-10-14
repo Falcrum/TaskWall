@@ -5,6 +5,26 @@ static partial class L
     /// <summary>Polish → English (Board).</summary>
     static readonly (string Pl, string En)[] Board =
     {
+        // 0.16: reports
+        ("raport tygodnia (w widoku miesiąca: miesiąca) – podgląd, zapis HTML i CSV", "weekly report (in the month view: monthly) – preview, save as HTML and CSV"),
+        ("Tydzień", "Week"),
+        ("Godziny", "Hours"),
+        ("Raport", "Report"),
+        ("Poprzedni", "Previous"),
+        ("Następny", "Next"),
+        ("Bieżący", "Current"),
+        ("Raport tygodniowy", "Weekly report"),
+        ("Raport miesięczny", "Monthly report"),
+        ("Raport tygodnia…  (R)", "Weekly report…  (R)"),
+        ("Raport miesiąca…", "Monthly report…"),
+        ("Zrobione w dniach", "Done per day"),
+        ("KATEGORIE", "CATEGORIES"),
+        ("Niezrobione / przeszły dalej", "Not done / carried on"),
+        ("Folder raportów", "Reports folder"),
+        ("CSV…", "CSV…"),
+        ("Zapisz i otwórz raport", "Save and open the report"),
+        ("… i {0} więcej (pełna lista w zapisanym raporcie)", "… and {0} more (the full list is in the saved report)"),
+        ("W tym okresie nie ma zadań.", "No tasks in this period."),
         // 0.15.1: rain amount, folder checks, local copy
         ("Opady: szansa (0–100%) i przewidywana ilość (mm)", "Rain: chance (0–100%) and expected amount (mm)"),
         ("opady: {0} mm", "rain: {0} mm"),

@@ -1084,6 +1084,8 @@ public partial class BoardWindow : GlassWindow
         };
         Anim.HoverBackground(wrapper, Colors.Transparent, Th.Ink(0x16));
         var grid = new Grid();
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // the open checklist: full width under the row
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -1214,7 +1216,15 @@ public partial class BoardWindow : GlassWindow
             Dispatcher.BeginInvoke(() => BeginEdit(t, content, text, pe.Series), System.Windows.Threading.DispatcherPriority.Loaded);
         }
         // an empty list shows only while its first point is being typed ("Dodaj listę kontrolną"), then it goes away again
-        if (_expanded.Contains(t.Id) && (t.Checklist is { Count: > 0 } || _checkAddFor == t.Id)) content.Children.Add(BuildChecklist(t, fs));
+        if (_expanded.Contains(t.Id) && (t.Checklist is { Count: > 0 } || _checkAddFor == t.Id))
+        {
+            // its own row across the text, counters and estimate columns: the points use the whole width of the day
+            var checklist = BuildChecklist(t, fs);
+            Grid.SetRow(checklist, 1);
+            Grid.SetColumn(checklist, 1);
+            Grid.SetColumnSpan(checklist, 3);
+            grid.Children.Add(checklist);
+        }
 
         if (inBacklog && (!string.IsNullOrEmpty(t.Priority) || !string.IsNullOrEmpty(t.Status)))
         {
