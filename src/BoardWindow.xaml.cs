@@ -332,6 +332,7 @@ public partial class BoardWindow : GlassWindow
         BuildBacklog();
         _justAdded = _justToggled = null;
         _flashId = null;
+        _editOnBuild = null; // not used by this build (e.g. the row is folded away): never later, by surprise
     }
 
     void UpdateTopBar()
@@ -612,14 +613,16 @@ public partial class BoardWindow : GlassWindow
         if (hours > 0 || meetingHours > 0)
         {
             double left_ = DayLoad(key, tasks, openOnly: true);
+            bool workday = !red; // weekends and public holidays: just the hours, no 8 h limit
+            bool over = workday && hours + meetingHours > DayHours + 0.01;
             right.Children.Add(new TextBlock
             {
                 // the workday limit: tasks + meetings against 8 h ("6,5 / 8h"), orange when over
-                Text = $"{(hours + meetingHours).ToString("0.#", Pl)} / {Hours(DayHours)}",
+                Text = workday ? $"{(hours + meetingHours).ToString("0.#", Pl)} / {Hours(DayHours)}" : Hours(hours + meetingHours),
                 FontSize = 10, HorizontalAlignment = HorizontalAlignment.Right,
-                Foreground = hours + meetingHours > DayHours + 0.01 ? B(Color.FromRgb(0xF2, 0xA6, 0x5A)) : Res("FgDim"),
+                Foreground = over ? B(Color.FromRgb(0xF2, 0xA6, 0x5A)) : Res("FgDim"),
                 ToolTip = L.F("Zadania: {0} (zostało {1})", Hours(hours), Hours(left_)) + (meetingHours > 0 ? "\n" + L.F("Spotkania: {0}", Hours(meetingHours)) : "")
-                    + "\n" + (hours + meetingHours > DayHours + 0.01 ? L.F("Ponad dzień pracy o {0}", Hours(hours + meetingHours - DayHours)) : L.F("Wolne: {0}", Hours(DayHours - hours - meetingHours))),
+                    + (!workday ? "" : "\n" + (over ? L.F("Ponad dzień pracy o {0}", Hours(hours + meetingHours - DayHours)) : L.F("Wolne: {0}", Hours(DayHours - hours - meetingHours)))),
             });
         }
         header.Children.Add(right);
@@ -680,12 +683,24 @@ public partial class BoardWindow : GlassWindow
             foreach (var (t, days) in spanHere)
             {
                 var span = (days.IndexOf(key) + 1, days.Count);
-                var el = t.Day == key && !t.Archived ? BuildTaskRow(t, false, compact, span)
+                var el = t.Day == key && !t.Archived ? BuildTaskRow(t, false, compact, span, inLane: true)
                     : BuildContinuedRow(t, span, compact, planned: string.CompareOrdinal(key, t.Day) > 0);
                 Grid.SetRow(el, lanes[t.Id] + 1);
                 block.Children.Add(el);
             }
             panel.Children.Add(block);
+            // subtasks of a multi-day task open under the lanes, on its current day only: the shared lane heights stay one line,
+            // so the other days of the week get no empty space
+            foreach (var (t, _) in spanHere.Where(x => x.t.Day == key && !x.t.Archived && _expanded.Contains(x.t.Id) && (x.t.Checklist is { Count: > 0 } || _checkAddFor == x.t.Id)).OrderBy(x => lanes[x.t.Id]))
+            {
+                var fsl = compact ? Math.Max(9.5, S.FontSize - 1.5) : S.FontSize;
+                TaskItem.Tags(t.Text, out var restText);
+                var head = new TextBlock { Text = "↳ " + (restText.Length > 0 ? restText : t.Text), FontSize = Math.Max(9, fsl - 2.5), Foreground = Res("FgFaint"), TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(compact ? 18 : 22, 4, 0, 0) };
+                var sub = BuildChecklist(t, fsl);
+                sub.Margin = new Thickness(compact ? 18 : 22, 0, 0, 2);
+                panel.Children.Add(head);
+                panel.Children.Add(sub);
+            }
         }
         else foreach (var (_, el) in timed) panel.Children.Add(el);
         // multi-day tasks without a lane in this week (only one of their days is here): a plain row with "↷ k/n"
@@ -877,6 +892,8 @@ public partial class BoardWindow : GlassWindow
         var main = new Run(tags.Count > 0 ? rest : t.Text);
         if (t.Done) main.TextDecorations = TextDecorations.Strikethrough;
         text.Inlines.Add(main);
+        if (t.Checklist is { Count: > 0 } cl) // the subtasks themselves open on the task's current day
+            text.Inlines.Add(new Run($"   ☑ {cl.Count(x => x.Done)}/{cl.Count}") { FontSize = Math.Max(8.5, fs - 2.5), Foreground = Res("FgFaint") });
         Grid.SetColumn(text, 1);
         grid.Children.Add(text);
         var where = t.Archived ? L.T("w archiwum") : ParseKey(t.Day!).ToString("dddd d MMM", Pl);
@@ -1073,7 +1090,7 @@ public partial class BoardWindow : GlassWindow
 
     // ---------- task row ----------
 
-    FrameworkElement BuildTaskRow(TaskItem t, bool inBacklog, bool compact = false, (int Index, int Total)? span = null, int depth = 0)
+    FrameworkElement BuildTaskRow(TaskItem t, bool inBacklog, bool compact = false, (int Index, int Total)? span = null, int depth = 0, bool inLane = false)
     {
         var wrapper = new Border
         {
@@ -1189,7 +1206,7 @@ public partial class BoardWindow : GlassWindow
             var chip = new Border
             {
                 CornerRadius = new CornerRadius(4), Padding = new Thickness(4, 0, 4, 1), Margin = new Thickness(6, 0, 0, 0), Cursor = Cursors.Hand,
-                Background = B(Th.Ink(0x1E)), ToolTip = _expanded.Contains(t.Id) ? L.T("Zwiń listę") : L.T("Rozwiń listę"),
+                Background = B(Th.Ink(0x1E)), ToolTip = _expanded.Contains(t.Id) ? L.T("Zwiń podzadania") : L.T("Pokaż podzadania"),
                 Child = new TextBlock { Text = $"☑ {cd}/{cl.Count}", FontSize = Math.Max(8.5, fs - 2.5), Foreground = cd == cl.Count ? Res("AccentBrush") : Res("FgDim") },
             };
             // its own column next to the estimate: never cut off by a one-line (multi-day) row, never over the estimate
@@ -1215,9 +1232,10 @@ public partial class BoardWindow : GlassWindow
             _editOnBuild = null;
             Dispatcher.BeginInvoke(() => BeginEdit(t, content, text, pe.Series), System.Windows.Threading.DispatcherPriority.Loaded);
         }
-        // an empty list shows only while its first point is being typed ("Dodaj listę kontrolną"), then it goes away again
-        if (_expanded.Contains(t.Id) && (t.Checklist is { Count: > 0 } || _checkAddFor == t.Id))
+        // an empty list shows only while its first point is being typed ("Dodaj podzadania"), then it goes away again
+        if (!inLane && _expanded.Contains(t.Id) && (t.Checklist is { Count: > 0 } || _checkAddFor == t.Id))
         {
+            // (a multi-day task in its lane: the subtasks go under the lanes of that day only, see BuildDay)
             // its own row across the text, counters and estimate columns: the points use the whole width of the day
             var checklist = BuildChecklist(t, fs);
             Grid.SetRow(checklist, 1);
@@ -1344,7 +1362,7 @@ public partial class BoardWindow : GlassWindow
             var label = new TextBlock { Text = item.Text, TextWrapping = TextWrapping.Wrap, FontSize = Math.Max(9.5, fs - 1.5), Foreground = Res("FgDim"), Cursor = Cursors.Hand };
             if (item.Done) { label.TextDecorations = TextDecorations.Strikethrough; label.Opacity = 0.6; }
             Grid.SetColumn(label, 1);
-            var del = new Button { Style = (Style)FindResource("IconButton"), Content = "", FontSize = 7, Padding = new Thickness(3, 2, 3, 2), Visibility = Visibility.Hidden, ToolTip = L.T("Usuń punkt") };
+            var del = new Button { Style = (Style)FindResource("IconButton"), Content = "", FontSize = 7, Padding = new Thickness(3, 2, 3, 2), Visibility = Visibility.Hidden, ToolTip = L.T("Usuń podzadanie") };
             Grid.SetColumn(del, 2);
             del.Click += (_, _) => Edit(l => l.RemoveAt(index));
             MouseButtonEventHandler toggle = (_, e) => { e.Handled = true; Edit(l => l[index].Done = !l[index].Done); };
@@ -1393,7 +1411,7 @@ public partial class BoardWindow : GlassWindow
             input.LostKeyboardFocus += (_, _) => Finish(false);
             FocusBox(input);
         }
-        var addLabel = new TextBlock { Text = L.T("+  punkt"), FontSize = Math.Max(9.5, fs - 2), Foreground = Res("FgFaint"), Cursor = Cursors.IBeam, Margin = new Thickness(1, 0, 0, 0) };
+        var addLabel = new TextBlock { Text = L.T("+  podzadanie"), FontSize = Math.Max(9.5, fs - 2), Foreground = Res("FgFaint"), Cursor = Cursors.IBeam, Margin = new Thickness(1, 0, 0, 0) };
         addHost.Child = addLabel;
         addHost.MouseLeftButtonDown += (_, e) => e.Handled = true; // not a drag / edit of the task
         addHost.MouseLeftButtonUp += (_, e) => { e.Handled = true; if (addHost.Child is TextBlock) OpenAdd(); };
@@ -1886,6 +1904,8 @@ public partial class BoardWindow : GlassWindow
             c.ArchivedAt = null;
             c.NotionId = null;  // the Notion import keeps updating only the original
             c.WorkedDays = null;
+            c.Started = null;                         // a fresh copy: not started, planned from its own day
+            c.PlanEnd = AutoPlanEnd(day, c.Estimate);
             Store.Add(c);
             _justAdded = c.Id;
         }
@@ -1927,6 +1947,8 @@ public partial class BoardWindow : GlassWindow
     /// <summary>After a drop: a day over 8 h says so (the bar's "Cofnij" takes the move back).</summary>
     void WarnIfFull(string key)
     {
+        var date = ParseKey(key);
+        if (IsWeekend(date) || PolishHolidays.DayOff(date) != null) return; // no workday limit on days off
         var total = DayTotal(key);
         if (total > DayHours + 0.01)
             ShowUndo(L.F("{0}: {1} z {2} – ponad dzień pracy", ParseKey(key).ToString("dddd d MMM", Pl), Hours(total), Hours(DayHours)));

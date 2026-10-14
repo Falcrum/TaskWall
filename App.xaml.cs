@@ -296,6 +296,7 @@ public partial class App : Application
             if (!dev && !FolderReady(folder)) throw new IOException("cloud folder not reachable yet: " + folder);
             s.Open(folder);
             if (!dev) { s.MirrorFolder = SettingsStore.CacheFolder(layer); s.WriteMirror(null); }
+            if (!dev) MergeLegacyOffline(s, layer);
         }
         catch (Exception ex)
         {
@@ -309,6 +310,19 @@ public partial class App : Application
         s.SyncStateChanged += () => Board?.UpdateSyncIcon();
         Stores[layer] = s;
         return s;
+    }
+
+    /// <summary>Up to 0.15.0 offline edits went to %APPDATA%TaskWall<account>: merged once, the folder is then renamed.</summary>
+    static void MergeLegacyOffline(BoardStore s, string layer)
+    {
+        var legacy = Path.Combine(SettingsStore.Dir, layer);
+        try
+        {
+            if (!File.Exists(Path.Combine(legacy, BoardStore.FileName)) || !s.MergeFile(Path.Combine(legacy, BoardStore.FileName))) return;
+            Directory.Move(legacy, legacy + "-merged-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"));
+            Log.Error($"offline data from {legacy} merged into {s.Folder}");
+        }
+        catch (Exception ex) { Log.Error("merge old offline data", ex); }
     }
 
     /// <summary>The folder's drive is there (for Google Drive: Google Drive itself – the same letter may be a local disk).</summary>
@@ -336,6 +350,12 @@ public partial class App : Application
     public void ChangeLayerFolder(string layer, string folder)
     {
         OpenLayer(layer).SwitchFolder(folder);
+        // a folder chosen by hand replaces the one that was waited for
+        _pendingFolders.Remove(layer);
+        if (_pendingFolders.Count == 0) _folderRetry.Stop();
+        var st = OpenLayer(layer);
+        st.Offline = null;
+        if (Dev.Arg("--data") == null) { st.MirrorFolder = SettingsStore.CacheFolder(layer); st.WriteMirror(null); }
         Settings.AccountFor(layer).Folder = folder;
         if (layer == "private") Settings.PrivateFolder = folder; else Settings.DataFolder = folder;
         ApplySettings();

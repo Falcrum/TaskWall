@@ -57,7 +57,7 @@ public sealed class HelpWindow : DarkWindow
         {
             ("klik w kółko", "○ → ◐ w trakcie → ✓ zrobione (Shift+klik: od razu zrobione)"),
             ("klik w tekst", "edycja (zadanie z Notion: otwiera stronę)"),
-            ("prawy przycisk na zadaniu", "menu: estymacja, priorytet, kategoria, powtarzanie, lista kontrolna, archiwum"),
+            ("prawy przycisk na zadaniu", "menu: estymacja, priorytet, kategoria, powtarzanie, podzadania, archiwum"),
             ("prawy przycisk na dniu", "oznaczenia dni, powtarzane oznaczenia, alarm"),
             ("przeciągnij", "na dzień, w liście, na BACKLOG lub ARCHIWUM; z Ctrl = kopia"),
             ("przeciągnij do krawędzi", "przytrzymaj zadanie przy lewej / prawej krawędzi: poprzedni / następny okres"),

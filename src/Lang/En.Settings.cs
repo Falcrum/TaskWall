@@ -56,7 +56,7 @@ static partial class L
         // SettingsWindow
         ("TaskWall – ustawienia", "TaskWall – settings"),
         ("Ogólne", "General"),
-        ("język, autostart, zegar, alarmy, Notion, skrót klawiszowy", "language, autostart, clock, alarms, Notion, keyboard shortcut"),
+        ("język, autostart, zegar, alarmy i przypomnienia, linki Notion, skrót klawiszowy", "language, autostart, clock, alarms and reminders, Notion links, keyboard shortcut"),
         ("Konta", "Accounts"),
         ("Praca i Prywatne: folder, kalendarze Google, Notion, kategorie, oznaczenia dni", "Work and Private: folder, Google calendars, Notion, categories, day marks"),
         ("Ekran i rozmiar", "Screen and size"),

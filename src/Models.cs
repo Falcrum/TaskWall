@@ -560,6 +560,9 @@ public sealed class AppSettings
     /// <summary>Last version of the shared settings (taskwall-settings.json in the work folder) this computer has – UTC.</summary>
     public DateTime? SharedModified { get; set; }
     public string? SharedHash { get; set; }
+    /// <summary>The shared file those came from, and its settings at that sync (to tell what changed here since).</summary>
+    public string? SharedPath { get; set; }
+    public string? SharedBaseline { get; set; }
 
     /// <summary>"#RRGGBB" or "auto" (picked from the wallpaper).</summary>
     public string Accent { get; set; } = "auto";

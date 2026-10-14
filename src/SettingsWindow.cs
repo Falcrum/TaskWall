@@ -36,7 +36,7 @@ public sealed class SettingsWindow : DarkWindow
         ResizeMode = ResizeMode.CanResize;
         Content = new ScrollViewer { Content = _sections, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
 
-        AddSection(L.T("Ogólne"), L.T("język, autostart, zegar, alarmy, Notion, skrót klawiszowy"), BuildGeneral);
+        AddSection(L.T("Ogólne"), L.T("język, autostart, zegar, alarmy i przypomnienia, linki Notion, skrót klawiszowy"), BuildGeneral);
         AddSection(L.T("Konta"), L.T("Praca i Prywatne: folder, kalendarze Google, kategorie, oznaczenia dni"), BuildAccounts);
         AddSection(L.T("Połączenia"), L.T("Notion: automatyczne wczytywanie zadań z bazy"), BuildConnections);
         AddSection(L.T("Pogoda"), L.T("prognoza w nagłówkach dni, lokalizacja"), BuildWeather);

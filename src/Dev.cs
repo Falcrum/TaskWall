@@ -357,6 +357,13 @@ static class Dev
             Check("shared settings: theme, weather, account name, Notion link come over; screen size and token stay local",
                 pc2.Theme == "light" && pc2.Weather.City == "Testowo" && pc2.AccountFor("work").Name == "Biuro" && pc2.AccountFor("work").Notion.Database == "https://notion.so/db"
                 && pc2.UiScale == 1.1 && pc2.AccountFor("work").Notion.TokenProtected == "secret" && changed.Length > 0 && SharedSettings.Pull(pc2).Length == 0);
+            // three-way: a change made on PC2 while PC1 also changed something else – both survive
+            pc2.Theme = "dark";                       // changed on PC2 (not pushed yet: e.g. the drive was away)
+            pc1.Weather.City = "Nowe Miasto";         // changed on PC1 and pushed
+            SharedSettings.Push(pc1);
+            SharedSettings.Pull(pc2);
+            Check("shared settings: a change from the other PC comes in, an unpushed local change stays",
+                pc2.Weather.City == "Nowe Miasto" && pc2.Theme == "dark" && pc2.SharedHash == null);
             if (Arg("--data") is { } devData2) File.Delete(Path.Combine(devData2, SharedSettings.FileName));
             Check("estimate over 8 h plans the next workdays: 12h from Fri 9 Oct → Mon 12 Oct, 2d → 2 days, 8h → one day",
                 BoardWindow.AutoPlanEnd("2026-10-09", 12) == "2026-10-12" && BoardWindow.AutoPlanEnd("2026-10-13", 16) == "2026-10-14" && BoardWindow.AutoPlanEnd("2026-10-13", 8) == null);
@@ -380,6 +387,13 @@ static class Dev
             var afterRestore = BoardStore.Merge(otherPc, binStore.Data);
             Check("bin: delete keeps a copy, restore brings it back (also after a merge with a PC that still has it in the bin)",
                 inBin && otherPc.Bin!.Count == 1 && binStore.Find(gone.Id) != null && afterRestore.Tasks.Any(t => t.Id == gone.Id) && afterRestore.Bin is not { Count: > 0 });
+            var undoBin = new TaskItem { Text = "cofnij przywrócenie", Day = "2026-10-13" };
+            binStore.Add(undoBin);
+            binStore.Discard(undoBin);
+            binStore.Checkpoint();
+            binStore.RestoreFromBin(binStore.BinItems.Single(e => e.Task.Id == undoBin.Id));
+            binStore.Undo();
+            Check("bin: Ctrl+Z after restoring puts the task back into the bin", binStore.Find(undoBin.Id) == null && binStore.BinItems.Any(e => e.Task.Id == undoBin.Id));
             binStore.EmptyBin();
             Check("bin: emptied entries stay hidden", !binStore.BinItems.Any());
             try { Directory.Delete(binDir, true); } catch { }

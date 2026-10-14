@@ -300,6 +300,8 @@ static class NotionSync
             if (link.OnlyMine && me != null && !page.People.Contains(me)) continue;
             var title = ExternalDrop.KnownTags(page.Title); // as shown on the board: "[VFX] Woda"
             var t = store.Data.Tasks.FirstOrDefault(x => x.NotionId == page.Id);
+            // deleted on the board: stays deleted (the bin can bring it back) – the same id would otherwise revive it
+            if (t == null && (store.Data.Deleted.ContainsKey("notion-" + page.Id.Replace("-", "")) || store.BinItems.Any(e => e.Task.NotionId == page.Id))) continue;
             if (t == null)
             {
                 if (page.Status != null && (skip.Contains(page.Status) || (link.SkipStatuses == null && !viewFiltered && NotionImport.LooksDone(page.Status)))) continue;

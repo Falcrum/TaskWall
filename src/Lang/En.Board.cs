@@ -5,6 +5,15 @@ static partial class L
     /// <summary>Polish → English (Board).</summary>
     static readonly (string Pl, string En)[] Board =
     {
+        // 0.16.1: subtasks
+        ("błąd", "error"), // the sync icon turns red on a Notion result that contains it
+        ("Zwiń podzadania", "Collapse subtasks"),
+        ("Pokaż podzadania", "Show subtasks"),
+        ("Dodaj podzadania", "Add subtasks"),
+        ("Usuń podzadania ({0})", "Delete the subtasks ({0})"),
+        ("Usuń podzadanie", "Delete the subtask"),
+        ("+  podzadanie", "+  subtask"),
+        ("menu: estymacja, priorytet, kategoria, powtarzanie, podzadania, archiwum", "menu: estimate, priority, category, repeat, subtasks, archive"),
         // 0.16: reports
         ("raport tygodnia (w widoku miesiąca: miesiąca) – podgląd, zapis HTML i CSV", "weekly report (in the month view: monthly) – preview, save as HTML and CSV"),
         ("Tydzień", "Week"),

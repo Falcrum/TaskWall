@@ -695,14 +695,14 @@ public partial class BoardWindow
         if (t.HasLink) menu.Items.Add(Item(L.T("Otwórz w Notion"), () => OpenLink(t)));
         menu.Items.Add(Item(t.HasLink ? L.T("Edytuj tekst") : L.T("Edytuj"), () => EditSomewhere(t, content, text)));
         bool hasList = t.Checklist is { Count: > 0 };
-        menu.Items.Add(Item(hasList ? (_expanded.Contains(t.Id) ? L.T("Zwiń listę kontrolną") : L.T("Pokaż listę kontrolną")) : L.T("Dodaj listę kontrolną"), () =>
+        menu.Items.Add(Item(hasList ? (_expanded.Contains(t.Id) ? L.T("Zwiń podzadania") : L.T("Pokaż podzadania")) : L.T("Dodaj podzadania"), () =>
         {
             if (hasList && _expanded.Contains(t.Id)) _expanded.Remove(t.Id);
             else { _expanded.Add(t.Id); if (!hasList) _checkAddFor = t.Id; }
             Rebuild();
         }, value: hasList ? $"{t.Checklist!.Count(x => x.Done)}/{t.Checklist!.Count}" : null));
         if (hasList)
-            menu.Items.Add(Item(L.F("Usuń listę kontrolną ({0} pkt)", t.Checklist!.Count), () =>
+            menu.Items.Add(Item(L.F("Usuń podzadania ({0})", t.Checklist!.Count), () =>
             {
                 _expanded.Remove(t.Id);
                 Do(() => { var real = Store.Materialize(t); real.Checklist = null; Store.Changed(real); });
@@ -1039,7 +1039,7 @@ public partial class BoardWindow
         if (Keyboard.FocusedElement is TextBox) return;
         // the task under the mouse: Space = next state (○ → ◐ → ✓), Shift+1/2/3 = priority (! !! !!!), Shift+0 = none,
         // F2 = edit, Delete = to the bin
-        if (_hover is { } h && h.Row.IsMouseOver && Store.Find(h.Task.Id) is { } ht)
+        if (_hover is { } h && h.Row.IsMouseOver && (h.Task.IsVirtual ? h.Task : Store.Find(h.Task.Id)) is { } ht)
         {
             Action? act = (e.Key, Keyboard.Modifiers) switch
             {

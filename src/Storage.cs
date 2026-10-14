@@ -196,18 +196,28 @@ static class SettingsStore
     /// <summary>Root of the Google Drive for desktop drive ("H:\"), whatever letter it got on this computer.</summary>
     public static string? GoogleDriveMount()
     {
-        try
+        // asked often (start, the 10 s reconnect check): remembered for a few seconds
+        if (DateTime.UtcNow - _mountChecked < TimeSpan.FromSeconds(5)) return _mount;
+        string? found = null;
+        DriveInfo[] drives;
+        try { drives = DriveInfo.GetDrives(); }
+        catch (Exception ex) { Log.Error("google drive detect", ex); drives = Array.Empty<DriveInfo>(); }
+        foreach (var d in drives)
         {
-            foreach (var d in DriveInfo.GetDrives())
+            try
             {
-                if (!d.IsReady || !d.VolumeLabel.Contains("Google", StringComparison.OrdinalIgnoreCase)) continue;
-                if (DriveNames.Concat(SharedNames).Any(n => Directory.Exists(Path.Combine(d.RootDirectory.FullName, n))))
-                    return d.RootDirectory.FullName;
+                // network drives can hang for seconds when disconnected; Google Drive is a local (fixed) drive
+                if (d.DriveType is DriveType.Network or DriveType.CDRom || !d.IsReady || !d.VolumeLabel.Contains("Google", StringComparison.OrdinalIgnoreCase)) continue;
+                if (DriveNames.Concat(SharedNames).Any(n => Directory.Exists(Path.Combine(d.RootDirectory.FullName, n)))) { found = d.RootDirectory.FullName; break; }
             }
+            catch { /* one odd drive must not stop the search */ }
         }
-        catch (Exception ex) { Log.Error("google drive detect", ex); }
-        return null;
+        _mount = found;
+        _mountChecked = DateTime.UtcNow;
+        return found;
     }
+    static string? _mount;
+    static DateTime _mountChecked;
 
     /// <summary>Google Drive for desktop mount ("G:\Mój dysk"), if installed.</summary>
     public static string? GoogleDriveRoot()
@@ -274,6 +284,18 @@ public sealed class BoardStore
     /// <summary>The cloud folder this account waits for (working on the local copy meanwhile); null = connected.</summary>
     public string? Offline { get; set; }
     string? _mirrorHash;
+
+    /// <summary>Merges another board file into this one (e.g. offline edits kept by an older version elsewhere).</summary>
+    public bool MergeFile(string path)
+    {
+        var other = TryRead(path);
+        if (other.Data == null) return false;
+        Data = Merge(Data, other.Data);
+        EnsureCategories();
+        MarkDirty();
+        ExternalChange?.Invoke();
+        return true;
+    }
 
     public void WriteMirror(string? json)
     {
@@ -378,7 +400,9 @@ public sealed class BoardStore
     void ForgetAutoCarry()
     {
         bool any = false;
-        foreach (var t in Data.Tasks.Where(t => !t.Done && t.Started == null && t.WorkedDays is { Count: > 0 }))
+        // only tasks last changed before 0.14 (13 Oct 2026): an older copy on another computer drops "Started" from what it saves
+        var upgrade = new DateTime(2026, 10, 13, 19, 0, 0, DateTimeKind.Utc);
+        foreach (var t in Data.Tasks.Where(t => !t.Done && t.Started == null && t.WorkedDays is { Count: > 0 } && t.Modified < upgrade))
         {
             t.WorkedDays = null;
             t.Started = false;
@@ -734,7 +758,7 @@ public sealed class BoardStore
     /// <summary>Call before every user action that changes the board.</summary>
     public void Checkpoint()
     {
-        _undo.Add(JsonSerializer.Serialize(new BoardData { Tasks = Data.Tasks, Days = Data.Days, Rules = Data.Rules, MarkRules = Data.MarkRules }, Json.Options));
+        _undo.Add(JsonSerializer.Serialize(new BoardData { Tasks = Data.Tasks, Days = Data.Days, Rules = Data.Rules, MarkRules = Data.MarkRules, Bin = Data.Bin }, Json.Options));
         if (_undo.Count > UndoMax) _undo.RemoveAt(0);
     }
 
@@ -761,6 +785,9 @@ public sealed class BoardStore
                 Changed(cur);
             }
         }
+        // bin entries of tasks that are gone again (e.g. Ctrl+Z after "Przywróć") come back to the bin
+        foreach (var e in snap.Bin ?? new())
+            if (Find(e.Task.Id) == null && Data.Bin?.Any(x => x.Task.Id == e.Task.Id) != true) (Data.Bin ??= new()).Add(e);
         UndoRules(snap.Rules, Data.Rules);
         UndoRules(snap.MarkRules ?? new(), Data.MarkRules);
         foreach (var key in snap.Days.Keys.Union(Data.Days.Keys).ToList())

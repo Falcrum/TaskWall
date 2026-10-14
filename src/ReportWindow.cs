@@ -37,7 +37,7 @@ public sealed class Report
     public string Title => Month
         ? BoardWindow.Pl.TextInfo.ToTitleCase(From.ToString("MMMM yyyy", BoardWindow.Pl))
         : L.F("Tydzień {0}  ·  {1} – {2}", ISOWeek.GetWeekOfYear(From), From.ToString("d MMM", BoardWindow.Pl), To.ToString("d MMM yyyy", BoardWindow.Pl));
-    public string FileName => $"TaskWall-{Account}-" + (Month ? From.ToString("yyyy-MM") : $"{ISOWeek.GetYear(From)}-W{ISOWeek.GetWeekOfYear(From):00}");
+    public string FileName => $"TaskWall-{string.Concat(Account.Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch))}-" + (Month ? From.ToString("yyyy-MM") : $"{ISOWeek.GetYear(From)}-W{ISOWeek.GetWeekOfYear(From):00}");
 
     static string Key(DateTime d) => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
@@ -280,7 +280,8 @@ public sealed class ReportWindow : DarkWindow
 
     DateTime Start(DateTime d) => _month ? new DateTime(d.Year, d.Month, 1) : BoardWindow.Monday(d);
     DateTime End => _month ? _from.AddMonths(1).AddDays(-1) : _from.AddDays(6);
-    string ReportsFolder => Path.Combine(_store.Folder, "raporty");
+    // the account's folder (not the local copy used while the cloud drive is away)
+    string ReportsFolder => Path.Combine(App.LayerFolder(_layer), "raporty");
 
     void Fill()
     {
