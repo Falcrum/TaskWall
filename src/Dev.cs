@@ -314,6 +314,27 @@ static class Dev
                 NotionSync.Apply(ns, new NotionLink { Name = "Tuathan" }, new() { page with { Title = "[vfx] Woda w Tuathan v2", Status = "Done" } }, "me-1");
                 Check("notion: two databases – each task marked with its database's name",
                     ns.Data.Tasks.Single(t => t.NotionId == "f1").NotionSource == "FoA" && nt.NotionSource == "Tuathan" && ns.Data.Tasks.Count == 2);
+                const string qaJson = """
+                {"object":"page","id":"5555aaaa-2222-bbbb-3333-cccc4444dddd","url":"https://www.notion.so/y","properties":{
+                  "QA Status":{"type":"status","status":{"name":"Do poprawy"}},
+                  "Status":{"type":"status","status":{"name":"Do poprawki"}},
+                  "Dział":{"type":"multi_select","multi_select":[{"name":"VFX"},{"name":"PM"}]},
+                  "Name":{"type":"title","title":[{"plain_text":"Mryganie"}]}}}
+                """;
+                using var qa = System.Text.Json.JsonDocument.Parse(qaJson);
+                var qaPage = NotionSync.ParsePage(qa.RootElement)!;
+                Check("notion: the task's own \"Status\" wins over \"QA Status\"; multi-select values read", qaPage.Status == "Do poprawki" && qaPage.Values["dział"].Contains("PM"));
+                Check("notion: extra conditions (Dział != PM / Dział = VFX)", Condition.Parse("Dział != PM") is { } c1 && !c1.Matches(qaPage) && Condition.Parse("dział = vfx")!.Matches(qaPage) && Condition.Parse("bez znaku") == null);
+                var only = new NotionLink { Name = "FoA", ReadStatuses = new() { "Not started", "Do poprawki" }, Conditions = new() { "Dział != PM" } };
+                var before = ns.Data.Tasks.Count;
+                NotionSync.Apply(ns, only, new() { qaPage, page with { Id = "r2", Title = "Testowane", Status = "Tested" }, page with { Id = "r3", Title = "Nowe", Status = "Not started" } }, "me-1");
+                Check("notion: only the chosen statuses, pages failing a condition left out", ns.Data.Tasks.Count == before + 1 && ns.Data.Tasks.Any(t => t.NotionId == "r3"));
+                var atProject = SmartAdd.Parse("@foa Fryzury napisz do jan@firma.pl", cats, wed, projects: new[] { "FoA", "Tuathan" });
+                Check("smart add: @project (any case) sets the project, an e-mail address stays", atProject.Project == "FoA" && atProject.Text == "Fryzury napisz do jan@firma.pl"
+                    && SmartAdd.Parse("@Nieznany x", cats, wed, projects: new[] { "FoA" }).Project == null);
+                NotionSync.Apply(ns, only, new() { page with { Id = "r3", Title = "Nowe", Status = "Not started" } }, "me-1", complete: true);
+                NotionSync.Apply(ns, only, new(), "me-1", complete: true);
+                Check("notion: an untouched backlog task that left the database's result leaves the backlog", ns.Data.Tasks.All(t => t.NotionId != "r3"));
                 var accMore = new AppSettings();
                 accMore.AccountFor("work").Notion.Name = "Tuathan";
                 accMore.AccountFor("work").NotionMore.Add(new NotionLink { Name = "FoA", Database = "https://app.notion.com/p/f73d59ddd8c6820bac8881f84305953a?v=225d59ddd8c68311a21888a852cdc8c6" });

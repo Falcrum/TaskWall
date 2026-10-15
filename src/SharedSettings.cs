@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -53,6 +54,7 @@ static class SharedSettings
                 ["Notion"] = new JsonObject
                 {
                     ["Name"] = n.Name, ["Color"] = n.Color,
+                    ["ReadStatuses"] = Arr(n.ReadStatuses), ["Conditions"] = Arr(n.Conditions),
                     ["Database"] = n.Database, ["Auto"] = n.Auto, ["Minutes"] = n.Minutes, ["OnlyMine"] = n.OnlyMine,
                     ["UseViewFilter"] = n.UseViewFilter, ["MaxPages"] = n.MaxPages, ["SyncDone"] = n.SyncDone,
                     ["SkipStatuses"] = n.SkipStatuses == null ? null : new JsonArray(n.SkipStatuses.Select(x => (JsonNode?)x).ToArray()),
@@ -60,6 +62,7 @@ static class SharedSettings
                 ["NotionMore"] = new JsonArray(a.NotionMore.Select(m => (JsonNode?)new JsonObject
                 {
                     ["Name"] = m.Name, ["Color"] = m.Color, ["Database"] = m.Database,
+                    ["ReadStatuses"] = Arr(m.ReadStatuses), ["Conditions"] = Arr(m.Conditions),
                     ["SkipStatuses"] = m.SkipStatuses == null ? null : new JsonArray(m.SkipStatuses.Select(x => (JsonNode?)x).ToArray()),
                 }).ToArray()),
             });
@@ -67,6 +70,9 @@ static class SharedSettings
         o["Accounts"] = accounts;
         return o;
     }
+
+    static JsonArray? Arr(List<string>? l) => l == null ? null : new JsonArray(l.Select(x => (JsonNode?)x).ToArray());
+    static List<string>? List(JsonNode? n) => n is JsonArray a ? a.Select(x => x?.GetValue<string>() ?? "").ToList() : null;
 
     static string Hash(JsonObject o) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(o.ToJsonString())));
 
@@ -161,6 +167,8 @@ static class SharedSettings
                     link.Database = database;
                     link.Name = n["Name"]?.GetValue<string>() ?? link.Name;
                     link.Color = n["Color"]?.GetValue<string>() ?? link.Color;
+                    link.ReadStatuses = List(n["ReadStatuses"]);
+                    link.Conditions = List(n["Conditions"]);
                     link.Auto = n["Auto"]?.GetValue<bool>() ?? link.Auto;
                     link.Minutes = n["Minutes"]?.GetValue<int>() ?? link.Minutes;
                     link.OnlyMine = n["OnlyMine"]?.GetValue<bool>() ?? link.OnlyMine;
@@ -179,6 +187,8 @@ static class SharedSettings
                         var l = old.FirstOrDefault(o => o.Database == db) ?? new NotionLink { Database = db };
                         l.Name = m["Name"]?.GetValue<string>() ?? l.Name;
                         l.Color = m["Color"]?.GetValue<string>() ?? l.Color;
+                        l.ReadStatuses = List(m["ReadStatuses"]);
+                        l.Conditions = List(m["Conditions"]);
                         l.SkipStatuses = m["SkipStatuses"] is JsonArray sk ? sk.Select(x => x?.GetValue<string>() ?? "").ToList() : null;
                         return l;
                     }).ToList();

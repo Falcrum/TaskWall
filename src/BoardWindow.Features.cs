@@ -323,7 +323,7 @@ public partial class BoardWindow
             TagChips.Children.Add(box);
         }
         if (sourceCounts.Count > 1 || (sourceCounts.Count == 1 && sourceCounts[0].Count() < all.Count))
-            Filter(L.T("Baza"), _sourceFilter, sourceCounts.Select(g => (g.Key, $"{g.Key}  ({g.Count()})")), v => _sourceFilter = v);
+            Filter(L.T("Projekt"), _sourceFilter, sourceCounts.Select(g => (g.Key, $"{g.Key}  ({g.Count()})")), v => _sourceFilter = v);
         if (tagCounts.Count > 0)
             Filter(L.T("Kategoria"), _tagFilter, tagCounts.Select(g => (g.Key, $"{(g.Key == TaskItem.MeetingTag ? "Meeting" : Store.CategoryFor(g.Key)?.Name ?? g.Key)}  ({g.Count()})")), v => _tagFilter = v);
         if (prioCounts.Count > 0)
@@ -772,6 +772,27 @@ public partial class BoardWindow
             if (answer != null && ParseEstimate(answer) is { } v) SetEstimate(t, v);
         }));
         menu.Items.Add(est);
+
+        // project (FoA / Tuathan / Evershade …): own tasks by hand or "@FoA"; a Notion task belongs to its database
+        var projects = S.AccountFor(S.Layer).Projects.ToList();
+        if (projects.Count > 0)
+        {
+            var proj = new MenuItem { Header = L.T("Projekt"), InputGestureText = t.NotionSource ?? "", IsEnabled = t.NotionId == null };
+            if (t.NotionId != null) { proj.ToolTip = L.T("Zadanie z Notion: projekt wynika z bazy, z której pochodzi"); ToolTipService.SetShowOnDisabled(proj, true); }
+            foreach (var pr in projects.Append(null))
+            {
+                var name = pr?.Name;
+                var mi = Item((string.Equals(t.NotionSource, name, StringComparison.OrdinalIgnoreCase) ? "✓  " : "     ") + (name ?? L.T("Brak")), () => Do(() =>
+                {
+                    var real = Store.Materialize(t);
+                    real.NotionSource = name;
+                    Store.Changed(real);
+                }), value: name != null ? "@" + name : null);
+                if (pr != null) mi.Icon = new System.Windows.Shapes.Rectangle { Width = 9, Height = 9, RadiusX = 2, RadiusY = 2, Fill = B(ParseColor(pr.Color)) };
+                proj.Items.Add(mi);
+            }
+            menu.Items.Add(proj);
+        }
 
         var tags = TaskItem.Tags(t.Text, out _);
         var cats = new MenuItem { Header = L.T("Kategoria"), InputGestureText = string.Join(", ", tags.Select(x => Store.CategoryFor(x)?.Name ?? x)) };

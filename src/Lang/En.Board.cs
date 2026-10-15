@@ -6,6 +6,19 @@ static partial class L
     static readonly (string Pl, string En)[] Board =
     {
         // 0.16.1: subtasks
+        // 0.17.1: projects, statuses to read, conditions
+        ("PROJEKTY I BAZY NOTION", "PROJECTS AND NOTION DATABASES"),
+        ("Każdy projekt ma krótką nazwę i kolor – widać je na jego zadaniach, a komenda @nazwa (np. @FoA) przypisuje projekt własnemu zadaniu. Link do bazy Notion jest opcjonalny; z linkiem wczytywane są zadania tej bazy. Link do widoku: w Notion nazwa widoku nad tabelą → Copy link to view.", "Each project has a short name and a colour, shown on its tasks; the @name command (e.g. @FoA) puts an own task into a project. The Notion database link is optional; with a link, the tasks of that database are read. View link: in Notion, the view name above the table → Copy link to view."),
+        ("+ Dodaj projekt", "+ Add a project"),
+        ("Usuń projekt", "Remove the project"),
+        ("Projekt", "Project"),
+        ("Zadanie z Notion: projekt wynika z bazy, z której pochodzi", "A Notion task: its project is the database it comes from"),
+        ("Jeden warunek w wierszu: Kolumna = wartość albo Kolumna != wartość, np. Dział != PM", "One condition per line: Column = value or Column != value, e.g. Department != PM"),
+        ("Nie rozumiem: {0}", "Not understood: {0}"),
+        ("Dodatkowe warunki", "Extra conditions"),
+        ("Jeden w wierszu, np. „Dział != PM” albo „Projekt = Mnich DLC”. Działają też na zadania już wczytane: nieruszane zadania z backlogu, które ich nie spełniają, znikają przy synchronizacji.", "One per line, e.g. \"Department != PM\" or \"Project = Monk DLC\". They apply to tasks already read too: untouched backlog tasks that fail them leave at the next sync."),
+        ("Kolumny tej bazy: {0}", "Columns of this database: {0}"),
+        ("projekt zadania (nazwy z Ustawienia → Połączenia; zadania z Notion mają projekt swojej bazy)", "the task's project (names from Settings → Connections; Notion tasks have their database's project)"),
         // 0.17: more Notion databases
         ("Wczytuje zadania z baz Notion do backlogu konta (tylko odczyt). Wymaga osobistego tokenu Notion. Token jest szyfrowany dla bieżącego użytkownika Windows i zapisywany tylko na tym komputerze; na innym komputerze należy podać ten sam albo nowy token.", "Loads tasks from Notion databases into the account's backlog (read-only). Needs a Notion personal access token. The token is encrypted for the current Windows user and stored on this computer only; another computer needs the same or a new token."),
         ("BAZY", "DATABASES"),

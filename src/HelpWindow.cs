@@ -26,6 +26,7 @@ public sealed class HelpWindow : DarkWindow
             ("3d", "zadanie wielodniowe: 3 dni robocze od jego dnia"),
             ("12h · 2d", "estymacja ponad 8 h: zadanie planuje się na kolejne dni robocze (8 h dziennie)"),
             ("#art · [ART]", "kategoria (klik w etykietę pod polem robi to samo)"),
+            ("@FoA", "projekt zadania (nazwy z Ustawienia → Połączenia; zadania z Notion mają projekt swojej bazy)"),
             ("[Meeting] 14-15:30 Sprint", "spotkanie zamiast zadania (okno spotkania: klik w Meeting)"),
             ("Przykład: jutro Raport 14-16 !! #art", "jutro, 14:00–16:00 (2h), średni priorytet, kategoria ART"),
         }),

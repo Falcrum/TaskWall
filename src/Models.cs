@@ -486,6 +486,8 @@ public sealed class Account
     /// <summary>More databases of this account (e.g. a second project), read with the same token.</summary>
     public List<NotionLink> NotionMore { get; set; } = new();
     [System.Text.Json.Serialization.JsonIgnore] public IEnumerable<NotionLink> NotionSources => new[] { Notion }.Concat(NotionMore).Where(l => l.Database.Length > 0);
+    /// <summary>Projects of the account: every named database, also one without a Notion link yet (only a mark for own tasks).</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public IEnumerable<NotionLink> Projects => new[] { Notion }.Concat(NotionMore).Where(l => l.Name.Length > 0);
 }
 
 /// <summary>Automatic read-only sync of one Notion database into the account's backlog (personal access token).</summary>
@@ -509,6 +511,12 @@ public sealed class NotionLink
     public string? ViewName { get; set; }
     /// <summary>Statuses that are not imported (still updated when already on the board).</summary>
     public List<string>? SkipStatuses { get; set; }
+    /// <summary>Only these statuses are read (like the status filter of a Notion view); null = all but <see cref="SkipStatuses"/>.</summary>
+    public List<string>? ReadStatuses { get; set; }
+    /// <summary>Extra conditions, one per line: "Dział != PM", "Projekt = Mnich DLC" (any of the property's values).</summary>
+    public List<string>? Conditions { get; set; }
+    /// <summary>Columns of the database seen at the last sync ("Dział: multi_select") – a hint for the conditions.</summary>
+    public List<string>? KnownColumns { get; set; }
     /// <summary>A page done in Notion ticks its task off.</summary>
     public bool SyncDone { get; set; } = true;
     public DateTime? LastSync { get; set; }

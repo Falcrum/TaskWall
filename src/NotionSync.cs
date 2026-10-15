@@ -34,6 +34,8 @@ static class NotionSync
     {
         /// <summary>The main task of a Notion sub-item (page id without dashes).</summary>
         public string? ParentId { get; init; }
+        /// <summary>Text values of the page's properties (selects, statuses, people names, text) – for the extra conditions ("Dział != PM").</summary>
+        public Dictionary<string, List<string>> Values { get; init; } = new(StringComparer.OrdinalIgnoreCase);
     }
 
     // ---------- token storage (DPAPI, current Windows user) ----------
@@ -123,7 +125,7 @@ static class NotionSync
     /// Reads the database – through the filter of the view from the link (e.g. "Dla mnie": assigned to me, chosen
     /// statuses), so only those pages come in. Stops at <see cref="NotionLink.MaxPages"/> instead of flooding the backlog.
     /// </summary>
-    public static async Task<(string Title, List<Page> Pages, string? MeId, string? ViewName, bool Capped, bool ViewFiltered)> Read(NotionLink link, NotionLink? tokenFrom = null)
+    public static async Task<(string Title, List<Page> Pages, string? MeId, string? ViewName, bool Capped, bool ViewFiltered, List<string>? Statuses)> Read(NotionLink link, NotionLink? tokenFrom = null)
     {
         var token = Token(tokenFrom ?? link) ?? throw new InvalidOperationException(L.T("Brak tokenu (albo został zapisany na innym koncie Windows) – wklej go ponownie."));
         var id = NotionImport.ExtractId(link.Database) ?? throw new InvalidOperationException(L.T("Nie rozpoznaję linku do bazy. Skopiuj link do widoku bazy (••• → Copy link to view)."));
@@ -199,25 +201,46 @@ static class NotionSync
             return (found, false);
         }
 
-        // "only mine" on Notion's side (people properties contain me), so a big team database never hits the limit
-        async Task<JsonElement?> MineFilter()
+        // the database's columns: all its statuses (for the settings, also those no page has yet) and the people columns
+        var peopleProps = new List<string>();
+        List<string>? schemaStatuses = null;
+        var columns = new List<string>();
+        try
         {
-            if (me == null) return null;
-            try
+            using var src = await Call(token, HttpMethod.Get, "data_sources/" + sourceId);
+            if (src.RootElement.TryGetProperty("properties", out var props))
             {
-                using var src = await Call(token, HttpMethod.Get, "data_sources/" + sourceId);
-                if (!src.RootElement.TryGetProperty("properties", out var props)) return null;
-                var people = props.EnumerateObject().Where(pr => pr.Value.TryGetProperty("type", out var t) && t.GetString() == "people").Select(pr => pr.Name).ToList();
-                if (people.Count == 0) return null;
-                var parts = people.Select(n => new Dictionary<string, object> { ["property"] = n, ["people"] = new Dictionary<string, object> { ["contains"] = me } }).ToList();
-                object f = parts.Count == 1 ? parts[0] : new Dictionary<string, object> { ["or"] = parts };
-                return JsonSerializer.SerializeToElement(f);
+                bool mainFound = false;
+                foreach (var pr in props.EnumerateObject())
+                {
+                    var type = pr.Value.TryGetProperty("type", out var t) ? t.GetString() : null;
+                    if (type != null) columns.Add(pr.Name + ": " + type);
+                    if (type == "people") peopleProps.Add(pr.Name);
+                    if (type != "status" || mainFound) continue;
+                    bool main = IsMainStatus(pr.Name.Trim().ToLowerInvariant());
+                    if (schemaStatuses != null && !main) continue;
+                    if (pr.Value.TryGetProperty("status", out var sd) && sd.TryGetProperty("options", out var opts))
+                        schemaStatuses = opts.EnumerateArray().Select(o => o.GetProperty("name").GetString() ?? "").Where(n => n.Length > 0).ToList();
+                    mainFound = main;
+                }
             }
-            catch (NotionError) { return null; }
         }
+        catch (NotionError) { /* only for the settings and "mine" */ }
 
+        // "only mine" on Notion's side (people columns contain me), so a big team database never hits the limit
+        JsonElement? MineFilterNow()
+        {
+            if (me == null || peopleProps.Count == 0) return null;
+            // the assignee column when there is one (not "Watchers", "Odbiera" …), like Notion's own "Assignee contains me"
+            var assignee = peopleProps.Where(n => System.Text.RegularExpressions.Regex.IsMatch(n, @"assign|przypis|wykonaw|owner|odpowiedzial|osoba", System.Text.RegularExpressions.RegexOptions.IgnoreCase)).ToList();
+            var parts = (assignee.Count > 0 ? assignee : peopleProps).Select(n => new Dictionary<string, object> { ["property"] = n, ["people"] = new Dictionary<string, object> { ["contains"] = me } }).ToList();
+            object f = parts.Count == 1 ? parts[0] : new Dictionary<string, object> { ["or"] = parts };
+            return JsonSerializer.SerializeToElement(f);
+        }
+        Task<JsonElement?> MineFilter() => Task.FromResult(MineFilterNow());
+
+        bool viewFiltered = filter != null; // the view's own filter (the finished statuses are its business then)
         if (filter == null && link.OnlyMine && await MineFilter() is { } mine) filter = mine;
-        bool viewFiltered = filter != null;
         var (pages, capped) = await Query(filter);
         // a view whose filter the API doesn't give out (e.g. Notion's own "My tasks" views): with too many pages,
         // read the ones assigned to me instead of nothing
@@ -226,7 +249,8 @@ static class NotionSync
             (pages, capped) = await Query(mineOnly);
             viewName = (viewName ?? L.T("widok")) + " · " + L.T("przypisane do mnie");
         }
-        return (title, pages, me, viewName, capped, viewFiltered);
+        if (columns.Count > 0) link.KnownColumns = columns;
+        return (title, pages, me, viewName, capped, viewFiltered, schemaStatuses);
     }
 
     /// <summary>A short "?v=" id → the full view id (views of the database, matched by prefix).</summary>
@@ -252,6 +276,9 @@ static class NotionSync
     }
 
     /// <summary>A page → title, status, priority, estimate, people (property names in Polish or English).</summary>
+    /// <summary>The task's own status property: "Status" / "Stan" (not "QA Status", "Status testów" …).</summary>
+    static bool IsMainStatus(string lowerName) => lowerName is "status" or "stan" or "state" or "status zadania";
+
     public static Page? ParsePage(JsonElement p)
     {
         if (p.TryGetProperty("object", out var o) && o.GetString() != "page") return null;
@@ -263,6 +290,9 @@ static class NotionSync
         double? estimate = null;
         var people = new List<string>();
         string? parent = null;
+        string? mainStatus = null, otherStatus = null; // "Status" itself wins over e.g. "QA Status"
+        var values = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        void Value(string prop, string? v) { if (string.IsNullOrEmpty(v)) return; if (!values.TryGetValue(prop, out var l)) values[prop] = l = new(); l.Add(v); }
         if (!p.TryGetProperty("properties", out var props)) return null;
         foreach (var prop in props.EnumerateObject())
         {
@@ -273,15 +303,26 @@ static class NotionSync
             {
                 case "title": title = PlainText(v, "title"); break;
                 case "status":
-                    if (v.TryGetProperty("status", out var st) && st.ValueKind == JsonValueKind.Object) status ??= st.GetProperty("name").GetString();
+                    if (v.TryGetProperty("status", out var st) && st.ValueKind == JsonValueKind.Object)
+                    {
+                        var sv = st.GetProperty("name").GetString();
+                        Value(prop.Name, sv);
+                        if (IsMainStatus(name)) mainStatus ??= sv; else otherStatus ??= sv;
+                    }
                     break;
                 case "select":
                     if (v.TryGetProperty("select", out var se) && se.ValueKind == JsonValueKind.Object)
                     {
                         var val = se.GetProperty("name").GetString();
+                        Value(prop.Name, val);
                         if (name.Contains("prior")) priority = val;
-                        else if (name.Contains("status") || name.Contains("stan")) status ??= val;
+                        else if (IsMainStatus(name)) mainStatus ??= val;
+                        else if (name.Contains("status") || name.Contains("stan")) otherStatus ??= val;
                     }
+                    break;
+                case "multi_select":
+                    if (v.TryGetProperty("multi_select", out var ms) && ms.ValueKind == JsonValueKind.Array)
+                        foreach (var m in ms.EnumerateArray()) if (m.TryGetProperty("name", out var mn)) Value(prop.Name, mn.GetString());
                     break;
                 case "relation":
                     // Notion sub-items: "Parent item" / "Element nadrzędny" points at the main task
@@ -291,7 +332,10 @@ static class NotionSync
                     break;
                 case "people":
                     foreach (var person in v.GetProperty("people").EnumerateArray())
+                    {
                         if (person.TryGetProperty("id", out var pid)) people.Add(pid.GetString()!);
+                        if (person.TryGetProperty("name", out var pn) && pn.ValueKind == JsonValueKind.String) Value(prop.Name, pn.GetString());
+                    }
                     break;
                 case "number":
                     if (IsEstimate(name) && v.TryGetProperty("number", out var n) && n.ValueKind == JsonValueKind.Number) estimate = n.GetDouble();
@@ -305,12 +349,14 @@ static class NotionSync
                     break;
                 case "rich_text":
                     if (IsEstimate(name)) estimate = NotionImport.ParseHours(PlainText(v, "rich_text"));
+                    else Value(prop.Name, PlainText(v, "rich_text"));
                     break;
             }
         }
+        status = mainStatus ?? otherStatus;
         if (string.IsNullOrWhiteSpace(title)) return null;
         if (estimate is <= 0 or > 1000) estimate = null;
-        return new Page(id, title.Trim(), status, priority, estimate is { } e ? Math.Round(e, 2) : null, url, people) { ParentId = parent };
+        return new Page(id, title.Trim(), status, priority, estimate is { } e ? Math.Round(e, 2) : null, url, people) { ParentId = parent, Values = values };
     }
 
     static bool IsEstimate(string name) =>
@@ -320,13 +366,18 @@ static class NotionSync
     // ---------- applying to the board ----------
 
     /// <summary>Brings the pages into the store (no network – also used by the self-test).</summary>
-    public static (int Added, int Updated) Apply(BoardStore store, NotionLink link, List<Page> pages, string? me, bool viewFiltered = false)
+    public static (int Added, int Updated) Apply(BoardStore store, NotionLink link, List<Page> pages, string? me, bool viewFiltered = false, bool complete = false)
     {
         int added = 0, updated = 0;
         var skip = (link.SkipStatuses ?? new()).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var backlog = store.Data.Tasks.Where(t => t.IsBacklog && !t.Archived).ToList();
         double order = backlog.Count > 0 ? backlog.Max(t => t.Order) + 1 : 0;
-        bool Skipped(string? status) => status != null && (skip.Contains(status) || (link.SkipStatuses == null && !viewFiltered && NotionImport.LooksDone(status)));
+        var read = link.ReadStatuses?.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var conditions = (link.Conditions ?? new()).Select(Condition.Parse).Where(c => c != null).Select(c => c!).ToList();
+        // not read: a status outside the chosen ones (or a skipped / finished one) and pages failing the extra conditions
+        bool Skipped(string? status) => status != null && (read != null ? !read.Contains(status)
+            : skip.Contains(status) || (link.SkipStatuses == null && !viewFiltered && NotionImport.LooksDone(status)));
+        bool Excluded(Page page) => Skipped(page.Status) || conditions.Any(c => !c.Matches(page));
         foreach (var page in pages)
         {
             if (link.OnlyMine && me != null && !page.People.Contains(me)) continue;
@@ -336,7 +387,7 @@ static class NotionSync
             if (t == null && store.BinItems.Any(e => e.Task.NotionId == page.Id)) continue;
             if (t == null)
             {
-                if (Skipped(page.Status)) continue;
+                if (Excluded(page)) continue;
                 store.Add(new TaskItem
                 {
                     Id = "notion-" + page.Id.Replace("-", ""), // the same id on every computer: two PCs importing the same page merge into one task
@@ -370,13 +421,24 @@ static class NotionSync
             var source = link.Name.Length > 0 ? link.Name : null;
             if (source != t.NotionSource) { t.NotionSource = source; changed = true; }
             // a status that isn't read (any more): an untouched task still in the backlog leaves it again
-            if (Skipped(page.Status) && t.IsBacklog && !t.Archived && t.Checklist == null && t.Text == t.NotionTitle)
+            if (Excluded(page) && t.IsBacklog && !t.Archived && t.Checklist == null && t.Text == t.NotionTitle)
             {
                 store.Remove(t);
                 updated++;
                 continue;
             }
             if (changed) { store.Changed(t); updated++; }
+        }
+        // the whole result came in: an untouched backlog task of this database that is no longer in it (left the view,
+        // re-assigned …) leaves the backlog too
+        if (complete && link.Name.Length > 0)
+        {
+            var ids = pages.Select(p => p.Id).ToHashSet();
+            foreach (var t in store.Data.Tasks.Where(t => t.NotionId != null && t.NotionSource == link.Name && !ids.Contains(t.NotionId) && t.IsBacklog && !t.Archived && t.Checklist == null && t.Text == t.NotionTitle).ToList())
+            {
+                store.Remove(t);
+                updated++;
+            }
         }
         return (added, updated);
     }
@@ -414,12 +476,13 @@ static class NotionSync
                 var label = link.Name.Length > 0 ? link.Name + ": " : sources.Count > 1 ? L.T("baza") + " " + (sources.IndexOf(link) + 1) + ": " : "";
                 try
                 {
-                    var (_, pages, me, viewName, capped, filtered) = await Read(link, main);
+                    var (_, pages, me, viewName, capped, filtered, schemaStatuses) = await Read(link, main);
                     if (capped)
                         throw new InvalidOperationException(L.F("Ten widok ma ponad {0} zadań – nic nie wczytałem. Użyj widoku z filtrami (np. przypisane do mnie) albo podnieś limit.", link.MaxPages));
-                    var (a, u) = Apply(store, link, pages, me, viewFiltered: filtered); // without the view's filter the finished statuses stay out
+                    var (a, u) = Apply(store, link, pages, me, viewFiltered: filtered, complete: !capped); // without the view's filter the finished statuses stay out
                     added += a; updated += u; total += pages.Count;
-                    link.KnownStatuses = pages.Select(p => p.Status).Where(s => s != null).Select(s => s!).Distinct().OrderBy(s => s).ToList();
+                    // all statuses of the database in Notion's order (and any a page has that the list lacks)
+                    link.KnownStatuses = (schemaStatuses ?? new()).Concat(pages.Select(p => p.Status).Where(s => s != null).Select(s => s!).OrderBy(s => s)).Distinct().ToList();
                     link.LastSync = DateTime.Now;
                     link.ViewName = viewName;
                     link.LastResult = $"{DateTime.Now:HH:mm}: " + (viewName != null ? L.F("widok „{0}”", viewName) + " · " : link.UseViewFilter && ViewId(link.Database) == null ? L.T("cała baza (link bez widoku)") + " · " : "")
@@ -454,5 +517,24 @@ static class NotionSync
             if (!startup && l.LastSync is { } last && DateTime.Now - last < TimeSpan.FromMinutes(Math.Max(2, l.Minutes))) continue;
             await Run(acc.Id);
         }
+    }
+}
+
+/// <summary>
+/// An extra condition of a Notion database in the settings: "Dział != PM" (none of the column's values is PM),
+/// "Projekt = Mnich DLC" (one of them is). Names and values are compared without case.
+/// </summary>
+sealed record Condition(string Property, bool Equals_, string Value)
+{
+    public static Condition? Parse(string line)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(line ?? "", @"^\s*(.+?)\s*(!=|≠|=)\s*(.+?)\s*$");
+        return m.Success ? new Condition(m.Groups[1].Value, m.Groups[2].Value == "=", m.Groups[3].Value) : null;
+    }
+
+    public bool Matches(NotionSync.Page page)
+    {
+        var has = page.Values.TryGetValue(Property, out var values) && values.Any(v => string.Equals(v.Trim(), Value, StringComparison.OrdinalIgnoreCase));
+        return Equals_ ? has : !has;
     }
 }

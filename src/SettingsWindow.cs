@@ -612,10 +612,10 @@ public sealed class SettingsWindow : DarkWindow
         p.Children.Add(done);
 
         // ----- the databases (one per project), each with a short name shown on its tasks -----
-        var head = Label(L.T("BAZY"), 11, "FgDim", FontWeights.Bold);
+        var head = Label(L.T("PROJEKTY I BAZY NOTION"), 11, "FgDim", FontWeights.Bold);
         head.Margin = new Thickness(0, 14, 0, 2);
         p.Children.Add(head);
-        p.Children.Add(Label(L.T("Link do widoku: w Notion nazwa widoku nad tabelą → Copy link to view. Baza na całą stronę: Ctrl+L. Nazwa (np. projektu) pojawia się na zadaniach z tej bazy."), 11, "FgFaint"));
+        p.Children.Add(Label(L.T("Każdy projekt ma krótką nazwę i kolor – widać je na jego zadaniach, a komenda @nazwa (np. @FoA) przypisuje projekt własnemu zadaniu. Link do bazy Notion jest opcjonalny; z linkiem wczytywane są zadania tej bazy. Link do widoku: w Notion nazwa widoku nad tabelą → Copy link to view."), 11, "FgFaint"));
         var howTo = Btn(L.T("Jak skopiować link do widoku (pomoc Notion) ↗"), "LinkButton", (_, _) => GlassWindow.OpenUrl("https://www.notion.com/help/views-filters-and-sorts"));
         howTo.HorizontalAlignment = HorizontalAlignment.Left;
         howTo.Margin = new Thickness(-7, 2, 0, 6);
@@ -632,7 +632,7 @@ public sealed class SettingsWindow : DarkWindow
                 list.Children.Add(BuildNotionSource(acc, store, extra, () => { acc.NotionMore.Remove(extra); SettingsStore.Save(S); FillSources(); }, refreshers));
         }
         FillSources();
-        var add = Btn(L.T("+ Dodaj bazę"), "LinkButton", (_, _) =>
+        var add = Btn(L.T("+ Dodaj projekt"), "LinkButton", (_, _) =>
         {
             var used = new[] { acc.Notion }.Concat(acc.NotionMore).Select(l => l.Color).ToHashSet();
             acc.NotionMore.Add(new NotionLink { Color = Category.Palette.FirstOrDefault(c => !used.Contains(c)) ?? Category.Palette[0] });
@@ -696,7 +696,7 @@ public sealed class SettingsWindow : DarkWindow
             SettingsStore.Save(S);
             // tasks already on the board follow the new name right away (without a name yet: only when this is the one database)
             bool only = new[] { acc.Notion }.Concat(acc.NotionMore).Count(l => l.Database.Length > 0) <= 1;
-            foreach (var t in store.Data.Tasks.Where(t => t.NotionId != null && (old.Length > 0 ? t.NotionSource == old : t.NotionSource == null && only)).ToList())
+            foreach (var t in store.Data.Tasks.Where(t => old.Length > 0 ? t.NotionSource == old : t.NotionId != null && t.NotionSource == null && only).ToList())
             {
                 t.NotionSource = v.Length > 0 ? v : null;
                 store.Changed(t);
@@ -707,7 +707,7 @@ public sealed class SettingsWindow : DarkWindow
         top.Children.Add(name);
         if (remove != null)
         {
-            var del = Btn(L.T("Usuń bazę"), "LinkButton", (_, _) => remove());
+            var del = Btn(L.T("Usuń projekt"), "LinkButton", (_, _) => remove());
             DockPanel.SetDock(del, Dock.Right);
             top.Children.Add(del);
         }
@@ -742,15 +742,16 @@ public sealed class SettingsWindow : DarkWindow
             ShowDbState();
             var known = link.KnownStatuses ?? new();
             if (known.Count == 0) { statuses.Children.Add(Label(L.T("Lista statusów pojawi się po pierwszej synchronizacji. Domyślnie pomijane są statusy zakończone."), 11, "FgFaint")); return; }
-            var skip = link.SkipStatuses ?? known.Where(NotionImport.LooksDone).ToList();
+            // like the status filter of a Notion view: only the ticked statuses are read
+            var readNow = link.ReadStatuses ?? known.Where(s => !(link.SkipStatuses ?? known.Where(NotionImport.LooksDone).ToList()).Contains(s)).ToList();
             foreach (var s in known)
             {
-                var chip = new System.Windows.Controls.Primitives.ToggleButton { Content = s, Style = (Style)Application.Current.Resources["Chip"], IsChecked = !skip.Contains(s), Margin = new Thickness(0, 0, 6, 6), ToolTip = L.T("Zaznaczone statusy są wczytywane") };
+                var chip = new System.Windows.Controls.Primitives.ToggleButton { Content = s, Style = (Style)Application.Current.Resources["Chip"], IsChecked = readNow.Contains(s), Margin = new Thickness(0, 0, 6, 6), ToolTip = L.T("Zaznaczone statusy są wczytywane") };
                 chip.Click += (_, _) =>
                 {
-                    var now = link.SkipStatuses ?? known.Where(NotionImport.LooksDone).ToList();
-                    if (chip.IsChecked == true) now.Remove(s); else if (!now.Contains(s)) now.Add(s);
-                    link.SkipStatuses = now;
+                    var now = link.ReadStatuses ?? new List<string>(readNow);
+                    if (chip.IsChecked == true) { if (!now.Contains(s)) now.Add(s); } else now.Remove(s);
+                    link.ReadStatuses = now;
                     SettingsStore.Save(S);
                 };
                 statuses.Children.Add(chip);
@@ -759,6 +760,29 @@ public sealed class SettingsWindow : DarkWindow
         FillStatuses();
         refreshers.Add(FillStatuses);
         p.Children.Add(Pair(L.T("Wczytywane statusy"), statuses));
+
+        var condState = Label("", 11.5, "FgDim");
+        // extra conditions, one per line ("Dział != PM") – for what a view filters by but the API doesn't give out
+        var cond = new TextBox
+        {
+            Style = (Style)Application.Current.Resources["FieldBox"], AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 34,
+            Text = string.Join(Environment.NewLine, link.Conditions ?? new()),
+            ToolTip = L.T("Jeden warunek w wierszu: Kolumna = wartość albo Kolumna != wartość, np. Dział != PM"),
+        };
+        cond.LostKeyboardFocus += (_, _) =>
+        {
+            var lines = cond.Text.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
+            var bad = lines.Where(l => Condition.Parse(l) == null).ToList();
+            condState.Text = bad.Count > 0 ? L.F("Nie rozumiem: {0}", string.Join(", ", bad)) : "";
+            var list = lines.Where(l => Condition.Parse(l) != null).ToList();
+            link.Conditions = list.Count > 0 ? list : null;
+            SettingsStore.Save(S);
+        };
+        p.Children.Add(Pair(L.T("Dodatkowe warunki"), cond));
+        p.Children.Add(condState);
+        var usable = (link.KnownColumns ?? new()).Where(c => c.EndsWith(": select") || c.EndsWith(": multi_select") || c.EndsWith(": status") || c.EndsWith(": people") || c.EndsWith(": rich_text")).Select(c => c[..c.LastIndexOf(':')]).ToList();
+        if (usable.Count > 0) p.Children.Add(Label(L.F("Kolumny tej bazy: {0}", string.Join(", ", usable)), 11, "FgFaint"));
+        p.Children.Add(Label(L.T("Jeden w wierszu, np. „Dział != PM” albo „Projekt = Mnich DLC”. Działają też na zadania już wczytane: nieruszane zadania z backlogu, które ich nie spełniają, znikają przy synchronizacji."), 11, "FgFaint"));
         p.Children.Add(result);
         return card;
     }

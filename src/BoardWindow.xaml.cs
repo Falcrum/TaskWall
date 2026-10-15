@@ -1081,7 +1081,7 @@ public partial class BoardWindow : GlassWindow
 
     /// <summary>Colour of a Notion database (Settings → Połączenia), by its name.</summary>
     static Color SourceColor(string name) =>
-        S.Accounts.SelectMany(a => a.NotionSources).FirstOrDefault(l => l.Name == name) is { } l ? ParseColor(l.Color) : Color.FromRgb(0x8A, 0x94, 0xA6);
+        S.Accounts.SelectMany(a => a.Projects).FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.OrdinalIgnoreCase)) is { } l ? ParseColor(l.Color) : Color.FromRgb(0x8A, 0x94, 0xA6);
 
     static Color TagColor(string tag)
     {
@@ -1544,6 +1544,7 @@ public partial class BoardWindow : GlassWindow
                     if (p.Time is { } tm) { real.Time = tm.ToString(@"hh\:mm"); real.End = p.End?.ToString(@"hh\:mm"); }
                     if (p.Priority != null) real.Priority = p.Priority;
                     if (p.Estimate != null) { var oldEst = real.Estimate; real.Estimate = p.Estimate; ApplyAutoPlan(real, real.Day, oldEst); }
+                    if (p.Project != null && real.NotionId == null) real.NotionSource = p.Project; // "@FoA" (a Notion task keeps its database)
                     Store.Changed(real);
                 };
             Commit(change, null);
@@ -1682,7 +1683,7 @@ public partial class BoardWindow : GlassWindow
             {
                 string? day = parsed.Day is { } pd ? DayKey(pd) : key == BacklogKey ? null : key;
                 var siblings = Store.Data.Tasks.Where(x => x.Day == day && !x.Archived);
-                var t = new TaskItem { Text = v, Day = day, Estimate = parsed.Estimate, Time = parsed.Time?.ToString(@"hh\:mm"), End = parsed.End?.ToString(@"hh\:mm"), Priority = parsed.Priority, PlanEnd = parsed.Days is { } nd && day != null ? PlanEndAfter(day, nd) : AutoPlanEnd(day, parsed.Estimate), Order = siblings.Any() ? siblings.Max(x => x.Order) + 1 : 0 };
+                var t = new TaskItem { Text = v, Day = day, Estimate = parsed.Estimate, Time = parsed.Time?.ToString(@"hh\:mm"), End = parsed.End?.ToString(@"hh\:mm"), Priority = parsed.Priority, NotionSource = parsed.Project, PlanEnd = parsed.Days is { } nd && day != null ? PlanEndAfter(day, nd) : AutoPlanEnd(day, parsed.Estimate), Order = siblings.Any() ? siblings.Max(x => x.Order) + 1 : 0 };
                 _justAdded = t.Id;
                 change = () => Store.Add(t);
                 if (parsed.Day != null && day != key) // went to another day: say where, and show that week if it's off-screen

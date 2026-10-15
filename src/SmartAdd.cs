@@ -14,7 +14,7 @@ namespace TaskWall;
 /// </summary>
 static class SmartAdd
 {
-    public sealed record Result(string Text, DateTime? Day, double? Estimate, List<string> Categories, TimeSpan? Time = null, TimeSpan? End = null, string? Priority = null, int? Days = null)
+    public sealed record Result(string Text, DateTime? Day, double? Estimate, List<string> Categories, TimeSpan? Time = null, TimeSpan? End = null, string? Priority = null, int? Days = null, string? Project = null)
     {
         public bool HasAny => Day != null || Estimate != null || Categories.Count > 0;
     }
@@ -50,6 +50,11 @@ static class SmartAdd
 
     static readonly Regex Hours = new(@"(?<![\w#])(?:(\d+)\s*h\s*(\d{1,2})\s*(?:m|min|mins)?|(\d+(?:[.,]\d+)?)\s*(?:h|hr|hrs|hour|hours|godz\.?|godziny|godzin)|(\d+)\s*(?:min|mins|minut|minute|minutes))(?!\w)", RegexOptions.IgnoreCase);
     static readonly Regex Hash = new(@"(?<!\w)#([\p{L}\p{N}_\-]{1,24})", RegexOptions.IgnoreCase);
+    // "@FoA": the project (a name from Settings → Połączenia; e-mail addresses are left alone)
+    static readonly Regex At = new(@"(?<![\w.])@([\p{L}\p{N}_\-]{1,24})(?![\w.@])", RegexOptions.IgnoreCase);
+
+    /// <summary>Projects of the current account (names of its Notion databases / projects).</summary>
+    public static IEnumerable<string> Projects() => App.Settings.AccountFor(App.Settings.Layer).Projects.Select(p => p.Name);
     static readonly Regex DateNum = new(@"^(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?$");
 
     // "14-16", "9:30–11", "od 14 do 16", "from 9 to 11" → planned hours; "o 10" / "at 10" / "10:30" → start time
@@ -96,7 +101,7 @@ static class SmartAdd
         return text;
     }
 
-    public static Result Parse(string input, IReadOnlyList<Category> categories, DateTime? today = null, bool dates = true)
+    public static Result Parse(string input, IReadOnlyList<Category> categories, DateTime? today = null, bool dates = true, IEnumerable<string>? projects = null)
     {
         var now = (today ?? DateTime.Today).Date;
         var text = input.Trim();
@@ -119,6 +124,17 @@ static class SmartAdd
             estimate = Math.Round(estimate.Value, 2);
             if (estimate <= 0 || estimate > 24) estimate = null;
             else text = Remove(text, hm);
+        }
+
+        // @project → the task's project mark (only a known name; the first one wins)
+        string? project = null;
+        var names = (projects ?? Projects()).ToList();
+        foreach (Match m in At.Matches(text).Cast<Match>().Reverse())
+        {
+            var known = names.FirstOrDefault(n => string.Equals(n, m.Groups[1].Value, StringComparison.OrdinalIgnoreCase));
+            if (known == null) continue;
+            project = known;
+            text = Remove(text, m);
         }
 
         // #categories → [Name] (an existing category keeps its spelling)
@@ -150,7 +166,7 @@ static class SmartAdd
         var prefix = string.Concat(cats.Where(c => !existing.Contains(c.ToUpperInvariant())).Distinct().Select(c => $"[{c}] "));
         // "14-16" without an estimate: the planned hours are the estimate
         if (estimate == null && time is { } ts && end is { } te) estimate = Math.Round((te - ts).TotalHours, 2);
-        return new Result((prefix + text).Trim(), day, estimate, cats, time, end, priority, days);
+        return new Result((prefix + text).Trim(), day, estimate, cats, time, end, priority, days, project);
     }
 
     static string Remove(string text, Match m) => text.Remove(m.Index, m.Length);
