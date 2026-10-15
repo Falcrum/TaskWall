@@ -303,8 +303,22 @@ static class Dev
                 var nt = ns.Data.Tasks.Single();
                 Check("notion: only mine, done skipped, added to backlog with link", r1.Added == 1 && nt.IsBacklog && nt.Text == "[VFX] Woda w Tuathan" && nt.Url!.Contains("1111aaaa"));
                 nt.Text = "[VFX] Woda w Tuathan";
+                nt.Day = "2026-10-15"; // planned on a day: done in Notion ticks it there
                 var r2 = NotionSync.Apply(ns, nlink, new() { page with { Title = "[vfx] Woda w Tuathan v2", Status = "Done" } }, "me-1");
                 Check("notion: rename followed, done in Notion ticks the task", r2.Updated == 1 && nt.Text == "[VFX] Woda w Tuathan v2" && nt.Done && ns.Data.Tasks.Count == 1);
+                var stale = NotionSync.Apply(ns, new NotionLink(), new() { page with { Id = "s1", Title = "Do sprzątnięcia" } }, "me-1");
+                NotionSync.Apply(ns, new NotionLink(), new() { page with { Id = "s1", Title = "Do sprzątnięcia", Status = "Done" } }, "me-1");
+                Check("notion: an untouched backlog task whose status is no longer read leaves the backlog", stale.Added == 1 && ns.Data.Tasks.All(t => t.NotionId != "s1"));
+                var foa = new NotionLink { Name = "FoA" };
+                NotionSync.Apply(ns, foa, new() { page with { Id = "f1", Title = "Fryzury" } }, "me-1");
+                NotionSync.Apply(ns, new NotionLink { Name = "Tuathan" }, new() { page with { Title = "[vfx] Woda w Tuathan v2", Status = "Done" } }, "me-1");
+                Check("notion: two databases – each task marked with its database's name",
+                    ns.Data.Tasks.Single(t => t.NotionId == "f1").NotionSource == "FoA" && nt.NotionSource == "Tuathan" && ns.Data.Tasks.Count == 2);
+                var accMore = new AppSettings();
+                accMore.AccountFor("work").Notion.Name = "Tuathan";
+                accMore.AccountFor("work").NotionMore.Add(new NotionLink { Name = "FoA", Database = "https://app.notion.com/p/f73d59ddd8c6820bac8881f84305953a?v=225d59ddd8c68311a21888a852cdc8c6" });
+                Check("notion: a second database link is recognised", NotionImport.ExtractId(accMore.AccountFor("work").NotionMore[0].Database) != null
+                    && NotionSync.ViewId(accMore.AccountFor("work").NotionMore[0].Database) == "225d59ddd8c68311a21888a852cdc8c6");
             }
             Check("notion: view id from 'Copy link to view'", NotionSync.ViewId("https://www.notion.so/team/1111aaaa2222bbbb3333cccc4444dddd?v=aaaabbbbccccddddeeeeffff00001111&pvs=4") == "aaaabbbbccccddddeeeeffff00001111"
                 && NotionSync.ViewId("https://www.notion.so/team/1111aaaa2222bbbb3333cccc4444dddd") == null);

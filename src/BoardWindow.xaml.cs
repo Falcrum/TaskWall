@@ -887,6 +887,7 @@ public partial class BoardWindow : GlassWindow
         grid.Children.Add(circle);
         var text = new TextBlock { TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = fs, Foreground = Res("Fg") };
         text.Inlines.Add(new Run($"↷ {span.Index}/{span.Total}  ") { FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush") });
+        if (t.NotionSource != null) text.Inlines.Add(new Run(t.NotionSource + "  ") { FontWeight = FontWeights.Bold, FontSize = Math.Max(8.5, fs - 3), Foreground = Tx(SourceColor(t.NotionSource)) });
         var tags = TaskItem.Tags(t.Text, out var rest);
         foreach (var tag in tags) text.Inlines.Add(new Run(tag + "  ") { FontWeight = FontWeights.Bold, FontSize = Math.Max(8.5, fs - 3), Foreground = Tx(TagColor(tag)) });
         var main = new Run(tags.Count > 0 ? rest : t.Text);
@@ -1078,6 +1079,10 @@ public partial class BoardWindow : GlassWindow
         else sv.OpacityMask = null;
     }
 
+    /// <summary>Colour of a Notion database (Settings → Połączenia), by its name.</summary>
+    static Color SourceColor(string name) =>
+        S.Accounts.SelectMany(a => a.NotionSources).FirstOrDefault(l => l.Name == name) is { } l ? ParseColor(l.Color) : Color.FromRgb(0x8A, 0x94, 0xA6);
+
     static Color TagColor(string tag)
     {
         if (Store.CategoryFor(tag) is { } cat)
@@ -1170,6 +1175,17 @@ public partial class BoardWindow : GlassWindow
             text.Inlines.Add(new Run($"↷ {sp.Index}/{sp.Total}  ") { FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush"), ToolTip = L.F("Zadanie wielodniowe: dzień {0} z {1}", sp.Index, sp.Total) });
         if (t.Time != null) // planned hours ("14-16" typed with the task)
             text.Inlines.Add(new Run((t.End != null ? $"{t.Time}–{t.End}" : t.Time) + "  ") { FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush") });
+        if (t.NotionSource != null) // which Notion database (project) it comes from: an outlined mark, unlike the filled categories
+        {
+            var sc = SourceColor(t.NotionSource);
+            text.Inlines.Add(new InlineUIContainer(new Border
+            {
+                CornerRadius = new CornerRadius(4), Padding = new Thickness(4, 0, 4, 1), Margin = new Thickness(0, 0, 5, 0),
+                BorderThickness = new Thickness(1), BorderBrush = B(A(sc, 0xB0)),
+                ToolTip = L.F("Z bazy Notion „{0}”", t.NotionSource),
+                Child = new TextBlock { Text = t.NotionSource, FontSize = Math.Max(8.5, fs - 3), FontWeight = FontWeights.Bold, Foreground = Tx(sc) },
+            }) { BaselineAlignment = BaselineAlignment.Center });
+        }
         foreach (var tag in tags)
         {
             var c = TagColor(tag);

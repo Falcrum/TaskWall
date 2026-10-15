@@ -155,6 +155,7 @@ public sealed class Report
             {
                 var tags = TaskItem.Tags(t.Text, out var rest);
                 sb.Append($"<tr><td class=\"day\">{E(day.ToString("ddd d MMM", pl))}</td><td{(t.Done ? " class=\"done\"" : "")}>");
+                if (t.NotionSource != null) sb.Append($"<span class=\"tag\" style=\"background:none;border:1px solid var(--line)\">{E(t.NotionSource)}</span>");
                 foreach (var tag in tags) sb.Append($"<span class=\"tag\">{E(tag)}</span>");
                 sb.Append(t.Url is { Length: > 0 } url ? $"<a href=\"{E(url)}\" style=\"color:inherit\">{E(rest)}</a>" : E(rest));
                 if (t.Checklist is { Count: > 0 } cl) sb.Append($" <span class=\"day\">☑ {cl.Count(x => x.Done)}/{cl.Count}</span>");

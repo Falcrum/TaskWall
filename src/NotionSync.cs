@@ -123,9 +123,9 @@ static class NotionSync
     /// Reads the database – through the filter of the view from the link (e.g. "Dla mnie": assigned to me, chosen
     /// statuses), so only those pages come in. Stops at <see cref="NotionLink.MaxPages"/> instead of flooding the backlog.
     /// </summary>
-    public static async Task<(string Title, List<Page> Pages, string? MeId, string? ViewName, bool Capped)> Read(NotionLink link)
+    public static async Task<(string Title, List<Page> Pages, string? MeId, string? ViewName, bool Capped, bool ViewFiltered)> Read(NotionLink link, NotionLink? tokenFrom = null)
     {
-        var token = Token(link) ?? throw new InvalidOperationException(L.T("Brak tokenu (albo został zapisany na innym koncie Windows) – wklej go ponownie."));
+        var token = Token(tokenFrom ?? link) ?? throw new InvalidOperationException(L.T("Brak tokenu (albo został zapisany na innym koncie Windows) – wklej go ponownie."));
         var id = NotionImport.ExtractId(link.Database) ?? throw new InvalidOperationException(L.T("Nie rozpoznaję linku do bazy. Skopiuj link do widoku bazy (••• → Copy link to view)."));
 
         string? me = null;
@@ -171,31 +171,62 @@ static class NotionSync
             }
         }
 
-        var pages = new List<Page>();
-        string? cursor = null;
         int max = Math.Max(50, link.MaxPages);
-        bool capped = false;
-        do
+        async Task<(List<Page> Pages, bool Capped)> Query(JsonElement? flt)
         {
-            var body = new Dictionary<string, object> { ["page_size"] = 100 };
-            if (filter is { } fl) body["filter"] = fl;
-            if (sorts is { } so) body["sorts"] = so;
-            if (cursor != null) body["start_cursor"] = cursor;
-            JsonDocument q;
-            try { q = await Call(token, HttpMethod.Post, $"data_sources/{sourceId}/query", body); }
-            catch (NotionError e) when (e.Code is HttpStatusCode.NotFound or HttpStatusCode.BadRequest)
+            var found = new List<Page>();
+            string? cursor = null;
+            do
             {
-                throw new InvalidOperationException(L.T("Nie widzę tej bazy. Sprawdź link i to, czy masz do niej dostęp w Notion na koncie, z którego jest token.") + " (" + e.Message + ")");
-            }
-            using (q)
+                var body = new Dictionary<string, object> { ["page_size"] = 100 };
+                if (flt is { } fl) body["filter"] = fl;
+                if (sorts is { } so) body["sorts"] = so;
+                if (cursor != null) body["start_cursor"] = cursor;
+                JsonDocument q;
+                try { q = await Call(token, HttpMethod.Post, $"data_sources/{sourceId}/query", body); }
+                catch (NotionError e) when (e.Code is HttpStatusCode.NotFound or HttpStatusCode.BadRequest)
+                {
+                    throw new InvalidOperationException(L.T("Nie widzę tej bazy. Sprawdź link i to, czy masz do niej dostęp w Notion na koncie, z którego jest token.") + " (" + e.Message + ")");
+                }
+                using (q)
+                {
+                    foreach (var p in q.RootElement.GetProperty("results").EnumerateArray())
+                        if (ParsePage(p) is { } page) found.Add(page);
+                    cursor = q.RootElement.TryGetProperty("has_more", out var more) && more.GetBoolean() && q.RootElement.TryGetProperty("next_cursor", out var nc) ? nc.GetString() : null;
+                }
+                if (cursor != null && found.Count >= max) return (found, true);
+            } while (cursor != null);
+            return (found, false);
+        }
+
+        // "only mine" on Notion's side (people properties contain me), so a big team database never hits the limit
+        async Task<JsonElement?> MineFilter()
+        {
+            if (me == null) return null;
+            try
             {
-                foreach (var p in q.RootElement.GetProperty("results").EnumerateArray())
-                    if (ParsePage(p) is { } page) pages.Add(page);
-                cursor = q.RootElement.TryGetProperty("has_more", out var more) && more.GetBoolean() && q.RootElement.TryGetProperty("next_cursor", out var nc) ? nc.GetString() : null;
+                using var src = await Call(token, HttpMethod.Get, "data_sources/" + sourceId);
+                if (!src.RootElement.TryGetProperty("properties", out var props)) return null;
+                var people = props.EnumerateObject().Where(pr => pr.Value.TryGetProperty("type", out var t) && t.GetString() == "people").Select(pr => pr.Name).ToList();
+                if (people.Count == 0) return null;
+                var parts = people.Select(n => new Dictionary<string, object> { ["property"] = n, ["people"] = new Dictionary<string, object> { ["contains"] = me } }).ToList();
+                object f = parts.Count == 1 ? parts[0] : new Dictionary<string, object> { ["or"] = parts };
+                return JsonSerializer.SerializeToElement(f);
             }
-            if (cursor != null && pages.Count >= max) { capped = true; break; }
-        } while (cursor != null);
-        return (title, pages, me, viewName, capped);
+            catch (NotionError) { return null; }
+        }
+
+        if (filter == null && link.OnlyMine && await MineFilter() is { } mine) filter = mine;
+        bool viewFiltered = filter != null;
+        var (pages, capped) = await Query(filter);
+        // a view whose filter the API doesn't give out (e.g. Notion's own "My tasks" views): with too many pages,
+        // read the ones assigned to me instead of nothing
+        if (capped && filter == null && await MineFilter() is { } mineOnly)
+        {
+            (pages, capped) = await Query(mineOnly);
+            viewName = (viewName ?? L.T("widok")) + " · " + L.T("przypisane do mnie");
+        }
+        return (title, pages, me, viewName, capped, viewFiltered);
     }
 
     /// <summary>A short "?v=" id → the full view id (views of the database, matched by prefix).</summary>
@@ -295,22 +326,24 @@ static class NotionSync
         var skip = (link.SkipStatuses ?? new()).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var backlog = store.Data.Tasks.Where(t => t.IsBacklog && !t.Archived).ToList();
         double order = backlog.Count > 0 ? backlog.Max(t => t.Order) + 1 : 0;
+        bool Skipped(string? status) => status != null && (skip.Contains(status) || (link.SkipStatuses == null && !viewFiltered && NotionImport.LooksDone(status)));
         foreach (var page in pages)
         {
             if (link.OnlyMine && me != null && !page.People.Contains(me)) continue;
             var title = ExternalDrop.KnownTags(page.Title); // as shown on the board: "[VFX] Woda"
             var t = store.Data.Tasks.FirstOrDefault(x => x.NotionId == page.Id);
-            // deleted on the board: stays deleted (the bin can bring it back) – the same id would otherwise revive it
-            if (t == null && (store.Data.Deleted.ContainsKey("notion-" + page.Id.Replace("-", "")) || store.BinItems.Any(e => e.Task.NotionId == page.Id))) continue;
+            // deleted on the board (in the bin): not brought back while it is there
+            if (t == null && store.BinItems.Any(e => e.Task.NotionId == page.Id)) continue;
             if (t == null)
             {
-                if (page.Status != null && (skip.Contains(page.Status) || (link.SkipStatuses == null && !viewFiltered && NotionImport.LooksDone(page.Status)))) continue;
+                if (Skipped(page.Status)) continue;
                 store.Add(new TaskItem
                 {
                     Id = "notion-" + page.Id.Replace("-", ""), // the same id on every computer: two PCs importing the same page merge into one task
                     Text = title, NotionTitle = title, NotionId = page.Id, Url = page.Url,
                     Status = page.Status, Priority = page.Priority, Estimate = page.Estimate, Order = order++, ParentNotionId = page.ParentId,
                     Started = LooksInProgress(page.Status) ? true : null,
+                    NotionSource = link.Name.Length > 0 ? link.Name : null,
                 });
                 added++;
                 continue;
@@ -334,6 +367,15 @@ static class NotionSync
             if (link.SyncDone && !t.Done && NotionImport.LooksDone(page.Status)) { t.Done = true; changed = true; }
             if (page.Url != t.Url) { t.Url = page.Url; changed = true; }
             if (page.ParentId != t.ParentNotionId) { t.ParentNotionId = page.ParentId; changed = true; }
+            var source = link.Name.Length > 0 ? link.Name : null;
+            if (source != t.NotionSource) { t.NotionSource = source; changed = true; }
+            // a status that isn't read (any more): an untouched task still in the backlog leaves it again
+            if (Skipped(page.Status) && t.IsBacklog && !t.Archived && t.Checklist == null && t.Text == t.NotionTitle)
+            {
+                store.Remove(t);
+                updated++;
+                continue;
+            }
             if (changed) { store.Changed(t); updated++; }
         }
         return (added, updated);
@@ -343,36 +385,61 @@ static class NotionSync
     public static bool LooksInProgress(string? status) => status != null &&
         System.Text.RegularExpressions.Regex.IsMatch(status, @"w trakcie|in progress|doing|started|rozpocz|realizacj|wip", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
-    /// <summary>Reads and applies one account's database; the result also lands in <see cref="NotionLink.LastResult"/>.</summary>
+    /// <summary>
+    /// Reads and applies all Notion databases of one account (one token, the options of the first one). Each database
+    /// keeps its own result in <see cref="NotionLink.LastResult"/>; the first one also gets the summary of all.
+    /// </summary>
     public static async Task<Result> Run(string layer)
     {
-        var link = App.Settings.AccountFor(layer).Notion;
-        if (!link.Configured) return new Result(0, 0, 0, L.T("Notion nie jest skonfigurowany."));
+        var acc = App.Settings.AccountFor(layer);
+        var main = acc.Notion;
+        if (!main.Configured) return new Result(0, 0, 0, L.T("Notion nie jest skonfigurowany."));
         if (!Running.Add(layer)) return new Result(0, 0, 0, L.T("Synchronizacja już trwa."));
         StateChanged?.Invoke();
+        int added = 0, updated = 0, total = 0;
+        string? error = null;
+        var parts = new List<string>();
+        var sources = acc.NotionSources.ToList();
         try
         {
-            var (_, pages, me, viewName, capped) = await Read(link);
-            if (capped)
-                throw new InvalidOperationException(L.F("Ten widok ma ponad {0} zadań – nic nie wczytałem. Użyj widoku z filtrami (np. przypisane do mnie) albo podnieś limit.", link.MaxPages));
             var store = App.StoreFor(layer);
-            var (added, updated) = Apply(store, link, pages, me, viewFiltered: link.UseViewFilter && ViewId(link.Database) != null);
-            link.KnownStatuses = pages.Select(p => p.Status).Where(s => s != null).Select(s => s!).Distinct().OrderBy(s => s).ToList();
-            link.LastSync = DateTime.Now;
-            link.ViewName = viewName;
-            link.LastResult = $"{DateTime.Now:HH:mm}: " + (viewName != null ? L.F("widok „{0}”", viewName) + " · " : link.UseViewFilter && ViewId(link.Database) == null ? L.T("cała baza (link bez widoku)") + " · " : "")
-                + L.F("stron {0}, nowe {1}, zmienione {2}", pages.Count, added, updated) + (link.OnlyMine && me == null ? " " + L.T("(nie udało się ustalić „moich”)") : "");
+            foreach (var link in sources)
+            {
+                // the options are the account's (set once, on the first database)
+                if (!ReferenceEquals(link, main))
+                {
+                    link.UseViewFilter = main.UseViewFilter; link.MaxPages = main.MaxPages; link.OnlyMine = main.OnlyMine;
+                    link.SyncDone = main.SyncDone; link.Auto = main.Auto; link.Minutes = main.Minutes;
+                }
+                var label = link.Name.Length > 0 ? link.Name + ": " : sources.Count > 1 ? L.T("baza") + " " + (sources.IndexOf(link) + 1) + ": " : "";
+                try
+                {
+                    var (_, pages, me, viewName, capped, filtered) = await Read(link, main);
+                    if (capped)
+                        throw new InvalidOperationException(L.F("Ten widok ma ponad {0} zadań – nic nie wczytałem. Użyj widoku z filtrami (np. przypisane do mnie) albo podnieś limit.", link.MaxPages));
+                    var (a, u) = Apply(store, link, pages, me, viewFiltered: filtered); // without the view's filter the finished statuses stay out
+                    added += a; updated += u; total += pages.Count;
+                    link.KnownStatuses = pages.Select(p => p.Status).Where(s => s != null).Select(s => s!).Distinct().OrderBy(s => s).ToList();
+                    link.LastSync = DateTime.Now;
+                    link.ViewName = viewName;
+                    link.LastResult = $"{DateTime.Now:HH:mm}: " + (viewName != null ? L.F("widok „{0}”", viewName) + " · " : link.UseViewFilter && ViewId(link.Database) == null ? L.T("cała baza (link bez widoku)") + " · " : "")
+                        + L.F("stron {0}, nowe {1}, zmienione {2}", pages.Count, a, u) + (link.OnlyMine && me == null ? " " + L.T("(nie udało się ustalić „moich”)") : "");
+                    parts.Add(label + L.F("stron {0}, nowe {1}, zmienione {2}", pages.Count, a, u));
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("notion sync " + layer + " " + link.Name, ex);
+                    var msg = ex is HttpRequestException or TaskCanceledException ? L.T("Brak połączenia z Notion.") : ex.Message;
+                    error ??= msg;
+                    link.LastResult = $"{DateTime.Now:HH:mm}: " + L.F("błąd – {0}", msg);
+                    parts.Add(label + L.F("błąd – {0}", msg));
+                }
+            }
+            main.LastSync = DateTime.Now; // the account's interval counts from here, whatever happened to each database
+            if (sources.Count > 1) main.LastResult = $"{DateTime.Now:HH:mm}: " + string.Join("  ·  ", parts);
             SettingsStore.Save(App.Settings);
             if (added + updated > 0 && ReferenceEquals(store, App.Store)) App.Board?.OnExternalChange(quiet: true);
-            return new Result(added, updated, pages.Count, null);
-        }
-        catch (Exception ex)
-        {
-            Log.Error("notion sync " + layer, ex);
-            var msg = ex is HttpRequestException or TaskCanceledException ? L.T("Brak połączenia z Notion.") : ex.Message;
-            link.LastResult = $"{DateTime.Now:HH:mm}: " + L.F("błąd – {0}", msg);
-            SettingsStore.Save(App.Settings);
-            return new Result(0, 0, 0, msg);
+            return new Result(added, updated, total, error);
         }
         finally { Running.Remove(layer); StateChanged?.Invoke(); }
     }

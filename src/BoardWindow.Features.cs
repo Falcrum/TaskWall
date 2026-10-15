@@ -19,6 +19,7 @@ public partial class BoardWindow
     bool _archiveTab;
     string? _statusFilter;  // backlog: only this Notion status
     string? _prioFilter;    // backlog: only this priority (NoPriority = none set)
+    string? _sourceFilter;  // backlog: only tasks of this Notion database (NotionSource)
     const string NoPriority = "0000none";
 
     /// <summary>High → medium → low → others, for the priority filter.</summary>
@@ -309,6 +310,8 @@ public partial class BoardWindow
         var statusCounts = all.Where(t => !string.IsNullOrEmpty(t.Status)).GroupBy(t => t.Status!).OrderByDescending(g => g.Count()).ToList();
         var prioCounts = all.Where(t => !string.IsNullOrEmpty(t.Priority)).GroupBy(t => t.Priority!).OrderBy(g => PriorityRank(g.Key)).ThenBy(g => g.Key).ToList();
         if (_statusFilter != null && statusCounts.All(g => g.Key != _statusFilter)) _statusFilter = null;
+        var sourceCounts = all.Where(t => t.NotionSource != null).GroupBy(t => t.NotionSource!).OrderBy(g => g.Key).ToList();
+        if (_sourceFilter != null && sourceCounts.All(g => g.Key != _sourceFilter)) _sourceFilter = null;
         if (_prioFilter != null && _prioFilter != NoPriority && prioCounts.All(g => g.Key != _prioFilter)) _prioFilter = null;
         void Filter(string label, string? current, IEnumerable<(string Value, string Text)> options, Action<string?> set)
         {
@@ -319,6 +322,8 @@ public partial class BoardWindow
             box.SelectionChanged += (_, _) => { set((box.SelectedItem as ComboBoxItem)?.Tag as string); _backlogShown = 200; Dispatcher.BeginInvoke(BuildBacklog); };
             TagChips.Children.Add(box);
         }
+        if (sourceCounts.Count > 1 || (sourceCounts.Count == 1 && sourceCounts[0].Count() < all.Count))
+            Filter(L.T("Baza"), _sourceFilter, sourceCounts.Select(g => (g.Key, $"{g.Key}  ({g.Count()})")), v => _sourceFilter = v);
         if (tagCounts.Count > 0)
             Filter(L.T("Kategoria"), _tagFilter, tagCounts.Select(g => (g.Key, $"{(g.Key == TaskItem.MeetingTag ? "Meeting" : Store.CategoryFor(g.Key)?.Name ?? g.Key)}  ({g.Count()})")), v => _tagFilter = v);
         if (prioCounts.Count > 0)
@@ -326,10 +331,10 @@ public partial class BoardWindow
                 .Append((NoPriority, $"{L.T("bez priorytetu")}  ({all.Count(t => string.IsNullOrEmpty(t.Priority))})")), v => _prioFilter = v);
         if (statusCounts.Count > 0)
             Filter(L.T("Status"), _statusFilter, statusCounts.Select(g => (g.Key, $"{g.Key}  ({g.Count()})")), v => _statusFilter = v);
-        if (_tagFilter != null || _prioFilter != null || _statusFilter != null)
+        if (_tagFilter != null || _prioFilter != null || _statusFilter != null || _sourceFilter != null)
         {
             var clear = new Button { Style = (Style)FindResource("LinkButton"), Content = L.T("wyczyść filtry"), FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 4) };
-            clear.Click += (_, _) => { _tagFilter = _prioFilter = _statusFilter = null; BuildBacklog(); };
+            clear.Click += (_, _) => { _tagFilter = _prioFilter = _statusFilter = _sourceFilter = null; BuildBacklog(); };
             TagChips.Children.Add(clear);
         }
         TagChips.Visibility = TagChips.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -337,6 +342,7 @@ public partial class BoardWindow
         var shown = all.Where(t =>
             (_tagFilter == null || TaskItem.Tags(t.Text, out _).Contains(_tagFilter)) &&
             (_statusFilter == null || t.Status == _statusFilter) &&
+            (_sourceFilter == null || t.NotionSource == _sourceFilter) &&
             (_prioFilter == null || (_prioFilter == NoPriority ? string.IsNullOrEmpty(t.Priority) : t.Priority == _prioFilter)) &&
             (q.Length == 0 || Matches(t.Text, q) || Matches(t.Status, q) || Matches(t.Priority, q))).ToList();
 

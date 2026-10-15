@@ -6,6 +6,19 @@ static partial class L
     static readonly (string Pl, string En)[] Board =
     {
         // 0.16.1: subtasks
+        // 0.17: more Notion databases
+        ("Wczytuje zadania z baz Notion do backlogu konta (tylko odczyt). Wymaga osobistego tokenu Notion. Token jest szyfrowany dla bieżącego użytkownika Windows i zapisywany tylko na tym komputerze; na innym komputerze należy podać ten sam albo nowy token.", "Loads tasks from Notion databases into the account's backlog (read-only). Needs a Notion personal access token. The token is encrypted for the current Windows user and stored on this computer only; another computer needs the same or a new token."),
+        ("BAZY", "DATABASES"),
+        ("Link do widoku: w Notion nazwa widoku nad tabelą → Copy link to view. Baza na całą stronę: Ctrl+L. Nazwa (np. projektu) pojawia się na zadaniach z tej bazy.", "View link: in Notion, the view name above the table → Copy link to view. A full-page database: Ctrl+L. The name (e.g. the project's) is shown on the tasks of that database."),
+        ("+ Dodaj bazę", "+ Add a database"),
+        ("Usuń bazę", "Remove the database"),
+        ("Nazwa", "Name"),
+        ("Krótka nazwa widoczna na zadaniach z tej bazy, np. FoA", "A short name shown on the tasks of this database, e.g. FoA"),
+        ("Z bazy Notion „{0}”", "From the Notion database \"{0}\""),
+        ("Baza", "Database"),
+        ("baza", "database"),
+        ("widok", "view"),
+        ("przypisane do mnie", "assigned to me"),
         ("błąd", "error"), // the sync icon turns red on a Notion result that contains it
         ("Zwiń podzadania", "Collapse subtasks"),
         ("Pokaż podzadania", "Show subtasks"),

@@ -541,32 +541,9 @@ public sealed class SettingsWindow : DarkWindow
 
     FrameworkElement BuildNotion(Account acc, BoardStore store)
     {
-        var link = acc.Notion;
+        var link = acc.Notion; // token and options of the account; its database is the first one
         var p = new StackPanel();
-        p.Children.Add(Label(L.T("Wczytuje zadania z bazy Notion do backlogu konta (tylko odczyt). Wymaga osobistego tokenu Notion. Token jest szyfrowany dla bieżącego użytkownika Windows i zapisywany tylko na tym komputerze; na innym komputerze należy podać ten sam albo nowy token."), 11, "FgFaint"));
-
-        var db = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = link.Database, ToolTip = L.T("Link do bazy: ••• przy widoku bazy → Copy link to view") };
-        var dbState = Label("", 11.5, "FgDim");
-        void ShowDbState()
-        {
-            var v = db.Text.Trim();
-            var id = NotionImport.ExtractId(v);
-            dbState.Text = v.Length == 0 ? L.T("Wklej link do bazy.")
-                : id == null ? L.T("To nie wygląda na link do bazy Notion.")
-                : NotionSync.ViewId(v) != null ? L.F("Baza i widok rozpoznane{0}. Wczytywane są zadania spełniające filtry widoku.", link.ViewName != null ? $" („{link.ViewName}”)" : "")
-                : L.T("Link bez widoku (…?v=…): wczytywana byłaby cała baza. Zalecany link do widoku z filtrami.");
-            dbState.Foreground = v.Length > 0 && id == null ? new SolidColorBrush(Color.FromRgb(0xF2, 0xA6, 0x5A)) : Ui.Res("FgDim");
-        }
-        db.TextChanged += (_, _) => ShowDbState();
-        db.LostKeyboardFocus += (_, _) => { if (db.Text.Trim() != link.Database) { link.Database = db.Text.Trim(); SettingsStore.Save(S); } };
-        ShowDbState();
-        p.Children.Add(Pair(L.T("Link do bazy"), db));
-        p.Children.Add(dbState);
-        p.Children.Add(Label(L.T("Link do widoku: w Notion nazwa widoku nad tabelą → Copy link to view. Baza na całą stronę: Ctrl+L."), 11, "FgFaint"));
-        var howTo = Btn(L.T("Jak skopiować link do widoku (pomoc Notion) ↗"), "LinkButton", (_, _) => GlassWindow.OpenUrl("https://www.notion.com/help/views-filters-and-sorts"));
-        howTo.HorizontalAlignment = HorizontalAlignment.Left;
-        howTo.Margin = new Thickness(-7, 2, 0, 8);
-        p.Children.Add(howTo);
+        p.Children.Add(Label(L.T("Wczytuje zadania z baz Notion do backlogu konta (tylko odczyt). Wymaga osobistego tokenu Notion. Token jest szyfrowany dla bieżącego użytkownika Windows i zapisywany tylko na tym komputerze; na innym komputerze należy podać ten sam albo nowy token."), 11, "FgFaint"));
 
         // the token is never shown: a saved one appears as ******** (typing / pasting replaces it)
         const string Mask = "************************";
@@ -634,11 +611,135 @@ public sealed class SettingsWindow : DarkWindow
         done.Unchecked += (_, _) => { link.SyncDone = false; SettingsStore.Save(S); };
         p.Children.Add(done);
 
+        // ----- the databases (one per project), each with a short name shown on its tasks -----
+        var head = Label(L.T("BAZY"), 11, "FgDim", FontWeights.Bold);
+        head.Margin = new Thickness(0, 14, 0, 2);
+        p.Children.Add(head);
+        p.Children.Add(Label(L.T("Link do widoku: w Notion nazwa widoku nad tabelą → Copy link to view. Baza na całą stronę: Ctrl+L. Nazwa (np. projektu) pojawia się na zadaniach z tej bazy."), 11, "FgFaint"));
+        var howTo = Btn(L.T("Jak skopiować link do widoku (pomoc Notion) ↗"), "LinkButton", (_, _) => GlassWindow.OpenUrl("https://www.notion.com/help/views-filters-and-sorts"));
+        howTo.HorizontalAlignment = HorizontalAlignment.Left;
+        howTo.Margin = new Thickness(-7, 2, 0, 6);
+        p.Children.Add(howTo);
+        var list = new StackPanel();
+        p.Children.Add(list);
+        var refreshers = new List<Action>();
+        void FillSources()
+        {
+            list.Children.Clear();
+            refreshers.Clear();
+            list.Children.Add(BuildNotionSource(acc, store, link, null, refreshers));
+            foreach (var extra in acc.NotionMore.ToList())
+                list.Children.Add(BuildNotionSource(acc, store, extra, () => { acc.NotionMore.Remove(extra); SettingsStore.Save(S); FillSources(); }, refreshers));
+        }
+        FillSources();
+        var add = Btn(L.T("+ Dodaj bazę"), "LinkButton", (_, _) =>
+        {
+            var used = new[] { acc.Notion }.Concat(acc.NotionMore).Select(l => l.Color).ToHashSet();
+            acc.NotionMore.Add(new NotionLink { Color = Category.Palette.FirstOrDefault(c => !used.Contains(c)) ?? Category.Palette[0] });
+            SettingsStore.Save(S);
+            FillSources();
+        });
+        add.HorizontalAlignment = HorizontalAlignment.Left;
+        add.Margin = new Thickness(-7, 0, 0, 6);
+        p.Children.Add(add);
+
+        var syncRow = new DockPanel { Margin = new Thickness(0, 6, 0, 0) };
+        var result = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Foreground = Ui.Res("FgFaint"), Margin = new Thickness(10, 0, 0, 0), Text = link.LastResult ?? "" };
+        Button? now = null;
+        now = Btn(L.T("Synchronizuj teraz"), "SecondaryButton", async (_, _) =>
+        {
+            Keyboard.ClearFocus(); // the fields save on leaving them
+            if (!link.Configured) { result.Text = L.T("Podaj link do bazy i token."); return; }
+            now!.IsEnabled = false;
+            result.Text = L.T("Łączę z Notion…");
+            var r = await NotionSync.Run(acc.Id);
+            now.IsEnabled = true;
+            result.Text = link.LastResult ?? (r.Error ?? "");
+            foreach (var refresh in refreshers) refresh();
+        });
+        now.Margin = new Thickness(0);
+        DockPanel.SetDock(now, Dock.Left);
+        syncRow.Children.Add(now);
+        syncRow.Children.Add(result);
+        p.Children.Add(syncRow);
+        return p;
+    }
+
+    /// <summary>One Notion database: name + colour (marks its tasks), link, statuses to read, last result.</summary>
+    FrameworkElement BuildNotionSource(Account acc, BoardStore store, NotionLink link, Action? remove, List<Action> refreshers)
+    {
+        var card = new Border { CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Th.Ink(0x16)), Padding = new Thickness(10, 8, 10, 8), Margin = new Thickness(0, 4, 0, 6) };
+        var p = new StackPanel();
+        card.Child = p;
+
+        var top = new DockPanel();
+        var swatch = new Border { Width = 18, Height = 18, CornerRadius = new CornerRadius(4), Cursor = Cursors.Hand, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center, ToolTip = L.T("Zmień kolor") };
+        void Paint() => swatch.Background = new SolidColorBrush(BoardWindow.ParseColor(link.Color));
+        Paint();
+        swatch.MouseLeftButtonUp += (_, _) =>
+        {
+            int i = Array.IndexOf(Category.Palette, link.Color);
+            link.Color = Category.Palette[(i + 1) % Category.Palette.Length];
+            Paint();
+            SettingsStore.Save(S);
+            App.Board?.Rebuild();
+        };
+        DockPanel.SetDock(swatch, Dock.Left);
+        top.Children.Add(swatch);
+        var name = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = link.Name, Width = 130, ToolTip = L.T("Krótka nazwa widoczna na zadaniach z tej bazy, np. FoA") };
+        name.LostKeyboardFocus += (_, _) =>
+        {
+            var v = name.Text.Trim();
+            if (v == link.Name) return;
+            var old = link.Name;
+            link.Name = v;
+            SettingsStore.Save(S);
+            // tasks already on the board follow the new name right away (without a name yet: only when this is the one database)
+            bool only = new[] { acc.Notion }.Concat(acc.NotionMore).Count(l => l.Database.Length > 0) <= 1;
+            foreach (var t in store.Data.Tasks.Where(t => t.NotionId != null && (old.Length > 0 ? t.NotionSource == old : t.NotionSource == null && only)).ToList())
+            {
+                t.NotionSource = v.Length > 0 ? v : null;
+                store.Changed(t);
+            }
+            App.Board?.Rebuild();
+        };
+        DockPanel.SetDock(name, Dock.Left);
+        top.Children.Add(name);
+        if (remove != null)
+        {
+            var del = Btn(L.T("Usuń bazę"), "LinkButton", (_, _) => remove());
+            DockPanel.SetDock(del, Dock.Right);
+            top.Children.Add(del);
+        }
+        top.Children.Add(new TextBlock());
+        p.Children.Add(Pair(L.T("Nazwa"), top));
+
+        var db = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = link.Database, ToolTip = L.T("Link do bazy: ••• przy widoku bazy → Copy link to view") };
+        var dbState = Label("", 11.5, "FgDim");
+        void ShowDbState()
+        {
+            var v = db.Text.Trim();
+            var id = NotionImport.ExtractId(v);
+            dbState.Text = v.Length == 0 ? L.T("Wklej link do bazy.")
+                : id == null ? L.T("To nie wygląda na link do bazy Notion.")
+                : NotionSync.ViewId(v) != null ? L.F("Baza i widok rozpoznane{0}. Wczytywane są zadania spełniające filtry widoku.", link.ViewName != null ? $" („{link.ViewName}”)" : "")
+                : L.T("Link bez widoku (…?v=…): wczytywana byłaby cała baza. Zalecany link do widoku z filtrami.");
+            dbState.Foreground = v.Length > 0 && id == null ? new SolidColorBrush(Color.FromRgb(0xF2, 0xA6, 0x5A)) : Ui.Res("FgDim");
+        }
+        db.TextChanged += (_, _) => ShowDbState();
+        db.LostKeyboardFocus += (_, _) => { if (db.Text.Trim() != link.Database) { link.Database = db.Text.Trim(); SettingsStore.Save(S); } };
+        ShowDbState();
+        p.Children.Add(Pair(L.T("Link do bazy"), db));
+        p.Children.Add(dbState);
+
         // statuses that are not imported (known after the first sync)
         var statuses = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
+        var result = Label(link.LastResult ?? "", 11, "FgFaint");
         void FillStatuses()
         {
             statuses.Children.Clear();
+            result.Text = link.LastResult ?? "";
+            ShowDbState();
             var known = link.KnownStatuses ?? new();
             if (known.Count == 0) { statuses.Children.Add(Label(L.T("Lista statusów pojawi się po pierwszej synchronizacji. Domyślnie pomijane są statusy zakończone."), 11, "FgFaint")); return; }
             var skip = link.SkipStatuses ?? known.Where(NotionImport.LooksDone).ToList();
@@ -656,28 +757,10 @@ public sealed class SettingsWindow : DarkWindow
             }
         }
         FillStatuses();
+        refreshers.Add(FillStatuses);
         p.Children.Add(Pair(L.T("Wczytywane statusy"), statuses));
-
-        var syncRow = new DockPanel { Margin = new Thickness(0, 6, 0, 0) };
-        var result = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Foreground = Ui.Res("FgFaint"), Margin = new Thickness(10, 0, 0, 0), Text = link.LastResult ?? "" };
-        Button? now = null;
-        now = Btn(L.T("Synchronizuj teraz"), "SecondaryButton", async (_, _) =>
-        {
-            link.Database = db.Text.Trim();
-            if (!link.Configured) { result.Text = L.T("Podaj link do bazy i token."); return; }
-            now!.IsEnabled = false;
-            result.Text = L.T("Łączę z Notion…");
-            var r = await NotionSync.Run(acc.Id);
-            now.IsEnabled = true;
-            result.Text = link.LastResult ?? (r.Error ?? "");
-            FillStatuses();
-        });
-        now.Margin = new Thickness(0);
-        DockPanel.SetDock(now, Dock.Left);
-        syncRow.Children.Add(now);
-        syncRow.Children.Add(result);
-        p.Children.Add(syncRow);
-        return p;
+        p.Children.Add(result);
+        return card;
     }
 
     void FillMarks(BoardStore store, StackPanel host, bool focusLast = false)

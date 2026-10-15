@@ -52,10 +52,16 @@ static class SharedSettings
                 ["Name"] = a.Name,
                 ["Notion"] = new JsonObject
                 {
+                    ["Name"] = n.Name, ["Color"] = n.Color,
                     ["Database"] = n.Database, ["Auto"] = n.Auto, ["Minutes"] = n.Minutes, ["OnlyMine"] = n.OnlyMine,
                     ["UseViewFilter"] = n.UseViewFilter, ["MaxPages"] = n.MaxPages, ["SyncDone"] = n.SyncDone,
                     ["SkipStatuses"] = n.SkipStatuses == null ? null : new JsonArray(n.SkipStatuses.Select(x => (JsonNode?)x).ToArray()),
                 },
+                ["NotionMore"] = new JsonArray(a.NotionMore.Select(m => (JsonNode?)new JsonObject
+                {
+                    ["Name"] = m.Name, ["Color"] = m.Color, ["Database"] = m.Database,
+                    ["SkipStatuses"] = m.SkipStatuses == null ? null : new JsonArray(m.SkipStatuses.Select(x => (JsonNode?)x).ToArray()),
+                }).ToArray()),
             });
         }
         o["Accounts"] = accounts;
@@ -153,6 +159,8 @@ static class SharedSettings
                     var database = n["Database"]?.GetValue<string>() ?? link.Database;
                     if (database != link.Database) { link.LastSync = null; link.LastResult = null; link.KnownStatuses = null; link.ViewName = null; }
                     link.Database = database;
+                    link.Name = n["Name"]?.GetValue<string>() ?? link.Name;
+                    link.Color = n["Color"]?.GetValue<string>() ?? link.Color;
                     link.Auto = n["Auto"]?.GetValue<bool>() ?? link.Auto;
                     link.Minutes = n["Minutes"]?.GetValue<int>() ?? link.Minutes;
                     link.OnlyMine = n["OnlyMine"]?.GetValue<bool>() ?? link.OnlyMine;
@@ -160,6 +168,20 @@ static class SharedSettings
                     link.MaxPages = n["MaxPages"]?.GetValue<int>() ?? link.MaxPages;
                     link.SyncDone = n["SyncDone"]?.GetValue<bool>() ?? link.SyncDone;
                     link.SkipStatuses = n["SkipStatuses"] is JsonArray skip ? skip.Select(x => x?.GetValue<string>() ?? "").ToList() : null;
+                }
+                if (node["NotionMore"] is JsonArray more)
+                {
+                    // the same databases as on the other computer; what this one learnt about each (statuses, results) stays
+                    var old = acc.NotionMore;
+                    acc.NotionMore = more.OfType<JsonObject>().Select(m =>
+                    {
+                        var db = m["Database"]?.GetValue<string>() ?? "";
+                        var l = old.FirstOrDefault(o => o.Database == db) ?? new NotionLink { Database = db };
+                        l.Name = m["Name"]?.GetValue<string>() ?? l.Name;
+                        l.Color = m["Color"]?.GetValue<string>() ?? l.Color;
+                        l.SkipStatuses = m["SkipStatuses"] is JsonArray sk ? sk.Select(x => x?.GetValue<string>() ?? "").ToList() : null;
+                        return l;
+                    }).ToList();
                 }
             }
     }

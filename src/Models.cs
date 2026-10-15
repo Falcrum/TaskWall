@@ -69,6 +69,8 @@ public sealed class TaskItem
     public string? NotionTitle { get; set; }
     /// <summary>Notion sub-item: page id of its main task (shown indented under it).</summary>
     public string? ParentNotionId { get; set; }
+    /// <summary>Name of the Notion database the task comes from (when an account reads more than one).</summary>
+    public string? NotionSource { get; set; }
 
     [JsonIgnore] public bool IsBacklog => Day == null;
     [JsonIgnore] public bool HasLink => !string.IsNullOrEmpty(Url);
@@ -92,7 +94,7 @@ public sealed class TaskItem
     {
         Text = o.Text; Done = o.Done; Day = o.Day; Order = o.Order; Modified = o.Modified; Estimate = o.Estimate;
         Archived = o.Archived; ArchivedAt = o.ArchivedAt; RuleId = o.RuleId; RuleDay = o.RuleDay;
-        NotionId = o.NotionId; Url = o.Url; Status = o.Status; Priority = o.Priority; NotionTitle = o.NotionTitle; ParentNotionId = o.ParentNotionId;
+        NotionId = o.NotionId; Url = o.Url; Status = o.Status; Priority = o.Priority; NotionTitle = o.NotionTitle; ParentNotionId = o.ParentNotionId; NotionSource = o.NotionSource;
         Checklist = CopyList(o.Checklist);
         Time = o.Time; End = o.End; WorkedDays = o.WorkedDays == null ? null : new List<string>(o.WorkedDays); PlanEnd = o.PlanEnd;
         Started = o.Started;
@@ -479,12 +481,19 @@ public sealed class Account
     public string Name { get; set; } = "Praca";
     public string Folder { get; set; } = "";
     public List<CalendarFeed> Calendars { get; set; } = new();
+    /// <summary>The first Notion database; it also holds the token and the sync options shared by all of them.</summary>
     public NotionLink Notion { get; set; } = new();
+    /// <summary>More databases of this account (e.g. a second project), read with the same token.</summary>
+    public List<NotionLink> NotionMore { get; set; } = new();
+    [System.Text.Json.Serialization.JsonIgnore] public IEnumerable<NotionLink> NotionSources => new[] { Notion }.Concat(NotionMore).Where(l => l.Database.Length > 0);
 }
 
 /// <summary>Automatic read-only sync of one Notion database into the account's backlog (personal access token).</summary>
 public sealed class NotionLink
 {
+    /// <summary>Short name shown on its tasks ("FoA", "Tuathan"); empty = no mark.</summary>
+    public string Name { get; set; } = "";
+    public string Color { get; set; } = "#8A94A6";
     /// <summary>Link to the database (or its id).</summary>
     public string Database { get; set; } = "";
     /// <summary>The token, encrypted for this Windows user (DPAPI) – never stored in plain text or in the cloud folder.</summary>
