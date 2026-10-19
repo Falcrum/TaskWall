@@ -294,7 +294,11 @@ public partial class App : Application
         {
             // never wait at start: a cloud drive that isn't mounted yet (logon) means this computer's copy for now
             if (!dev && !FolderReady(folder)) throw new IOException("cloud folder not reachable yet: " + folder);
+            bool fresh = !File.Exists(Path.Combine(folder, BoardStore.FileName));
             s.Open(folder);
+            // this computer's copy always goes in (newer wins per task): edits made while the drive was away survive a
+            // restart, and an empty cloud folder (new, or the wrong drive) never means an empty board
+            if (!dev) MergeLocalCopy(s, layer, folder, announce: fresh);
             if (!dev) { s.MirrorFolder = SettingsStore.CacheFolder(layer); s.WriteMirror(null); }
             if (!dev) MergeLegacyOffline(s, layer);
         }
@@ -310,6 +314,18 @@ public partial class App : Application
         s.SyncStateChanged += () => Board?.UpdateSyncIcon();
         Stores[layer] = s;
         return s;
+    }
+
+    static void MergeLocalCopy(BoardStore s, string layer, string folder, bool announce)
+    {
+        var copy = Path.Combine(SettingsStore.CacheFolder(layer), BoardStore.FileName);
+        try
+        {
+            if (!File.Exists(copy) || new FileInfo(copy).Length < 200 || !s.MergeFile(copy) || !announce) return;
+            Log.Error($"{folder} had no board.json – this computer's copy merged into it");
+            Instance.Dispatcher.BeginInvoke(() => Instance._tray?.Balloon("TaskWall", L.F("Folder „{0}” nie miał danych tablicy – zapisałem w nim kopię z tego komputera.", folder)));
+        }
+        catch (Exception ex) { Log.Error("merge local copy", ex); }
     }
 
     /// <summary>Up to 0.15.0 offline edits went to %APPDATA%TaskWall<account>: merged once, the folder is then renamed.</summary>
@@ -330,7 +346,7 @@ public partial class App : Application
     {
         var root = Path.GetPathRoot(folder);
         if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) return false;
-        return !SettingsStore.IsGoogleDrivePath(folder) || SettingsStore.GoogleDriveMount() != null;
+        return !SettingsStore.IsGoogleDrivePath(folder) || SettingsStore.IsOnGoogleDrive(folder);
     }
 
     /// <summary>Praca ⇄ Prywatne.</summary>

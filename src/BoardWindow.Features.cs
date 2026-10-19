@@ -93,6 +93,8 @@ public partial class BoardWindow
         string T(DateTime? t) => t is { } v ? (v.Date == DateTime.Today ? v.ToString("HH:mm:ss") : v.ToString("ddd HH:mm", Pl)) : "—";
         var notion = S.AccountFor(S.Layer).Notion;
         var tip = L.F("Synchronizacja: {0}", App.AccountName(S.Layer)) + "\n" + st.Folder
+            + (SettingsStore.DriveLabel(st.Folder) is { Length: > 0 } drive ? "\n" + L.F("Dysk: {0}", drive) : "")
+            + "\n" + L.F("Zadań w danych: {0} (w archiwum {1})", st.Data.Tasks.Count(t => !t.Archived), st.Data.Tasks.Count(t => t.Archived))
             + "\n\n" + L.F("Zapisano: {0}", T(st.LastSaved))
             + "\n" + L.F("Sprawdzono folder: {0}", T(st.LastCheck))
             + "\n" + L.F("Zmiany z innego komputera: {0}", T(st.LastExternalChange))
@@ -109,7 +111,9 @@ public partial class BoardWindow
     void StopSpin(object? s, EventArgs e)
     {
         _spinStop.Stop();
-        if (Store.Syncing || App.Instance.NotionRunning || _syncSpinner == null) return;
+        if (_syncSpinner == null) return;
+        // still busy: look again shortly (the end of the work may not raise another update for this account)
+        if (Store.Syncing || App.Instance.NotionRunning) { _spinStop.Interval = TimeSpan.FromMilliseconds(300); _spinStop.Start(); return; }
         ((RotateTransform)_syncSpinner.RenderTransform).BeginAnimation(RotateTransform.AngleProperty, null);
         UpdateSyncIcon(); // back from the accent colour
     }

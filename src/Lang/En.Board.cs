@@ -6,6 +6,9 @@ static partial class L
     static readonly (string Pl, string En)[] Board =
     {
         // 0.16.1: subtasks
+        ("Folder „{0}” nie miał danych tablicy – zapisałem w nim kopię z tego komputera.", "\"{0}\" had no board data – this computer's copy was saved into it."),
+        ("Dysk: {0}", "Drive: {0}"),
+        ("Zadań w danych: {0} (w archiwum {1})", "Tasks in the data: {0} ({1} archived)"),
         // 0.17.1: projects, statuses to read, conditions
         ("PROJEKTY I BAZY NOTION", "PROJECTS AND NOTION DATABASES"),
         ("Każdy projekt ma krótką nazwę i kolor – widać je na jego zadaniach, a komenda @nazwa (np. @FoA) przypisuje projekt własnemu zadaniu. Link do bazy Notion jest opcjonalny; z linkiem wczytywane są zadania tej bazy. Link do widoku: w Notion nazwa widoku nad tabelą → Copy link to view.", "Each project has a short name and a colour, shown on its tasks; the @name command (e.g. @FoA) puts an own task into a project. The Notion database link is optional; with a link, the tasks of that database are read. View link: in Notion, the view name above the table → Copy link to view."),

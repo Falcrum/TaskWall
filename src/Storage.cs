@@ -166,39 +166,51 @@ static class SettingsStore
     /// <summary>
     /// A cloud folder saved on one computer, pointed at the same cloud folder on this one: Google Drive may be mounted
     /// under another letter (H: instead of G:) or in another language ("My Drive" / "Mój dysk"), OneDrive may sit in
-    /// another user profile. Without this the other computer would write to a local folder that never syncs.
+    /// another user profile. A folder that is there with TaskWall data is never changed; with several Google Drives
+    /// (a private and a company account) only the one that has the data is taken – never just the first one.
     /// </summary>
     public static string ResolveCloudFolder(string folder)
     {
         if (string.IsNullOrWhiteSpace(folder)) return folder;
         try
         {
-            var m = System.Text.RegularExpressions.Regex.Match(folder, @"^[A-Za-z]:\\([^\\]+)(\\.*)?$");
-            if (m.Success && IsGoogleDrivePath(folder) && GoogleDriveMount() is { } mount)
+            if (File.Exists(Path.Combine(folder, BoardStore.FileName))) return folder; // there, with data: as it is
+            var m = System.Text.RegularExpressions.Regex.Match(folder, @"^([A-Za-z]:\\)([^\\]+)(\\.*)?$");
+            if (m.Success && IsGoogleDrivePath(folder))
             {
-                var top = m.Groups[1].Value;
+                var top = m.Groups[2].Value;
                 var names = DriveNames.Contains(top, StringComparer.OrdinalIgnoreCase) ? DriveNames : SharedNames;
-                var name = names.FirstOrDefault(n => Directory.Exists(Path.Combine(mount, n))) ?? top;
-                var resolved = Path.Combine(mount, name) + m.Groups[2].Value;
-                if (!string.Equals(resolved, folder, StringComparison.OrdinalIgnoreCase)) Log.Error($"cloud folder {folder} → {resolved}");
-                return resolved;
+                var candidates = GoogleDriveMounts()
+                    .SelectMany(mount => names.Select(n => Path.Combine(mount, n) + m.Groups[3].Value))
+                    .Where(c => File.Exists(Path.Combine(c, BoardStore.FileName)))
+                    .ToList();
+                // the same letter first (only the language differs), then a single other drive with the data
+                var pick = candidates.FirstOrDefault(c => c.StartsWith(m.Groups[1].Value, StringComparison.OrdinalIgnoreCase))
+                    ?? (candidates.Count == 1 ? candidates[0] : null);
+                if (pick != null && !string.Equals(pick, folder, StringComparison.OrdinalIgnoreCase))
+                {
+                    Log.Error($"cloud folder {folder} → {pick}");
+                    return pick;
+                }
+                if (candidates.Count > 1) Log.Error($"cloud folder {folder}: TaskWall data on several Google Drives ({string.Join(", ", candidates)}) – left as it is");
+                return folder;
             }
             if (!Directory.Exists(folder) && OneDriveRoot() is { } od)
             {
                 var o = System.Text.RegularExpressions.Regex.Match(folder, @"\\OneDrive(?: - [^\\]+)?(\\.*)?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                if (o.Success && Directory.Exists(od + o.Groups[1].Value)) return od + o.Groups[1].Value;
+                if (o.Success && File.Exists(Path.Combine(od + o.Groups[1].Value, BoardStore.FileName))) return od + o.Groups[1].Value;
             }
         }
         catch (Exception ex) { Log.Error("cloud folder", ex); }
         return folder;
     }
 
-    /// <summary>Root of the Google Drive for desktop drive ("H:\"), whatever letter it got on this computer.</summary>
-    public static string? GoogleDriveMount()
+    /// <summary>Roots of all Google Drive for desktop drives ("G:\", "H:\" – one per Google account).</summary>
+    public static IReadOnlyList<string> GoogleDriveMounts()
     {
         // asked often (start, the 10 s reconnect check): remembered for a few seconds
-        if (DateTime.UtcNow - _mountChecked < TimeSpan.FromSeconds(5)) return _mount;
-        string? found = null;
+        if (DateTime.UtcNow - _mountChecked < TimeSpan.FromSeconds(5)) return _mounts;
+        var found = new List<string>();
         DriveInfo[] drives;
         try { drives = DriveInfo.GetDrives(); }
         catch (Exception ex) { Log.Error("google drive detect", ex); drives = Array.Empty<DriveInfo>(); }
@@ -207,17 +219,34 @@ static class SettingsStore
             try
             {
                 // network drives can hang for seconds when disconnected; Google Drive is a local (fixed) drive
-                if (d.DriveType is DriveType.Network or DriveType.CDRom || !d.IsReady || !d.VolumeLabel.Contains("Google", StringComparison.OrdinalIgnoreCase)) continue;
-                if (DriveNames.Concat(SharedNames).Any(n => Directory.Exists(Path.Combine(d.RootDirectory.FullName, n)))) { found = d.RootDirectory.FullName; break; }
+                if (d.DriveType is DriveType.Network or DriveType.CDRom || !d.IsReady) continue;
+                // "Google Drive", or the account: "k.falenta@firma.com - …" (a long label is cut off before "Google")
+                var label = d.VolumeLabel;
+                if (!label.Contains("Google", StringComparison.OrdinalIgnoreCase) && !label.Contains('@')) continue;
+                if (DriveNames.Concat(SharedNames).Any(n => Directory.Exists(Path.Combine(d.RootDirectory.FullName, n)))) found.Add(d.RootDirectory.FullName);
             }
             catch { /* one odd drive must not stop the search */ }
         }
-        _mount = found;
+        _mounts = found;
         _mountChecked = DateTime.UtcNow;
         return found;
     }
-    static string? _mount;
+    static IReadOnlyList<string> _mounts = Array.Empty<string>();
     static DateTime _mountChecked;
+
+    /// <summary>The first Google Drive (for the "Google Drive" quick pick in the settings).</summary>
+    public static string? GoogleDriveMount() => GoogleDriveMounts().FirstOrDefault();
+
+    /// <summary>The folder's drive is a mounted Google Drive (and not, say, a local disk that got the same letter).</summary>
+    public static bool IsOnGoogleDrive(string folder) =>
+        Path.GetPathRoot(folder) is { Length: > 0 } root && GoogleDriveMounts().Any(m => string.Equals(m, root, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>"kamil@… - Google Drive" – which account a folder's drive belongs to (shown in the sync tool tip).</summary>
+    public static string? DriveLabel(string folder)
+    {
+        try { return Path.GetPathRoot(folder) is { Length: > 0 } root && new DriveInfo(root) is { IsReady: true } d ? d.VolumeLabel : null; }
+        catch { return null; }
+    }
 
     /// <summary>Google Drive for desktop mount ("G:\Mój dysk"), if installed.</summary>
     public static string? GoogleDriveRoot()

@@ -42,7 +42,10 @@ public partial class BoardWindow : GlassWindow
     string? _addingKey;                 // day key (or BacklogKey) whose "add task" box is open
     // inline editors currently open (their "cancel" actions); external refreshes wait for them, a Rebuild cancels them
     readonly List<Action> _editors = new();
-    int _openEditors => _editors.Count;
+    // an editor counts as open only while it has the keyboard: one that never got the focus (another window took it)
+    // must not block every later rebuild – then added tasks and the "+ dodaj zadanie" row seemed to vanish
+    readonly Dictionary<Action, UIElement> _editorBoxes = new();
+    int _openEditors => _editors.Count(c => _editorBoxes.TryGetValue(c, out var box) && box.IsKeyboardFocusWithin);
     DateTime _lastEventCheck = DateTime.Now;
     ViewMode? _builtView;
     int _slideDir;                      // navigation animation direction
@@ -300,6 +303,7 @@ public partial class BoardWindow : GlassWindow
         // editors in the old visuals are gone after this: make sure their late focus events do nothing
         foreach (var cancel in _editors.ToList()) cancel();
         _editors.Clear();
+        _editorBoxes.Clear();
         _pressed = null;
         FontSize = S.FontSize;
         ApplyBacklogMode();
@@ -1401,6 +1405,7 @@ public partial class BoardWindow : GlassWindow
             bool finished = false;
             Action cancel = () => finished = true;
             _editors.Add(cancel);
+            _editorBoxes[cancel] = input;
             void Finish(bool keepOpen)
             {
                 if (finished) return;
@@ -1522,6 +1527,7 @@ public partial class BoardWindow : GlassWindow
         bool finished = false;
         Action cancel = () => finished = true;
         _editors.Add(cancel);
+        _editorBoxes[cancel] = box;
 
         void Finish(bool commit)
         {
@@ -1659,6 +1665,7 @@ public partial class BoardWindow : GlassWindow
         bool finished = false;
         Action cancel = () => finished = true;
         _editors.Add(cancel);
+        _editorBoxes[cancel] = box;
 
         void Finish(bool keepOpen)
         {
