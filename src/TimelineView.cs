@@ -206,10 +206,6 @@ public sealed class TimelineView : Grid
         _saveZoom.Stop();
         _saveZoom.Start();
         Refresh();
-        // tool tips at once (meetings and bars are small targets): 150 ms instead of the default second
-        foreach (var el in _bars.Children.OfType<FrameworkElement>().Concat(_header.Children.OfType<FrameworkElement>()))
-            if (el.ToolTip != null) { ToolTipService.SetInitialShowDelay(el, 150); ToolTipService.SetBetweenShowDelay(el, 50); }
-        if (_growMeetings) { _growMeetings = false; Dispatcher.BeginInvoke(Refresh, DispatcherPriority.Background); }
         App.Board?.UpdateTimelineRange();
     }
 
@@ -330,6 +326,19 @@ public sealed class TimelineView : Grid
     {
         double width = ActualWidth, w = W;
         if (width <= 0) return;
+        try { RenderCore(width, w); }
+        finally
+        {
+            // tool tips at once (meetings and bars are small targets): 150 ms instead of the default second – after every redraw
+            foreach (var el in _bars.Children.OfType<FrameworkElement>().Concat(_header.Children.OfType<FrameworkElement>()))
+                if (el.ToolTip != null) { ToolTipService.SetInitialShowDelay(el, 150); ToolTipService.SetBetweenShowDelay(el, 50); }
+            // panned to days with (more) meetings: their rows grow once the drag is over
+            if (_growMeetings && _barDrag == null && _dragFrom == null) { _growMeetings = false; Dispatcher.BeginInvoke(Refresh, DispatcherPriority.Background); }
+        }
+    }
+
+    void RenderCore(double width, double w)
+    {
         _header.Children.Clear();
         _days.Children.Clear();
         _bars.Children.Clear();
@@ -514,7 +523,9 @@ public sealed class TimelineView : Grid
     /// <summary>Meetings of a day: from the calendars and the board's own (repeating ones too), by start.</summary>
     static List<Meeting> MeetingsOn(BoardStore store, DateTime d) =>
         CalendarService.On(d).Where(e => !e.IsHoliday && !e.AllDay)
-            .Select(e => new Meeting(e.Start.TimeOfDay, e.End.Date > e.Start.Date ? TimeSpan.FromHours(24) : e.End.TimeOfDay, e.Title, false))
+            // over midnight or several days: only the part on this day
+            .Select(e => new Meeting(e.Start.Date < d ? TimeSpan.Zero : e.Start.TimeOfDay, e.End.Date > d ? TimeSpan.FromHours(24) : e.End.TimeOfDay, e.Title, false))
+            .Where(m => m.To > m.From)
             .Concat(store.Alarms.Where(a => a.IsMeeting && a.Occurs(d)).Select(a => new Meeting(a.TimeOfDay, a.EndAt(d).Date > d ? TimeSpan.FromHours(24) : a.EndAt(d).TimeOfDay, a.Text, true)))
             .OrderBy(m => m.From).ToList();
 

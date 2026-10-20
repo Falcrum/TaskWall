@@ -126,6 +126,12 @@ static class Dev
     {
         var log = new System.Collections.Generic.List<string>();
         void Check(string name, bool ok) => log.Add($"{(ok ? "PASS" : "FAIL")}  {name}");
+        // the tests write and delete files in the --data folder: never in real data (a cloud folder) or without --data
+        if (Arg("--data") is not { } testData || SettingsStore.IsOnGoogleDrive(Path.GetFullPath(testData)))
+        {
+            File.WriteAllText(outFile, "REFUSED  the self-test runs only with --data pointing at a local test folder (e.g. .dev\\data)");
+            return;
+        }
         var dir = Path.Combine(Path.GetTempPath(), "deskwall-selftest-" + Guid.NewGuid().ToString("N")[..8]);
         try
         {
@@ -469,6 +475,16 @@ static class Dev
             var noteBack2 = NotesEditor.RoundTrip(noteMd2);
             if (Arg("--selftest") is { } stOut3) File.WriteAllText(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(stOut3))!, "note-roundtrip2.txt"), noteBack2);
             Check("notes: heading 4, links, inline code, __bold__ / _italic_, code blocks (kept as typed), + lists and *** dividers", noteBack2 == noteMd2Back);
+            var typed = new[]
+            {
+                NotesEditor.TypeTest("# Plan"), NotesEditor.TypeTest("a **b** c"), NotesEditor.TypeTest("x *i* ~~s~~ `k`"),
+                NotesEditor.TypeTest("[] zrobić"), NotesEditor.TypeTest("[] zrobić\t"), NotesEditor.TypeTest("\u0002\b", "- [ ] zrobić"),
+                NotesEditor.TypeTest("\b\b", "# Tytuł"), NotesEditor.TypeTest("[x] gotowe"),
+            };
+            if (Arg("--selftest") is { } stOut4) File.WriteAllText(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(stOut4))!, "note-typed.txt"), string.Join("\n---\n", typed));
+            Check("notes: Markdown marks format while typing (# , **, *, ~~, `, [] , [x] ), a click ticks the box, Backspace takes the box / heading off",
+                typed[0] == "# Plan" && typed[1] == "a **b** c" && typed[2] == "x *i* ~~s~~ `k`" && typed[3] == "- [ ] zrobić" && typed[4] == "- [x] zrobić"
+                && typed[5] == "zrobić" && typed[6] == "# Tyt" && typed[7] == "- [x] gotowe");
             Check("notes: plain-text export without marks", NotesEditor.ToPlain("# Plan\n- [x] **zrobione**\n- lista\n[a](https://b.c)") == "PLAN\n====\n☑ zrobione\n• lista\na (https://b.c)");
             var whDir = Path.Combine(Path.GetTempPath(), "taskwall-wh-" + Guid.NewGuid().ToString("N"));
             var whStore = new BoardStore("work");
@@ -486,7 +502,23 @@ static class Dev
             tr1.TrackStart = DateTime.UtcNow.AddMinutes(-30);
             whStore.StartTracking(tr2);
             Check("timer: one runs at a time – starting another stops and adds the time; the task is in progress", !tr1.IsTracking && tr1.TrackedMinutes is > 29 and < 31 && tr2.IsTracking && tr2.IsStarted);
+            whStore.Archive(tr2);
+            Check("timer: archiving a task stops its timer", !tr2.IsTracking);
+            whStore.Checkpoint();
+            whStore.SetDayMark("2026-10-21", "HO");
+            whStore.Undo();
+            Check("undo of a day mark keeps the day's own working hours", whStore.DayMark("2026-10-21") == "BŚU" && whStore.WorkHours("2026-10-21", "09:00", "17:00") == ("08:00", "15:30"));
+            // the same tasks in a different order on two computers: nothing to rewrite
+            whStore.SaveNow();
+            var reordered = System.Text.Json.JsonSerializer.Deserialize<BoardData>(File.ReadAllText(Path.Combine(whDir, BoardStore.FileName)), Json.Options)!;
+            reordered.Tasks.Reverse();
+            File.WriteAllText(Path.Combine(whDir, BoardStore.FileName), System.Text.Json.JsonSerializer.Serialize(reordered, Json.Options));
+            var fileBefore = File.ReadAllText(Path.Combine(whDir, BoardStore.FileName));
+            whStore.SaveNow();
+            Check("sync: the same content in another order is not written again (no ping-pong between PCs)", File.ReadAllText(Path.Combine(whDir, BoardStore.FileName)) == fileBefore);
             try { Directory.Delete(whDir, true); } catch { }
+            var night = new Alarm { Kind = "meeting", Day = "2026-10-21", Time = "23:00", End = "02:00" };
+            Check("meetings over midnight end the next day (23:00–02:00 = 3 h)", night.Hours == 3 && night.EndAt(new DateTime(2026, 10, 21)) == new DateTime(2026, 10, 22, 2, 0, 0));
             var carried = new TaskItem { Text = "długie", Day = "2026-10-05", Started = true };
             carried.NoteMove("2026-10-05", "2026-10-06", "2026-10-08");
             carried.NoteMove("2026-10-06", "2026-10-08", "2026-10-08");

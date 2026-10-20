@@ -339,5 +339,27 @@ static partial class L
         ("Zapisano notatki:\n{0}", "Notes saved:\n{0}"),
         ("Widok dnia: notatnik po lewej, oś godzin po prawej", "Day view: the notebook on the left, the hours on the right"),
         ("tablica: nie ma czego cofnąć (Ctrl+Z)", "board: nothing to undo (Ctrl+Z)"),
+
+        // 0.24 – notebook modes and toolbar
+        ("Adres (URL):", "Address (URL):"),
+        ("Blok kodu  (``` + Enter)", "Code block  (``` + Enter)"),
+        ("Kod w tekście  (Ctrl+E, `tekst`)", "Inline code  (Ctrl+E, `text`)"),
+        ("Linia oddzielająca  (--- + Enter)", "Divider  (--- + Enter)"),
+        ("Link", "Link"),
+        ("Link  (Ctrl+K, [tekst](https://…))", "Link  (Ctrl+K, [text](https://…))"),
+        ("Mniejsze wcięcie  (Shift+Tab)", "Outdent  (Shift+Tab)"),
+        ("Nagłówek 1  (# spacja, Ctrl+1)", "Heading 1  (# space, Ctrl+1)"),
+        ("Nagłówek 2  (## spacja, Ctrl+2)", "Heading 2  (## space, Ctrl+2)"),
+        ("Nagłówek 3  (### spacja, Ctrl+3)", "Heading 3  (### space, Ctrl+3)"),
+        ("Nagłówek 4  (#### spacja)", "Heading 4  (#### space)"),
+        ("Pole wyboru  ([] spacja; klik w pole zaznacza)", "Checkbox  ([] space; click the box to tick it)"),
+        ("Tekst sformatowany (znaki Markdown od razu formatują tekst)", "Formatted text (Markdown marks format as you type)"),
+        ("Usuń formatowanie zaznaczenia", "Clear the selection's formatting"),
+        ("Wcięcie listy  (Tab)", "Indent  (Tab)"),
+        ("Wyczyścić całą notatkę z tego dnia?\nCtrl+Z cofa.", "Clear this day's whole note?\nCtrl+Z undoes it."),
+        ("Wyczyść notatkę tego dnia (Ctrl+Z cofa)", "Clear this day's note (Ctrl+Z undoes it)"),
+        ("Zwykły tekst  (Ctrl+0)", "Plain text  (Ctrl+0)"),
+        ("zmierzonego czasu pracy (łącznie na tych zadaniach)", "of tracked working time (in total on these tasks)"),
+        ("Źródło Markdown (czysty tekst ze znakami)", "Markdown source (plain text with the marks)"),
     };
 }

@@ -67,11 +67,13 @@ static class SettingsStore
     public static AppSettings Load()
     {
         AppSettings s = new();
-        for (int attempt = 0; attempt < 5 && File.Exists(FilePath); attempt++)
+        bool read = !File.Exists(FilePath);
+        for (int attempt = 0; attempt < 25 && File.Exists(FilePath); attempt++)
         {
             try
             {
                 s = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath), Json.Options) ?? new AppSettings();
+                read = true;
                 break;
             }
             catch (IOException) { Thread.Sleep(200); } // antivirus / sync client holding the file for a moment
@@ -80,8 +82,15 @@ static class SettingsStore
                 // broken file: keep a copy instead of silently replacing the user's settings with defaults
                 Log.Error("settings load", ex);
                 try { File.Copy(FilePath, FilePath + ".bad", true); } catch { }
+                read = true; // broken, not locked: its copy is kept, the defaults may be saved
                 break;
             }
+        }
+        if (!read && File.Exists(FilePath))
+        {
+            // still locked after 5 s: run on the defaults but never overwrite the real file with them this session
+            ReadOnly = true;
+            Log.Error("settings.json locked at start – running on defaults, not saving settings this session");
         }
         if (string.IsNullOrWhiteSpace(s.DataFolder)) s.DataFolder = DefaultDataFolder();
 
@@ -123,8 +132,12 @@ static class SettingsStore
         return s;
     }
 
+    /// <summary>The settings file couldn't be read at start: nothing is saved over it.</summary>
+    public static bool ReadOnly { get; private set; }
+
     public static void Save(AppSettings s)
     {
+        if (ReadOnly) return;
         try
         {
             SharedSettings.Push(s); // the part that follows the user to other computers (when it changed)
@@ -402,19 +415,14 @@ public sealed class BoardStore
 
     public void Open(string folder)
     {
+        // read first: if the folder can't be read (a sync client holding the file), nothing here changes
+        Directory.CreateDirectory(folder);
+        var disk = TryRead(Path.Combine(folder, FileName));
         StopWatching();
         Folder = folder;
-        Directory.CreateDirectory(folder);
-        Data = new BoardData();
-        _lastHash = null;
+        Data = disk.Data ?? new BoardData();
+        _lastHash = disk.Data != null ? disk.Hash : null;
         _undo.Clear();
-
-        var disk = TryRead(FilePath);
-        if (disk.Data != null)
-        {
-            Data = disk.Data;
-            _lastHash = disk.Hash;
-        }
         MergeConflictCopies();
         EnsureCategories();
         ForgetAutoCarry();
@@ -481,14 +489,23 @@ public sealed class BoardStore
     public MarkType? MarkTypeFor(string? code) => code == null ? null : MarkTypes.FirstOrDefault(m => m.Code == code);
 
     /// <summary>A day off from work in this account: a filled mark (BŚU, leave) – a frame mark (HO) is a working day.</summary>
-    public bool IsLeave(DateTime d) => DayMark(d.ToString("yyyy-MM-dd")) is { } code && MarkTypeFor(code) is { Ring: false };
+    public bool IsLeave(DateTime d) => DayMark(d.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)) is { } code && MarkTypeFor(code) is { Ring: false };
 
     /// <summary>Switch to another folder, carrying the current tasks over (merged with whatever is there).</summary>
     public void SwitchFolder(string folder)
     {
         SaveNow();
         var current = Data;
-        Open(folder);
+        var before = Folder;
+        try { Open(folder); }
+        catch
+        {
+            // the new folder can't be read yet: stay where we were, with what we had
+            Folder = before;
+            Data = current;
+            if (!string.IsNullOrEmpty(before)) StartWatching();
+            throw;
+        }
         Data = Merge(Data, current);
         SaveNow();
         ExternalChange?.Invoke();
@@ -541,6 +558,7 @@ public sealed class BoardStore
     /// <summary>"Usuń": out of the board (tombstone for the other computers), a copy in the bin for 30 days.</summary>
     public void Discard(TaskItem t)
     {
+        StopTracking(t);
         var copy = t.Clone();
         copy.Touch();
         Data.Bin ??= new();
@@ -585,6 +603,7 @@ public sealed class BoardStore
     /// <summary>Hides the task from the board but keeps it (search, year view, archive window).</summary>
     public void Archive(TaskItem t)
     {
+        StopTracking(t);
         t.Archived = true;
         t.ArchivedAt = DateTime.UtcNow;
         Changed(t);
@@ -633,7 +652,7 @@ public sealed class BoardStore
     public IEnumerable<TaskItem> VirtualTasks(DateTime d)
     {
         if (Data.Rules.Count == 0) yield break;
-        var key = d.ToString("yyyy-MM-dd");
+        var key = d.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
         var stored = Occurrences();
         foreach (var r in Data.Rules)
         {
@@ -677,12 +696,24 @@ public sealed class BoardStore
     /// <summary>All tasks: days, backlog, archive, plus the repeating series.</summary>
     public int ClearTasks()
     {
+        SafetyCopy("before-clear");
         Checkpoint();
         var all = Data.Tasks.ToList();
         foreach (var t in all) Remove(t, skipOccurrence: false);
         foreach (var r in Data.Rules.Where(r => !r.Deleted).ToList()) { r.Deleted = true; Changed(r); }
         MarkDirty();
         return all.Count;
+    }
+
+    /// <summary>The board as it is now in backupefore-…-yyyyMMdd-HHmmss.json (before a restore or a reset; kept 30 days).</summary>
+    public void SafetyCopy(string why)
+    {
+        try
+        {
+            Directory.CreateDirectory(BackupFolder);
+            File.WriteAllText(Path.Combine(BackupFolder, $"{why}-{DateTime.Now:yyyyMMdd-HHmmss}.json"), JsonSerializer.Serialize(Data, Json.Options), new UTF8Encoding(false));
+        }
+        catch (Exception ex) { Log.Error("safety copy", ex); }
     }
 
     /// <summary>Backups of this account, newest first: daily copies, copies made before a reset, merged conflict copies.</summary>
@@ -706,6 +737,7 @@ public sealed class BoardStore
     {
         var d = TryRead(file).Data;
         if (d == null) return false;
+        SafetyCopy("before-restore");
         Checkpoint(); // Ctrl+Z after the restore goes back to how it was
         _undo.Add(JsonSerializer.Serialize(new BoardData { Tasks = d.Tasks, Days = d.Days, Rules = d.Rules, MarkRules = d.MarkRules }, Json.Options));
         return Undo();
@@ -725,7 +757,8 @@ public sealed class BoardStore
         int n = 0;
         foreach (var key in Data.Days.Where(kv => !string.IsNullOrEmpty(kv.Value.Mark)).Select(kv => kv.Key).ToList())
         {
-            Data.Days[key] = new DayInfo { Mark = null, Modified = Stamp.After(Data.Days[key].Modified) };
+            var day = Data.Days[key];
+            Data.Days[key] = new DayInfo { Mark = null, WorkStart = day.WorkStart, WorkEnd = day.WorkEnd, Modified = Stamp.After(day.Modified) };
             n++;
         }
         foreach (var r in Data.MarkRules.Where(r => !r.Deleted).ToList()) { r.Deleted = true; Changed(r); n++; }
@@ -870,7 +903,9 @@ public sealed class BoardStore
             // raw stored values ("" = removed by hand), so series marks stay series marks
             var was = snap.Days.TryGetValue(key, out var a) ? a.Mark : null;
             var now = Data.Days.TryGetValue(key, out var b) ? b.Mark : null;
-            if (was != now) Data.Days[key] = new DayInfo { Mark = was, Modified = Stamp.After(b?.Modified ?? DateTime.MinValue) };
+            var wasStart = a?.WorkStart; var wasEnd = a?.WorkEnd;
+            if (was != now || wasStart != b?.WorkStart || wasEnd != b?.WorkEnd)
+                Data.Days[key] = new DayInfo { Mark = was, WorkStart = wasStart, WorkEnd = wasEnd, Modified = Stamp.After(b?.Modified ?? DateTime.MinValue) };
         }
         MarkDirty();
         return true;
@@ -939,9 +974,9 @@ public sealed class BoardStore
             Prune();
             var json = JsonSerializer.Serialize(Data, Json.Options);
             var hash = Hash(json);
-            if (disk.Data != null && hash == disk.Hash)
+            if (disk.Data != null && (hash == disk.Hash || Canon(Data) == Canon(disk.Data)))
             {
-                _lastHash = hash;
+                _lastHash = disk.Hash; // the same content (maybe in another order): nothing to write, nothing new to read
             }
             else
             {
@@ -970,8 +1005,12 @@ public sealed class BoardStore
         }
         catch (Exception ex)
         {
-            Log.Error("board save", ex);
+            if (ex.Message != _lastSaveError) Log.Error("board save", ex); // once per kind of error, not every retry
+            _lastSaveError = ex.Message;
             SetError(L.T("Zapis do folderu nie powiódł się (spróbuję ponownie)") + ": " + ex.Message);
+            // the folder is gone (drive signed out …): this computer's copy keeps the edits until it is back
+            try { WriteMirror(JsonSerializer.Serialize(Data, Json.Options)); } catch (Exception mex) { Log.Error("mirror on failed save", mex); }
+            _saveTimer.Interval = TimeSpan.FromSeconds(10);
             _saveTimer.Start(); // retry
         }
     }
@@ -981,12 +1020,14 @@ public sealed class BoardStore
     {
         try
         {
-            var target = Path.Combine(BackupFolder, DateTime.Today.ToString("yyyy-MM-dd") + ".json");
+            var target = Path.Combine(BackupFolder, DateTime.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) + ".json");
             if (File.Exists(target) || !File.Exists(FilePath)) return;
             Directory.CreateDirectory(BackupFolder);
             File.Copy(FilePath, target);
             foreach (var old in Directory.GetFiles(BackupFolder, "????-??-??.json").OrderByDescending(f => f).Skip(BackupDays))
                 File.Delete(old);
+            foreach (var old in Directory.GetFiles(BackupFolder, "*-*.json").Where(f => Path.GetFileName(f).StartsWith("merged-") || Path.GetFileName(f).StartsWith("before-")))
+                if (File.GetLastWriteTimeUtc(old) < DateTime.UtcNow.AddDays(-30)) File.Delete(old);
         }
         catch (Exception ex) { Log.Error("backup", ex); }
     }
@@ -998,6 +1039,7 @@ public sealed class BoardStore
             var disk = TryRead(FilePath);
             if (disk.Data != null && disk.Hash != _lastHash)
             {
+                var diskCanon = Canon(disk.Data);
                 var merged = Merge(Data, disk.Data);
                 Data = merged;
                 _version++;
@@ -1006,7 +1048,7 @@ public sealed class BoardStore
                 LastExternalChange = DateTime.Now;
                 // If we hold changes the other side doesn't have yet, push them back.
                 EnsureCategories();
-                if (Hash(JsonSerializer.Serialize(merged, Json.Options)) != disk.Hash) MarkDirty();
+                if (Canon(merged) != diskCanon) MarkDirty();
                 WriteMirror(null);
                 ExternalChange?.Invoke();
             }
@@ -1052,9 +1094,37 @@ public sealed class BoardStore
         }
     }
 
+    string? _lastSaveError;
+
+    /// <summary>
+    /// The board's content in a fixed order (tasks, alarms, series by id; days, notes … by key), so two computers that
+    /// hold the same tasks in a different order don't take turns rewriting the file.
+    /// </summary>
+    static string Canon(BoardData d)
+    {
+        var node = JsonSerializer.SerializeToNode(d, Json.Options);
+        if (node is not System.Text.Json.Nodes.JsonObject o) return "";
+        foreach (var (key, value) in o.ToList())
+        {
+            if (value is System.Text.Json.Nodes.JsonArray arr && arr.All(x => x is System.Text.Json.Nodes.JsonObject j && j["Id"] != null))
+            {
+                var items = arr.Select(x => x!.DeepClone()).OrderBy(x => x!["Id"]!.ToString(), StringComparer.Ordinal).ToList();
+                arr.Clear();
+                foreach (var i in items) arr.Add(i);
+            }
+            else if (value is System.Text.Json.Nodes.JsonObject dict && key is "Days" or "Deleted" or "Notes")
+            {
+                var props = dict.Select(p => (p.Key, p.Value?.DeepClone())).OrderBy(p => p.Key, StringComparer.Ordinal).ToList();
+                dict.Clear();
+                foreach (var (k, v) in props) dict[k] = v;
+            }
+        }
+        return o.ToJsonString();
+    }
+
     public static BoardData Merge(BoardData a, BoardData b)
     {
-        var result = new BoardData { Extra = b.Extra ?? a.Extra };
+        var result = new BoardData { Extra = a.Extra ?? b.Extra };
         foreach (var kv in a.Deleted.Concat(b.Deleted))
             if (!result.Deleted.TryGetValue(kv.Key, out var t) || kv.Value > t)
                 result.Deleted[kv.Key] = kv.Value;
@@ -1079,6 +1149,10 @@ public sealed class BoardStore
             var keep = dup.OrderByDescending(t => t.Modified).ThenBy(t => t.Id, StringComparer.Ordinal).First();
             foreach (var t in dup.Where(t => !ReferenceEquals(t, keep)))
             {
+                // what only the other copy had stays: the time measured on it, its subtasks
+                if (t.TrackedMinutes > keep.TrackedMinutes) keep.TrackedMinutes = t.TrackedMinutes;
+                keep.TrackStart ??= t.TrackStart;
+                if (keep.Checklist is not { Count: > 0 } && t.Checklist is { Count: > 0 }) keep.Checklist = t.Checklist;
                 result.Deleted[t.Id] = t.Modified;
                 result.Tasks.Remove(t);
             }

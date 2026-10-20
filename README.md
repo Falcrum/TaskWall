@@ -107,7 +107,7 @@ Switches are in `src/Dev.cs`:
 - `--data <folder>`: separate test data and settings (`.dev\settings.dev.json`); runs next to the installed copy and never touches autostart
 - `--topmost --shot <dir> [--shot-delay s] --exit`: window screenshots
 - `--open day|month|year|timeline|drawer|archive|calendar|settings|today|add|private|alarm|meeting|repeat-mark|ring|ring-soon|search=…|import=…`
-- `--selftest <file>`: data-layer tests (106)
+- `--selftest <file>`: data-layer tests (111)
 
 UI texts are Polish keys wrapped in `L.T(...)` / `L.F(...)`; English lives in `src/Lang/En.*.cs`.
 

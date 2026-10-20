@@ -53,7 +53,7 @@ public sealed class Report
             keys.Add(key);
             var tasks = store.Data.Tasks.Where(t => t.Day == key && t.Text.Length > 0).Concat(store.VirtualTasks(d)).ToList(); // archived ones too
             r.All.AddRange(tasks.Select(t => (d, t)));
-            double meet = CalendarService.On(d).Where(x => !x.IsHoliday).Sum(x => x.Hours) + store.Alarms.Where(a => a.IsMeeting && a.Occurs(d)).Sum(a => a.Hours);
+            double meet = CalendarService.On(d).Where(x => !x.IsHoliday && !x.AllDay).Sum(x => Math.Max(0, ((x.End < d.AddDays(1) ? x.End : d.AddDays(1)) - (x.Start > d ? x.Start : d)).TotalHours)) + store.Alarms.Where(a => a.IsMeeting && a.Occurs(d)).Sum(a => a.Hours); // calendar events: only their part on this day
             var mark = store.DayMark(key);
             if (mark != null)
             {
@@ -120,7 +120,7 @@ public sealed class Report
         Tile($"{Done}/{Tasks}", L.T("zadań zrobionych"), true);
         Tile(H(DoneHours), L.F("z {0} zaplanowanych", H(Hours)));
         Tile(H(Meetings), L.T("spotkań"));
-        if (Tracked > 0) Tile(H(Math.Round(Tracked, 1)), L.T("zmierzonego czasu pracy"));
+        if (Tracked > 0) Tile(H(Math.Round(Tracked, 1)), L.T("zmierzonego czasu pracy (łącznie na tych zadaniach)"));
         Tile((Open.Count() + Carried.Count).ToString(), L.T("przeszło dalej / otwarte"));
         foreach (var (code, m) in Marks) Tile(m.Days.ToString(), $"{code} · {m.Label}");
         sb.Append("</div>");
@@ -178,9 +178,9 @@ public sealed class Report
     public string Csv()
     {
         string Hn(double h) => h.ToString("0.##", BoardWindow.Pl);
-        static string Q(string s) => s.Contains(';') || s.Contains('"') ? "\"" + s.Replace("\"", "\"\"") + "\"" : s;
+        static string Q(string s) => s.Contains(';') || s.Contains('\n') || s.Contains('"') ? "\"" + s.Replace("\"", "\"\"") + "\"" : s;
         var sb = new StringBuilder();
-        sb.AppendLine($"{Account};{From:yyyy-MM-dd} – {To:yyyy-MM-dd}");
+        sb.AppendLine($"{Q(Account)};{From:yyyy-MM-dd} – {To:yyyy-MM-dd}");
         sb.AppendLine();
         sb.AppendLine(L.T("Data;Dzień tygodnia;Tydzień;Oznaczenie;Zadania;Zrobione;Kontynuowane;Estymacja [h];Zrobione [h];Spotkania [h]"));
         foreach (var d in Days)
@@ -194,7 +194,7 @@ public sealed class Report
         foreach (var (d, t) in All.OrderBy(x => x.Day).ThenBy(x => x.Task.Order))
         {
             var tags = TaskItem.Tags(t.Text, out var rest);
-            sb.AppendLine($"{Key(d)};{Q(rest)};{Q(string.Join(", ", tags))};{(t.Done ? L.T("tak") : L.T("nie"))};{(t.Estimate is { } est ? Hn(est) : "")};{t.Url}");
+            sb.AppendLine($"{Key(d)};{Q(rest)};{Q(string.Join(", ", tags))};{(t.Done ? L.T("tak") : L.T("nie"))};{(t.Estimate is { } est ? Hn(est) : "")};{Q(t.Url ?? "")}");
         }
         return sb.ToString();
     }
@@ -308,7 +308,7 @@ public sealed class ReportWindow : DarkWindow
         Stat($"{r.Done}/{r.Tasks}", L.T("zadań zrobionych"), accent: true);
         Stat(BoardWindow.Hours(r.DoneHours), L.F("z {0} zaplanowanych", BoardWindow.Hours(r.Hours)));
         Stat(BoardWindow.Hours(r.Meetings), L.T("spotkań"));
-        if (r.Tracked > 0) Stat(BoardWindow.Hours(Math.Round(r.Tracked, 1)), L.T("zmierzonego czasu pracy"));
+        if (r.Tracked > 0) Stat(BoardWindow.Hours(Math.Round(r.Tracked, 1)), L.T("zmierzonego czasu pracy (łącznie na tych zadaniach)"));
         Stat((r.Open.Count() + r.Carried.Count).ToString(), L.T("przeszło dalej / otwarte"));
         foreach (var (code, m) in r.Marks) Stat(m.Days.ToString(), $"{code} · {m.Label}");
         _body.Children.Add(stats);

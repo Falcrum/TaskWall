@@ -173,7 +173,7 @@ public sealed class RepeatWindow : DarkWindow
         DateTime? to = _to.Text.Trim().Length == 0 ? null : Day(_to.Text);
         if (_to.Text.Trim().Length > 0 && (to == null || to < from)) return null;
         if (!int.TryParse(_interval.Text.Trim(), out var n) || n < 1 || n > 99) return null;
-        var r = new RecurringRule { Pattern = Pattern, Interval = Pattern == "weekdays" ? 1 : n, Start = from.ToString("yyyy-MM-dd"), End = to?.ToString("yyyy-MM-dd"), SkipSundaysHolidays = _skipHolidays.IsChecked == true };
+        var r = new RecurringRule { Pattern = Pattern, Interval = Pattern == "weekdays" ? 1 : n, Start = from.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), End = to?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), SkipSundaysHolidays = _skipHolidays.IsChecked == true };
         if (Pattern == "weekly")
         {
             var days = _dayButtons.Where(x => x.Button.IsChecked == true).Select(x => x.Day).ToList();
@@ -207,8 +207,9 @@ public sealed class RepeatWindow : DarkWindow
         }
         _preview.Foreground = Ui.Res("FgDim");
         var next = new List<DateTime>();
-        for (var d = r.StartDate; next.Count < 6 && d < r.StartDate.AddYears(3); d = d.AddDays(1))
-            if (r.Occurs(d) && d >= DateTime.Today.AddDays(-1)) next.Add(d);
+        var from = r.StartDate > DateTime.Today.AddDays(-1) ? r.StartDate : DateTime.Today.AddDays(-1); // an old series: from today, not from its start
+        for (var d = from; next.Count < 6 && d < from.AddYears(3); d = d.AddDays(1))
+            if (r.Occurs(d)) next.Add(d);
         int total = r.End != null ? CountUntil(r) : -1;
         _preview.Text = "→ " + r.Summary
             + (next.Count > 0 ? "\n" + L.T("Najbliżej:") + " " + string.Join(", ", next.Select(d => d.ToString("ddd d MMM", BoardWindow.Pl))) + (next.Count == 6 ? " …" : "") : "\n" + L.T("Brak dni w tym okresie."))
@@ -240,7 +241,7 @@ public sealed class RepeatWindow : DarkWindow
             r.Text = real.Text; r.Estimate = real.Estimate; r.Order = real.Order;
             _store.AddRule(r);
             // this task becomes the series' occurrence on its own day (or stays a one-off when it's outside the series)
-            if (r.Occurs(DateTime.ParseExact(real.Day!, "yyyy-MM-dd", null)))
+            if (r.Occurs(DateTime.ParseExact(real.Day!, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)))
             {
                 real.RuleId = r.Id;
                 real.RuleDay = real.Day;
@@ -265,7 +266,7 @@ public sealed class RepeatWindow : DarkWindow
     {
         if (task.Day == null) return;
         GlassWindow.EndOverlays();
-        new RepeatWindow(store, store.Rule(task.RuleId), task, DateTime.ParseExact(task.RuleDay ?? task.Day, "yyyy-MM-dd", null), null).Show();
+        new RepeatWindow(store, store.Rule(task.RuleId), task, DateTime.ParseExact(task.RuleDay ?? task.Day, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), null).Show();
     }
 
     public static void ForMark(BoardStore store, RecurringRule? rule, DateTime day, string? mark = null)

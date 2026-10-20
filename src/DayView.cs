@@ -18,7 +18,7 @@ public sealed record DayViewHost(
     Func<DateTime, List<TaskItem>> TasksOf,
     Func<TaskItem, FrameworkElement, ContextMenu> Menu,
     Action<TaskItem> CycleState,
-    Action<TaskItem, TimeSpan, TimeSpan> SetTime,
+    Action<TaskItem, TimeSpan, TimeSpan, bool> SetTime, // the last: the length changed (it becomes the estimate)
     Action<string, DateTime, TimeSpan> DropTask,
     Func<string, DateTime, FrameworkElement> AddRow,
     Action<Alarm, DateTime> OpenAlarm);
@@ -41,6 +41,7 @@ public sealed class DayView : Grid
     readonly TextBlock _notesTitle = new() { FontSize = 11, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 6) };
     readonly DispatcherTimer _clock = new() { Interval = TimeSpan.FromMinutes(1) };
     DateTime _date = DateTime.Today;
+    bool _menuOpen; // a task's menu is open: no redraw under it
     bool _scrolled;
     readonly DockPanel _left = new(), _right = new() { Margin = new Thickness(4, 0, 4, 0) };
     /// <summary>One hour: the whole day fits the height there is (no scrolling), but never so small it can't be grabbed.</summary>
@@ -97,7 +98,7 @@ public sealed class DayView : Grid
         _canvas.PreviewMouseMove += OnMove;
         _canvas.PreviewMouseLeftButtonUp += OnUp;
         _canvas.LostMouseCapture += (_, _) => CancelDrag();
-        _clock.Tick += (_, _) => { if (IsVisible && _drag == null) Render(); };
+        _clock.Tick += (_, _) => { if (IsVisible && _drag == null && !_menuOpen) Render(); };
         _clock.Start();
     }
 
@@ -108,6 +109,7 @@ public sealed class DayView : Grid
     public void Show(DateTime date)
     {
         bool newDay = date.Date != _date;
+        if (newDay) _notes.Flush(); // the last words typed belong to the day they were typed on
         // the notebook on the left or the right (Settings → Tablica)
         bool notesLeft = App.Settings.DayNotesLeft;
         SetColumn(_left, notesLeft ? 2 : 0);
@@ -147,7 +149,7 @@ public sealed class DayView : Grid
         var store = _host.Store();
         var today = Key(_date);
         var notes = all
-            ? (store.Data.Notes ?? new()).Where(kv => kv.Value.Text.Trim().Length > 0).OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => (kv.Key, kv.Value.Text)).ToList()
+            ? (store.Data.Notes ?? new()).Where(kv => (kv.Value?.Text ?? "").Trim().Length > 0 && DateTime.TryParseExact(kv.Key, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _)).OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => (kv.Key, kv.Value.Text)).ToList()
             : new List<(string Key, string Text)> { (today, _notes.Markdown) };
         if (notes.Count == 0 || notes.All(n => n.Text.Trim().Length == 0)) { MessageBox.Show(L.T("Nie ma jeszcze notatek do wyeksportowania."), "TaskWall"); return; }
         var dlg = new Microsoft.Win32.SaveFileDialog
@@ -193,6 +195,7 @@ public sealed class DayView : Grid
         var (s, e) = _host.Store().WorkHours(Key(_date), App.Settings.WorkStart, App.Settings.WorkEnd);
         var ws = Hm(s) ?? TimeSpan.FromHours(9);
         var we = Hm(e) ?? TimeSpan.FromHours(17);
+        if (e == "23:59") we = TimeSpan.FromHours(24); // midnight is kept as 23:59
         return we > ws ? (ws, we) : (ws, ws + TimeSpan.FromHours(8));
     }
 
@@ -206,15 +209,20 @@ public sealed class DayView : Grid
             var to = a.IsMeeting ? (a.EndAt(_date).Date > _date ? TimeSpan.FromHours(24) : a.EndAt(_date).TimeOfDay) : at + TimeSpan.FromMinutes(20);
             list.Add(new Block(at, to > at ? to : at + TimeSpan.FromMinutes(15), a.IsMeeting ? "meeting" : "alarm", a, false));
         }
+        // an event over midnight or several days: only its part on this day
         foreach (var ev in CalendarService.On(_date).Where(e => !e.IsHoliday && !e.AllDay))
-            list.Add(new Block(ev.Start.TimeOfDay, ev.End.Date > _date ? TimeSpan.FromHours(24) : ev.End.TimeOfDay, "event", ev, false));
+        {
+            var from = ev.Start.Date < _date ? TimeSpan.Zero : ev.Start.TimeOfDay;
+            var to = ev.End.Date > _date ? TimeSpan.FromHours(24) : ev.End.TimeOfDay;
+            if (to > from) list.Add(new Block(from, to, "event", ev, false));
+        }
 
         // tasks with hours where they are (the others wait in the strip above)
         foreach (var t in _host.TasksOf(_date))
         {
             if (Hm(t.Time) is not { } from) continue;
             var dur = TimeSpan.FromHours(Math.Clamp(t.Estimate ?? 0.5, 0.25, 8));
-            var to = Hm(t.End) is { } e && e > from ? e : from + dur;
+            var to = t.End == "23:59" ? TimeSpan.FromHours(24) : Hm(t.End) is { } e && e > from ? e : from + dur;
             if (to > TimeSpan.FromHours(24)) to = TimeSpan.FromHours(24);
             list.Add(new Block(from, to, "task", t, false));
         }
@@ -307,7 +315,7 @@ public sealed class DayView : Grid
         {
             CornerRadius = new CornerRadius(4), Padding = new Thickness(5, 0, 5, 1), Background = B(Th.Ink(0x26)), Cursor = Cursors.SizeNS,
             ToolTip = (start ? L.T("Początek pracy") : L.T("Koniec pracy")) + "\n" + L.T("Przeciągnij, żeby zmienić dla tego dnia · dwuklik: domyślne godziny"),
-            Child = new TextBlock { Text = (start ? "▸ " : "◂ ") + at.ToString(@"hh\:mm"), FontSize = 9.5, FontWeight = FontWeights.SemiBold, Foreground = Res("FgDim") },
+            Child = new TextBlock { Text = (start ? "▸ " : "◂ ") + (at >= TimeSpan.FromHours(24) ? "24:00" : at.ToString(@"hh\:mm")), FontSize = 9.5, FontWeight = FontWeights.SemiBold, Foreground = Res("FgDim") },
         };
         pill.MouseLeftButtonDown += (_, e) =>
         {
@@ -328,7 +336,7 @@ public sealed class DayView : Grid
         var stack = new StackPanel { Margin = new Thickness(8, 3, 6, 2) };
         var title = new TextBlock { FontSize = App.Settings.FontSize - 0.5, Foreground = Res("Fg"), TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = h > 40 ? TextWrapping.Wrap : TextWrapping.NoWrap };
         var sub = new TextBlock { FontSize = App.Settings.FontSize - 2.5, Foreground = Res("FgFaint"), TextTrimming = TextTrimming.CharacterEllipsis };
-        string range = $"{b.From:hh\\:mm}–{b.To:hh\\:mm}";
+        string range = $"{b.From:hh\\:mm}–{(b.To >= TimeSpan.FromHours(24) ? "24:00" : b.To.ToString(@"hh\:mm"))}";
         var grid = new Grid();
         grid.Children.Add(stack);
         card.Child = grid;
@@ -397,6 +405,8 @@ public sealed class DayView : Grid
                     e.Handled = true;
                     var menu = _host.Menu(t, card);
                     menu.PlacementTarget = card;
+                    _menuOpen = true;
+                    menu.Closed += (_, _) => _menuOpen = false;
                     menu.IsOpen = true;
                 };
                 break;
@@ -452,6 +462,8 @@ public sealed class DayView : Grid
                 e.Handled = true;
                 var menu = _host.Menu(t, chip);
                 menu.PlacementTarget = chip;
+                _menuOpen = true;
+                menu.Closed += (_, _) => _menuOpen = false;
                 menu.IsOpen = true;
             };
             _loose.Children.Add(chip);
@@ -489,24 +501,26 @@ public sealed class DayView : Grid
         _canvas.ReleaseMouseCapture();
         double dy = e.GetPosition(_canvas).Y - d.StartY;
         var delta = TimeSpan.FromMinutes(Math.Round(dy / HourH * 4) * 15);
-        if (Math.Abs(dy) < 4) { d.El.RenderTransform = null; return; } // a click, not a drag
+        if (Math.Abs(dy) < 4 || delta == TimeSpan.Zero) { d.El.RenderTransform = null; Render(); return; } // a click (or no change), not a drag
         var store = _host.Store();
         switch (d.Kind)
         {
             case "move" when d.Task != null:
                 var from = Clamp(d.From + delta, TimeSpan.Zero, TimeSpan.FromHours(24) - (d.To - d.From));
-                _host.SetTime(d.Task, from, from + (d.To - d.From));
+                _host.SetTime(d.Task, from, from + (d.To - d.From), false); // moved: the estimate stays
                 break;
             case "resize" when d.Task != null:
                 var to = Clamp(d.To + delta, d.From + TimeSpan.FromMinutes(15), TimeSpan.FromHours(24));
-                _host.SetTime(d.Task, d.From, to);
+                _host.SetTime(d.Task, d.From, to, true);
                 break;
             case "workStart":
             case "workEnd":
                 var (ws, we) = WorkHours();
                 var at = Clamp(d.From + delta, TimeSpan.Zero, TimeSpan.FromHours(24));
-                if (d.Kind == "workStart") ws = at < we ? at : we - TimeSpan.FromMinutes(30); else we = at > ws ? at : ws + TimeSpan.FromMinutes(30);
-                store.SetWorkHours(Key(_date), ws.ToString(@"hh\:mm"), we.ToString(@"hh\:mm"));
+                if (d.Kind == "workStart") ws = Clamp(at < we ? at : we - TimeSpan.FromMinutes(30), TimeSpan.Zero, TimeSpan.FromHours(23.5));
+                else we = Clamp(at > ws ? at : ws + TimeSpan.FromMinutes(30), TimeSpan.FromMinutes(30), TimeSpan.FromHours(24));
+                // midnight is kept as 23:59 ("24:00" isn't a time of day)
+                store.SetWorkHours(Key(_date), ws.ToString(@"hh\:mm"), we >= TimeSpan.FromHours(24) ? "23:59" : we.ToString(@"hh\:mm"));
                 Render();
                 break;
         }
@@ -529,8 +543,14 @@ public sealed class DayView : Grid
         {
             var dur = TimeSpan.FromHours(Math.Clamp(own.Estimate ?? 0.5, 0.25, 8));
             if (at + dur > TimeSpan.FromHours(24)) at = TimeSpan.FromHours(24) - dur;
-            _host.SetTime(own, at, at + dur);
+            _host.SetTime(own, at, at + dur, false);
             return;
+        }
+        // from another day or the backlog: never past the end of the day (24:00 would be read as 00:00)
+        if (_host.Store().Find(id) is { } other)
+        {
+            var len = TimeSpan.FromHours(Math.Clamp(other.Estimate ?? 0.5, 0.25, 8));
+            at = Clamp(at, TimeSpan.Zero, TimeSpan.FromTicks(Math.Min((TimeSpan.FromHours(24) - len).Ticks, TimeSpan.FromHours(23.75).Ticks)));
         }
         _host.DropTask(id, _date, at);
     }

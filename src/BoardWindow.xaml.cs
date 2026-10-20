@@ -70,7 +70,11 @@ public partial class BoardWindow : GlassWindow
         {
             if (_openEditors > 0) return; // never close an editor under the user's fingers
             if (DateTime.Today == _today) { if (IsWeekView) RefreshEventsOnly(); return; }
+            var was = _today;
             _today = DateTime.Today;
+            // the day view and the month that showed "today" follow it to the new day
+            if (_dayDate == was) _dayDate = _today;
+            if (_monthFirst == new DateTime(was.Year, was.Month, 1)) _monthFirst = new DateTime(_today.Year, _today.Month, 1);
             App.Instance.OnNewDay();
             Rebuild();
         };
@@ -304,13 +308,21 @@ public partial class BoardWindow : GlassWindow
     TimelineView? _timeline;
     DayView? _dayView;
 
-    /// <summary>A task block moved / stretched on the day view: its hours, and their length as its estimate.</summary>
-    void DaySetTime(TaskItem t, TimeSpan from, TimeSpan to) => Do(() =>
+    /// <summary>
+    /// A task block moved / stretched on the day view: its hours; stretched (<paramref name="length"/>), their length
+    /// becomes its estimate – a move keeps the estimate (a 2-day task drawn as 8 h stays 2 days).
+    /// </summary>
+    void DaySetTime(TaskItem t, TimeSpan from, TimeSpan to, bool length) => Do(() =>
     {
         var real = Store.Materialize(t);
         real.Time = from.ToString(@"hh\:mm");
         real.End = to >= TimeSpan.FromHours(24) ? "23:59" : to.ToString(@"hh\:mm");
-        real.Estimate = Math.Round((to - from).TotalHours, 2);
+        if (length)
+        {
+            var old = real.Estimate;
+            real.Estimate = Math.Round((to - from).TotalHours, 2);
+            ApplyAutoPlan(real, real.Day, old);
+        }
         Store.Changed(real);
     });
 
@@ -320,6 +332,7 @@ public partial class BoardWindow : GlassWindow
         if (Store.Find(id) is not { } t) return;
         var dur = TimeSpan.FromHours(Math.Clamp(t.Estimate ?? 0.5, 0.25, 8));
         Store.Checkpoint();
+        if (t.Archived) Store.Unarchive(t); // dragged from the archive: back on the board
         MoveToEnd(t, DayKey(day));
         var real = Store.Find(id) ?? t;
         real.Time = at.ToString(@"hh\:mm");
@@ -385,7 +398,7 @@ public partial class BoardWindow : GlassWindow
         if (_trackTimer == null)
         {
             _trackTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(20) };
-            _trackTimer.Tick += (_, _) => { foreach (var show in _trackLabels.ToList()) show(); };
+            _trackTimer.Tick += (_, _) => { _trackLabels.RemoveAll(x => !x.El.IsLoaded); foreach (var (_, show) in _trackLabels.ToList()) show(); }; // rows rebuilt away (the backlog) drop out
             _trackTimer.Start();
         }
         _pressed = null;
@@ -412,7 +425,7 @@ public partial class BoardWindow : GlassWindow
                     () => Store,
                     d => Store.Data.Tasks.Where(t => t.Day == DayKey(d) && !t.Archived).Concat(Store.VirtualTasks(d)).OrderBy(t => t.Order).ToList(),
                     (t, el) => BuildMenu(t, null, null, el),
-                    t => SetState(t, t.Done ? TaskState.Todo : t.IsStarted ? TaskState.Done : TaskState.Started),
+                    t => SetState(t, t.Done ? TaskState.Todo : t.IsStarted || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? TaskState.Done : TaskState.Started),
                     DaySetTime,
                     DayDropTask,
                     (key, d) => BuildAddRow(key, d),
@@ -1308,7 +1321,7 @@ public partial class BoardWindow : GlassWindow
         grid.Children.Add(circle);
         if (_justToggled == t.Id) Anim.Pop(circle);
         // the project: a thin bar in its colour on the right edge
-        if (TaskMarks.Project(t) is { } proj) { Grid.SetColumn(proj, 4); proj.Margin = new Thickness(3, 1, 0, 1); grid.Children.Add(proj); }
+        if (TaskMarks.Project(t) is { } proj) { Grid.SetColumn(proj, 4); Grid.SetRowSpan(proj, 2); proj.Margin = new Thickness(3, 1, 0, 1); grid.Children.Add(proj); }
 
         // text with tag chips (+ notion meta in backlog)
         var content = new StackPanel();
@@ -1332,7 +1345,7 @@ public partial class BoardWindow : GlassWindow
                 ToolTip = t.IsTracking ? L.T("Licznik czasu pracy działa – zatrzymasz go w menu zadania") : L.T("Zmierzony czas pracy") };
             void Show() => tl.Text = (t.IsTracking ? "⏵ " : "⏱ ") + Duration(t.TrackedNow);
             Show();
-            if (t.IsTracking) _trackLabels.Add(Show);
+            if (t.IsTracking) _trackLabels.Add((tl, Show));
             meta.Children.Add(tl);
         }
         if (span is { } sp) // a multi-day task on its current day: "↷ 3/3"
@@ -1489,7 +1502,7 @@ public partial class BoardWindow : GlassWindow
     static double MetaHeight(double fs) => Math.Ceiling(Math.Max(8, fs - 3.5) * 1.45 + 4);
 
     /// <summary>Labels of running timers, refreshed every 20 s (cleared on each rebuild).</summary>
-    readonly List<Action> _trackLabels = new();
+    readonly List<(FrameworkElement El, Action Show)> _trackLabels = new();
     System.Windows.Threading.DispatcherTimer? _trackTimer;
 
     /// <summary>"45 min", "1h 05m".</summary>
@@ -1701,7 +1714,7 @@ public partial class BoardWindow : GlassWindow
             if (commit && rule != null && v.Length > 0 && v != rule.Text)
                 change = () => { rule.Text = v; Store.Changed(rule); };
             else if (commit && rule == null && v.Length == 0)
-                change = () => { if (t.IsVirtual && Store.Rule(t.RuleId) is { } r) { r.Skips.Add(t.RuleDay!); Store.Changed(r); } else Store.Archive(Store.Materialize(t)); };
+                change = () => { if (t.IsVirtual && Store.Rule(t.RuleId) is { } r) { if (!r.Skips.Contains(t.RuleDay!)) r.Skips.Add(t.RuleDay!); Store.Changed(r); } else Store.Archive(Store.Materialize(t)); };
             else if (commit && rule == null && v != t.Text)
                 change = () =>
                 {
@@ -1809,7 +1822,7 @@ public partial class BoardWindow : GlassWindow
                 {
                     // a meeting is not a task: open the meeting window with what was typed so far
                     TaskItem.Tags(SmartAdd.Parse(box.Text, Store.Categories).Text, out var title);
-                    var day = key == BacklogKey ? DateTime.Today : DateTime.ParseExact(key, "yyyy-MM-dd", null);
+                    var day = key == BacklogKey ? DateTime.Today : DateTime.ParseExact(key, "yyyy-MM-dd", CultureInfo.InvariantCulture);
                     box.Text = "";
                     // the window takes the focus: the empty editor then closes by itself
                     Dispatcher.BeginInvoke(() => AlarmWindow.Edit(Store, null, day, meeting: true, title: title));
@@ -1843,7 +1856,7 @@ public partial class BoardWindow : GlassWindow
             var tags = TaskItem.Tags(v, out var withoutTags);
             if (!empty && tags.Contains(TaskItem.MeetingTag) && AlarmService.ParseMeeting(withoutTags, parsed.Estimate, out var from, out var to, out var title))
             {
-                var day = parsed.Day ?? (key == BacklogKey ? DateTime.Today : DateTime.ParseExact(key, "yyyy-MM-dd", null));
+                var day = parsed.Day ?? (key == BacklogKey ? DateTime.Today : DateTime.ParseExact(key, "yyyy-MM-dd", CultureInfo.InvariantCulture));
                 var meeting = new Alarm { Kind = "meeting", Text = title, Day = DayKey(day), Time = from.ToString(@"hh\:mm"), End = to.ToString(@"hh\:mm"), Remind = 5 };
                 change = () => { Store.AddAlarm(meeting); Dispatcher.BeginInvoke(AlarmService.Reschedule); };
                 empty = true;
@@ -2091,6 +2104,8 @@ public partial class BoardWindow : GlassWindow
             c.NotionId = null;  // the Notion import keeps updating only the original
             c.WorkedDays = null;
             c.Started = null;                         // a fresh copy: not started, planned from its own day
+            c.TrackStart = null;                      // … with no time measured
+            c.TrackedMinutes = 0;
             c.PlanEnd = AutoPlanEnd(day, c.Estimate);
             Store.Add(c);
             _justAdded = c.Id;

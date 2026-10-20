@@ -735,7 +735,12 @@ public partial class BoardWindow
         if (!t.IsVirtual && !t.Done)
             menu.Items.Add(t.IsTracking
                 ? Item(L.T("⏹ Zatrzymaj licznik czasu"), () => Do(() => Store.StopTracking(Store.Materialize(t))), value: Duration(t.TrackedNow))
-                : Item(L.T("⏵ Mierz czas pracy"), () => Do(() => Store.StartTracking(Store.Materialize(t))), value: t.TrackedMinutes > 0 ? Duration(t.TrackedMinutes) : null));
+                : Item(L.T("⏵ Mierz czas pracy"), () => Do(() =>
+                {
+                    // one timer at a time across the accounts too
+                    foreach (var (_, other) in App.OpenStores()) if (!ReferenceEquals(other, Store)) foreach (var x in other.Data.Tasks.Where(x => x.IsTracking).ToList()) other.StopTracking(x);
+                    Store.StartTracking(Store.Materialize(t));
+                }), value: t.TrackedMinutes > 0 ? Duration(t.TrackedMinutes) : null));
         if (t.TrackedMinutes > 0 && !t.IsTracking)
             menu.Items.Add(Item(L.T("Wyzeruj zmierzony czas"), () => Do(() => { var real = Store.Materialize(t); real.TrackedMinutes = 0; Store.Changed(real); })));
         menu.Items.Add(Item(L.T("Duplikuj"), () =>
@@ -746,6 +751,12 @@ public partial class BoardWindow
             copy.RuleId = copy.RuleDay = null;
             copy.NotionId = null; // re-imports keep updating only the original
             copy.Order = t.Order + 0.001;
+            // a fresh copy: no time measured, not started, no days worked yet
+            copy.TrackStart = null;
+            copy.TrackedMinutes = 0;
+            copy.Done = false;
+            copy.Started = null;
+            copy.WorkedDays = null;
             _justAdded = copy.Id;
             Do(() => Store.Add(copy));
         }));
@@ -1058,7 +1069,9 @@ public partial class BoardWindow
     static List<TaskItem> Overdue()
     {
         var today = DayKey(DateTime.Today);
-        return Store.Data.Tasks.Where(t => !t.Done && !t.Archived && t.Day != null && string.CompareOrdinal(t.Day, today) < 0)
+        // a multi-day task still within its planned days (Mon–Fri on Wednesday) isn't late
+        return Store.Data.Tasks.Where(t => !t.Done && !t.Archived && t.Day != null && string.CompareOrdinal(t.Day, today) < 0
+                && !(t.PlanEnd != null && string.CompareOrdinal(t.PlanEnd, today) >= 0))
             .OrderBy(t => t.Day).ThenBy(t => t.Order).ToList();
     }
 

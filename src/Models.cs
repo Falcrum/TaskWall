@@ -193,7 +193,7 @@ public sealed class RecurringRule
         var s = _start;
         d = d.Date;
         if (d < s) return false;
-        var key = d.ToString("yyyy-MM-dd");
+        var key = d.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
         if (End != null && string.CompareOrdinal(key, End) > 0) return false;
         if (Skips.Contains(key)) return false;
         if (SkipSundaysHolidays && (d.DayOfWeek == DayOfWeek.Sunday || DaysOff.Is(d))) return false; // Sundays, holidays, BŚU / leave
@@ -312,7 +312,7 @@ public sealed class Alarm
         if (Deleted || !DateTime.TryParseExact(Day, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var start)) return false;
         d = d.Date;
         if (d < start) return false;
-        if (Skips != null && Skips.Contains(d.ToString("yyyy-MM-dd"))) return false;
+        if (Skips != null && Skips.Contains(d.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture))) return false;
         if (SkipDaysOff && DaysOff.Is(d)) return false;
         return Repeat switch
         {
@@ -326,17 +326,17 @@ public sealed class Alarm
         };
     }
 
-    static TimeSpan ParseTime(string? s, TimeSpan fallback) => TimeSpan.TryParseExact(s, @"hh\:mm", null, out var t) ? t : fallback;
+    static TimeSpan ParseTime(string? s, TimeSpan fallback) => TimeSpan.TryParseExact(s, @"h\:mm", System.Globalization.CultureInfo.InvariantCulture, out var t) ? t : fallback;
 
     [JsonIgnore] public TimeSpan TimeOfDay => ParseTime(Time, TimeSpan.FromHours(9));
 
     public DateTime At(DateTime day) => day.Date + TimeOfDay;
 
-    /// <summary>Meeting end on <paramref name="day"/> (at least the start).</summary>
+    /// <summary>Meeting end of its occurrence on <paramref name="day"/>: an end before the start is after midnight (23:00–02:00).</summary>
     public DateTime EndAt(DateTime day)
     {
         var end = day.Date + ParseTime(End, TimeOfDay + TimeSpan.FromHours(1));
-        return end < At(day) ? At(day) : end;
+        return end < At(day) ? end.AddDays(1) : end;
     }
 
     [JsonIgnore] public double Hours => IsMeeting ? (EndAt(DateTime.Today) - At(DateTime.Today)).TotalHours : 0;
@@ -344,7 +344,7 @@ public sealed class Alarm
     /// <summary>When the occurrence on <paramref name="day"/> rings: alarm at its time, meeting before it (or never).</summary>
     public DateTime? RingAt(DateTime day) => !IsMeeting ? At(day) : Remind is { } m ? At(day).AddMinutes(-m) : null;
 
-    public static string Key(DateTime at) => at.ToString("yyyy-MM-dd HH:mm");
+    public static string Key(DateTime at) => at.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>Next ring strictly after <paramref name="after"/>, or null.</summary>
     public DateTime? Next(DateTime after)
@@ -598,6 +598,8 @@ public sealed class AppSettings
     public string WorkEnd { get; set; } = "17:00";
     /// <summary>The day view: the notebook on the left, the line of hours on the right.</summary>
     public bool DayNotesLeft { get; set; }
+    /// <summary>The notebook shows the Markdown source instead of the formatted text.</summary>
+    public bool NotesSource { get; set; }
     /// <summary>No glass at all: the board, the clock and the panels on a solid background.</summary>
     public bool Opaque { get; set; }
     public WeatherSettings Weather { get; set; } = new();

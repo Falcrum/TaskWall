@@ -199,7 +199,7 @@ static class YearView
                 if (mark != null && !markRing && marks.TryGetValue(mark, out var mc)) fill = mc;
                 // intensity by the number of done tasks; worked on but nothing finished = a faint tint
                 else if (past && done > 0) fill = Color.FromArgb(Levels[Math.Min(done, Levels.Length) - 1], green.R, green.G, green.B);
-                else if (past && total > 0) fill = Color.FromArgb(0x26, green.R, green.G, green.B);
+                else if (date < today && total > 0) fill = Color.FromArgb(0x26, green.R, green.G, green.B); // worked on, nothing done (today is still going)
                 else if (!past && total > 0) { fill = future; ring = Color.FromArgb(0xB0, accent.R, accent.G, accent.B); }
                 // weekends and holidays: tinted, like their cells on the board
                 else fill = row >= 5 || dayOff != null ? Color.FromArgb(past ? (byte)0x1A : (byte)0x24, weekendRed.R, weekendRed.G, weekendRed.B) : past ? empty : future;

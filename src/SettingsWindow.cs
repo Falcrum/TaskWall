@@ -936,20 +936,24 @@ public sealed class SettingsWindow : DarkWindow
         p.Children.Add(Pair(L.T("Zwijaj zrobione zadania do jednej linii („✓ 3 zrobione”)"), fold));
         // default working hours (the day view; a day can have its own – drag the edges there)
         var hours = new StackPanel { Orientation = Orientation.Horizontal };
-        TextBox HourBox(string value, Action<string> set)
+        static TimeSpan? ParseHour(string s) =>
+            TimeSpan.TryParseExact(s.Trim(), new[] { @"h\:mm", @"hh\:mm", "%h" }, System.Globalization.CultureInfo.InvariantCulture, out var t) && t < TimeSpan.FromHours(24) ? t : null;
+        TextBox HourBox(Func<string> current, Action<string> set, bool end)
         {
-            var box = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Width = 70, Text = value };
+            var box = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Width = 70, Text = current() };
             box.LostKeyboardFocus += (_, _) =>
             {
-                if (TimeSpan.TryParseExact(box.Text.Trim(), new[] { @"h\:mm", @"hh\:mm", "%h" }, System.Globalization.CultureInfo.InvariantCulture, out var t) && t < TimeSpan.FromHours(24))
+                // the start before the end; a wrong entry goes back to what is set now
+                var other = ParseHour(end ? S.WorkStart : S.WorkEnd);
+                if (ParseHour(box.Text) is { } t && (other == null || (end ? t > other : t < other)))
                 { box.Text = t.ToString(@"hh\:mm"); set(box.Text); App.Instance.ApplySettings(); }
-                else box.Text = value;
+                else box.Text = current();
             };
             return box;
         }
-        hours.Children.Add(HourBox(S.WorkStart, v => S.WorkStart = v));
+        hours.Children.Add(HourBox(() => S.WorkStart, v => S.WorkStart = v, false));
         hours.Children.Add(new TextBlock { Text = "  –  ", VerticalAlignment = VerticalAlignment.Center, Foreground = Ui.Res("FgDim") });
-        hours.Children.Add(HourBox(S.WorkEnd, v => S.WorkEnd = v));
+        hours.Children.Add(HourBox(() => S.WorkEnd, v => S.WorkEnd = v, true));
         p.Children.Add(Pair(L.T("Godziny pracy (widok dnia; dzień może mieć własne – przeciągnij ich krawędzie na osi)"), hours));
         p.Children.Add(Check(L.T("Widok dnia: notatnik po lewej, oś godzin po prawej"), S.DayNotesLeft, v => S.DayNotesLeft = v));
         p.Children.Add(Check(L.T("Podsumowanie poprzedniego tygodnia przy pierwszym uruchomieniu w tygodniu"), S.WeeklySummary, v => S.WeeklySummary = v));

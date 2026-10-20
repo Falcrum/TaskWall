@@ -24,7 +24,7 @@ static class Backup
             {
                 store.SaveNow();
                 var folder = store.Folder;
-                void Add(string file, string name) { if (File.Exists(file)) zip.CreateEntryFromFile(file, name, CompressionLevel.Optimal); }
+                void Add(string file, string name) => AddShared(zip, file, name);
                 Add(Path.Combine(folder, BoardStore.FileName), $"accounts/{layer}/{BoardStore.FileName}");
                 Add(Path.Combine(folder, SharedSettings.FileName), $"accounts/{layer}/{SharedSettings.FileName}");
                 foreach (var sub in new[] { "backup", "raporty" })
@@ -37,13 +37,22 @@ static class Backup
             }
             // this computer's settings (the Notion token in it is encrypted for this Windows user only)
             var local = Path.Combine(SettingsStore.Dir, "settings.json");
-            if (File.Exists(local)) zip.CreateEntryFromFile(local, "settings/settings.json", CompressionLevel.Optimal);
+            AddShared(zip, local, "settings/settings.json");
             var readme = zip.CreateEntry("CZYTAJ.txt");
             using var w = new StreamWriter(readme.Open(), new UTF8Encoding(false));
             w.WriteLine($"TaskWall {Installer.Version} – kopia z {DateTime.Now:yyyy-MM-dd HH:mm}, komputer {Environment.MachineName}.");
             w.WriteLine("Przywracanie: Ustawienia → Info → Przywróć z kopii… (zadania są scalane z tablicą, nowsza wersja wygrywa).");
         }
         File.Move(tmp, zipPath, true);
+    }
+
+    /// <summary>Copies a file in even while a sync client holds it open.</summary>
+    static void AddShared(ZipArchive zip, string file, string name)
+    {
+        if (!File.Exists(file)) return;
+        using var src = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var dst = zip.CreateEntry(name, CompressionLevel.Optimal).Open();
+        src.CopyTo(dst);
     }
 
     /// <summary>Merges the boards of a backup into the open accounts; returns how many accounts were merged.</summary>
@@ -59,6 +68,7 @@ static class Backup
             entry.ExtractToFile(tmp, true);
             try
             {
+                store.SafetyCopy("before-restore");
                 store.Checkpoint();
                 if (store.MergeFile(tmp)) merged++;
             }

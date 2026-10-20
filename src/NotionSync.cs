@@ -384,7 +384,8 @@ static class NotionSync
             var title = ExternalDrop.KnownTags(page.Title); // as shown on the board: "[VFX] Woda"
             var t = store.Data.Tasks.FirstOrDefault(x => x.NotionId == page.Id);
             // deleted on the board (in the bin): not brought back while it is there
-            if (t == null && store.BinItems.Any(e => e.Task.NotionId == page.Id)) continue;
+            // deleted by hand here (in the bin, also after emptying it – the entry stays marked): it stays deleted
+            if (t == null && (store.BinItems.Any(e => e.Task.NotionId == page.Id) || store.Data.Bin?.Any(e => e.Task.NotionId == page.Id) == true)) continue;
             if (t == null)
             {
                 if (Excluded(page)) continue;

@@ -180,11 +180,13 @@ static class SharedSettings
                 if (node["NotionMore"] is JsonArray more)
                 {
                     // the same databases as on the other computer; what this one learnt about each (statuses, results) stays
-                    var old = acc.NotionMore;
+                    var old = acc.NotionMore.ToList(); // each one matched once: two projects without a database stay two
                     acc.NotionMore = more.OfType<JsonObject>().Select(m =>
                     {
                         var db = m["Database"]?.GetValue<string>() ?? "";
-                        var l = old.FirstOrDefault(o => o.Database == db) ?? new NotionLink { Database = db };
+                        var name = m["Name"]?.GetValue<string>();
+                        var l = old.FirstOrDefault(o => o.Database == db && (db.Length > 0 || o.Name == name)) ?? old.FirstOrDefault(o => o.Database == db) ?? new NotionLink { Database = db };
+                        old.Remove(l);
                         l.Name = m["Name"]?.GetValue<string>() ?? l.Name;
                         l.Color = m["Color"]?.GetValue<string>() ?? l.Color;
                         l.ReadStatuses = List(m["ReadStatuses"]);

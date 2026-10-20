@@ -141,7 +141,7 @@
                 Margin="0,0,0,18" CornerRadius="10" Background="{DynamicResource MenuBg}" BorderBrush="{DynamicResource MenuBorder}" BorderThickness="1" Padding="14,6,6,6">
             <StackPanel Orientation="Horizontal">
                 <TextBlock x:Name="UndoText" VerticalAlignment="Center" FontSize="12.5" Margin="0,0,12,0"/>
-                <Button Style="{StaticResource BarButton}" Content="COFNIJ" Click="UndoBar_Click" Foreground="{StaticResource AccentBrush}"/>
+                <Button Style="{StaticResource BarButton}" Content="COFNIJ" Click="UndoBar_Click" Foreground="{DynamicResource AccentBrush}"/>
             </StackPanel>
         </Border>
     </Grid>

@@ -70,7 +70,7 @@ static class AlarmService
         // tasks with planned hours today ("14-16"): a reminder some minutes before the start
         if (App.Settings.TaskReminder >= 0)
             foreach (var (layer, store) in App.OpenStores())
-                foreach (var t in store.Data.Tasks.Where(t => t.Time != null && !t.Done && !t.Archived && t.Day == now.ToString("yyyy-MM-dd")).ToList())
+                foreach (var t in store.Data.Tasks.Where(t => t.Time != null && !t.Done && !t.Archived && t.Day == now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)).ToList())
                 {
                     if (!TimeSpan.TryParseExact(t.Time, @"hh\:mm", null, out var tod)) continue;
                     var ringAt = now.Date + tod - TimeSpan.FromMinutes(App.Settings.TaskReminder);
@@ -461,7 +461,7 @@ public sealed class AlarmWindow : DarkWindow
             _text.Text = title ?? "";
             var next = DateTime.Now.AddHours(1);
             _time.Text = $"{next.Hour:00}:00";
-            if (_meeting) _end.Text = $"{(next.Hour + 1) % 24:00}:00";
+            if (_meeting) _end.Text = next.Hour >= 23 ? "23:59" : $"{next.Hour + 1:00}:00"; // never past midnight
             _repeat.SelectedIndex = 0;
             _remind.SelectedIndex = Array.FindIndex(Reminders, r => r.Minutes == 5);
         }
@@ -575,9 +575,9 @@ public sealed class AlarmWindow : DarkWindow
         var x = _existing ?? new Alarm { Kind = _meeting ? "meeting" : "alarm" };
         x.Text = _text.Text.Trim();
         // a repeating series keeps its first day when edited from a later occurrence
-        if (_existing == null || _existing.Once || RepeatCode.Length == 0) x.Day = r.Start.ToString("yyyy-MM-dd");
-        x.Time = r.Start.ToString("HH:mm");
-        x.End = r.End?.ToString("HH:mm");
+        if (_existing == null || _existing.Once || RepeatCode.Length == 0) x.Day = r.Start.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        x.Time = r.Start.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+        x.End = r.End?.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
         x.Remind = _meeting ? RemindMinutes : null;
         x.Repeat = RepeatCode;
         x.SkipDaysOff = RepeatCode.Length > 0 && _skipDaysOff.IsChecked == true;
