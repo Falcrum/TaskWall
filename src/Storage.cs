@@ -530,6 +530,28 @@ public sealed class BoardStore
         MarkDirty();
     }
 
+    // ---------- tasks in progress / in review carry on, day by day ----------
+
+    /// <summary>
+    /// Every task in progress or in review left on a past day goes on to today (its days since stay in its history,
+    /// with their state). Run at start and at midnight. Returns how many moved.
+    /// </summary>
+    public int StretchActive(DateTime today)
+    {
+        static bool Workday(DateTime d) => d.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday) && !DaysOff.Is(d);
+        var tk = today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        double order = Data.Tasks.Where(t => t.Day == tk).Select(t => t.Order).DefaultIfEmpty(-1).Max();
+        int n = 0;
+        foreach (var t in Data.Tasks.Where(t => t.IsStarted && !t.Archived && t.Day != null && string.CompareOrdinal(t.Day, tk) < 0).OrderBy(t => t.Day).ThenBy(t => t.Order).ToList())
+        {
+            if (!t.Stretch(today, Workday)) continue;
+            t.Order = ++order;
+            Changed(t);
+            n++;
+        }
+        return n;
+    }
+
     // ---------- the work timer of a task ----------
 
     /// <summary>Starts the task's timer (one runs at a time: another running one stops); the task is in progress then.</summary>

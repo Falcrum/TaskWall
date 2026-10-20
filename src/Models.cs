@@ -39,10 +39,18 @@ public sealed class TaskItem
     /// multi-day one (its earlier days stay as "↷ 1/3"); a task not started yet just moves on.
     /// </summary>
     public bool? Started { get; set; }
-    [JsonIgnore] public bool IsStarted => !Done && Started == true;
+    /// <summary>"Review": after in progress, before done (a started task waiting for its review / acceptance).</summary>
+    public bool? Review { get; set; }
+    /// <summary>In progress or in review (both carry on to the next days until done).</summary>
+    [JsonIgnore] public bool IsStarted => !Done && (Started == true || Review == true);
+    [JsonIgnore] public bool IsReview => !Done && Review == true;
+    /// <summary>"todo", "started", "review" or "done".</summary>
+    [JsonIgnore] public string State => Done ? "done" : IsReview ? "review" : IsStarted ? "started" : "todo";
+    /// <summary>The state the task had on each of its earlier days ("started" / "review"), for its history and the reports.</summary>
+    public Dictionary<string, string>? DayStates { get; set; }
 
-    /// <summary>Progress 0..1: done = 1, a checklist by its ticked items, otherwise in progress (◐) = half.</summary>
-    [JsonIgnore] public double Progress => Done ? 1 : Checklist is { Count: > 0 } c ? (double)c.Count(x => x.Done) / c.Count : IsStarted ? 0.5 : 0;
+    /// <summary>Progress 0..1: done = 1, a checklist by its ticked items, otherwise review = ¾, in progress (◐) = half.</summary>
+    [JsonIgnore] public double Progress => Done ? 1 : Checklist is { Count: > 0 } c ? (double)c.Count(x => x.Done) / c.Count : IsReview ? 0.75 : IsStarted ? 0.5 : 0;
 
     /// <summary>Moving an unfinished task forward from a past day leaves that day in its history; moving it back takes it out.</summary>
     public void NoteMove(string? from, string? to, string today)
@@ -54,6 +62,31 @@ public sealed class TaskItem
         WorkedDays ??= new();
         if (!WorkedDays.Contains(from)) WorkedDays.Add(from);
         WorkedDays.Sort(StringComparer.Ordinal);
+        (DayStates ??= new()).TryAdd(from, State);
+    }
+
+    /// <summary>
+    /// A task in progress / in review on a past day goes on to <paramref name="today"/>: its day and every working day
+    /// since stay in its history with the state it had (the reports show the days worked on it). Done = it stops.
+    /// </summary>
+    public bool Stretch(DateTime today, Func<DateTime, bool> workday)
+    {
+        var tk = today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        if (!IsStarted || Archived || Day == null || string.CompareOrdinal(Day, tk) >= 0) return false;
+        if (!DateTime.TryParseExact(Day, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var from)) return false;
+        WorkedDays ??= new();
+        DayStates ??= new();
+        for (var d = from; d < today.Date && (today.Date - d).TotalDays <= 366; d = d.AddDays(1))
+        {
+            if (d != from && !workday(d)) continue; // weekends, holidays, leave: not worked
+            var k = d.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+            if (!WorkedDays.Contains(k)) WorkedDays.Add(k);
+            DayStates.TryAdd(k, State);
+        }
+        WorkedDays.Sort(StringComparer.Ordinal);
+        if (PlanEnd != null && string.CompareOrdinal(PlanEnd, tk) <= 0) PlanEnd = null; // the plan ran out: today is the day
+        Day = tk;
+        return true;
     }
 
     /// <summary>Recurring series this task came from, and the occurrence day it replaces.</summary>
@@ -92,6 +125,7 @@ public sealed class TaskItem
         var c = (TaskItem)MemberwiseClone();
         c.Checklist = CopyList(Checklist); // never share the list between two tasks
         c.WorkedDays = WorkedDays == null ? null : new List<string>(WorkedDays);
+        c.DayStates = DayStates == null ? null : new Dictionary<string, string>(DayStates);
         return c;
     }
 
@@ -105,7 +139,8 @@ public sealed class TaskItem
         NotionId = o.NotionId; Url = o.Url; Status = o.Status; Priority = o.Priority; NotionTitle = o.NotionTitle; ParentNotionId = o.ParentNotionId; NotionSource = o.NotionSource; Created = o.Created; TrackedMinutes = o.TrackedMinutes; TrackStart = o.TrackStart;
         Checklist = CopyList(o.Checklist);
         Time = o.Time; End = o.End; WorkedDays = o.WorkedDays == null ? null : new List<string>(o.WorkedDays); PlanEnd = o.PlanEnd;
-        Started = o.Started;
+        Started = o.Started; Review = o.Review;
+        DayStates = o.DayStates == null ? null : new Dictionary<string, string>(o.DayStates);
         Extra = o.Extra;
     }
 
@@ -576,6 +611,8 @@ public sealed class AppSettings
     public string BacklogMode { get; set; } = "drawer";
     public bool OpenNotionInApp { get; set; }
     public bool AutoRollover { get; set; }
+    /// <summary>Tasks in progress / in review carry on to the next working days by themselves (until done).</summary>
+    public bool StretchActive { get; set; } = true;
     public bool AlarmSound { get; set; } = true;
     /// <summary>Minutes before a task with planned hours starts to remind (-1 = off).</summary>
     public int TaskReminder { get; set; } = 5;

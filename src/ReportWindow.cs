@@ -43,6 +43,17 @@ public sealed class Report
 
     static string Key(DateTime d) => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
+    /// <summary>Days of the period the task was worked on (its earlier days and its current one) and how many of them in review.</summary>
+    public (int Days, int Review) WorkDays(TaskItem t)
+    {
+        string from = Key(From), to = Key(To);
+        bool In(string k) => string.CompareOrdinal(k, from) >= 0 && string.CompareOrdinal(k, to) <= 0;
+        var days = (t.WorkedDays ?? new()).Where(In).ToList();
+        if (t.Day != null && In(t.Day) && !days.Contains(t.Day)) days.Add(t.Day);
+        int review = days.Count(k => k == t.Day ? t.IsReview : t.DayStates?.GetValueOrDefault(k) == "review");
+        return (days.Count, review);
+    }
+
     public static Report Build(BoardStore store, string layer, DateTime from, DateTime to, bool month)
     {
         var r = new Report { Account = App.AccountName(layer), Month = month, From = from.Date, To = to.Date };
@@ -162,6 +173,8 @@ public sealed class Report
                 foreach (var tag in tags) sb.Append($"<span class=\"tag\">{E(tag)}</span>");
                 sb.Append(t.Url is { Length: > 0 } url ? $"<a href=\"{E(url)}\" style=\"color:inherit\">{E(rest)}</a>" : E(rest));
                 if (t.Checklist is { Count: > 0 } cl) sb.Append($" <span class=\"day\">☑ {cl.Count(x => x.Done)}/{cl.Count}</span>");
+                if (WorkDays(t) is { Days: > 1 } wd) // worked on over several days (in progress / review carried on)
+                    sb.Append($" <span class=\"day\">↷ {E(L.F("{0} dni pracy", wd.Days))}{(wd.Review > 0 ? E(" · " + L.F("review: {0}", wd.Review)) : "")}</span>");
                 sb.Append($"</td><td class=\"n\">{(t.Estimate is > 0 ? E(BoardWindow.Est(t.Estimate.Value)) : "")}{(t.TrackedNow > 0 ? " · ⏱ " + E(BoardWindow.Duration(t.TrackedNow)) : "")}</td></tr>");
             }
             sb.Append("</table>");
@@ -384,7 +397,9 @@ public sealed class ReportWindow : DarkWindow
                 when.Width = 62;
                 DockPanel.SetDock(when, Dock.Left);
                 d.Children.Add(when);
-                var est = Label(t.Estimate is > 0 ? BoardWindow.Est(t.Estimate.Value) : "", 11.5, "FgFaint");
+                var wd = r.WorkDays(t);
+                var est = Label((wd.Days > 1 ? "↷ " + L.F("{0} dni pracy", wd.Days) + (wd.Review > 0 ? " · " + L.F("review: {0}", wd.Review) : "") + "   " : "")
+                    + (t.Estimate is > 0 ? BoardWindow.Est(t.Estimate.Value) : ""), 11.5, "FgFaint");
                 est.Margin = new Thickness(10, 0, 0, 0);
                 DockPanel.SetDock(est, Dock.Right);
                 d.Children.Add(est);

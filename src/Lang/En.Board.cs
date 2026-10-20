@@ -361,5 +361,15 @@ static partial class L
         ("Zwykły tekst  (Ctrl+0)", "Plain text  (Ctrl+0)"),
         ("zmierzonego czasu pracy (łącznie na tych zadaniach)", "of tracked working time (in total on these tasks)"),
         ("Źródło Markdown (czysty tekst ze znakami)", "Markdown source (plain text with the marks)"),
+
+        // 0.25 – review state, carrying on, token check
+        ("Kliknij: review  ·  Shift+klik: zrobione", "Click: review  ·  Shift+click: done"),
+        ("Review", "Review"),
+        ("review", "review"),
+        ("review: {0}", "review: {0}"),
+        ("{0} dni pracy", "{0} days of work"),
+        ("Sprawdzam token w Notion…", "Checking the token with Notion…"),
+        ("✓ Token działa (zapisany, zaszyfrowany).", "✓ The token works (saved, encrypted)."),
+        ("Zadania w trakcie i w review same przechodzą na kolejne dni robocze (aż do zrobienia) – w historii i raportach widać każdy dzień pracy", "Tasks in progress and in review carry on to the next working days by themselves (until done) – the history and reports show every day of work"),
     };
 }

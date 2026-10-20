@@ -568,14 +568,27 @@ public sealed class SettingsWindow : DarkWindow
         tokenRow.Children.Add(open);
         tokenRow.Children.Add(token);
         token.GotKeyboardFocus += (_, _) => { if (token.Password == Mask) token.SelectAll(); };
+        async void Verify()
+        {
+            // a live check right away: a wrong paste shows here, not as a sync error hours later
+            if (link.TokenProtected == null) return;
+            tokenState.Text = L.T("Sprawdzam token w Notion…");
+            var problem = await NotionSync.Check(link);
+            tokenState.Text = problem == null ? L.T("✓ Token działa (zapisany, zaszyfrowany).") : "✗ " + problem;
+            tokenState.Foreground = problem == null ? Ui.Res("AccentBrush") : new SolidColorBrush(Color.FromRgb(0xE0, 0x5A, 0x55));
+        }
         token.PasswordChanged += (_, _) =>
         {
-            if (filling || token.Password == Mask || token.Password.Trim().Length < 20) return;
-            link.TokenProtected = NotionSync.Protect(token.Password);
+            if (filling || token.Password == Mask) return;
+            var pasted = NotionSync.Clean(token.Password); // never the mask with it, nor spaces around
+            if (pasted.Length < 20) return;
+            link.TokenProtected = NotionSync.Protect(pasted);
             SettingsStore.Save(S);
             ShowTokenState();
+            Verify();
         };
         ShowTokenState();
+        Verify();
         p.Children.Add(Pair(L.T("Osobisty token"), tokenRow));
         p.Children.Add(tokenState);
 
@@ -959,6 +972,7 @@ public sealed class SettingsWindow : DarkWindow
         p.Children.Add(Check(L.T("Podsumowanie poprzedniego tygodnia przy pierwszym uruchomieniu w tygodniu"), S.WeeklySummary, v => S.WeeklySummary = v));
         p.Children.Add(Check(L.T("Przycisk widoku roku (365 dni)"), S.ShowYearButton, v => S.ShowYearButton = v));
         p.Children.Add(Check(L.T("Automatycznie przenoś niezrobione zadania z minionych dni na dziś"), S.AutoRollover, v => S.AutoRollover = v));
+        p.Children.Add(Check(L.T("Zadania w trakcie i w review same przechodzą na kolejne dni robocze (aż do zrobienia) – w historii i raportach widać każdy dzień pracy"), S.StretchActive, v => S.StretchActive = v));
         var mode = new ComboBox { Width = 320, HorizontalAlignment = HorizontalAlignment.Left };
         mode.Items.Add(new ComboBoxItem { Content = L.T("Wysuwany po kliknięciu (na szerokość weekendu)"), Tag = "drawer" });
         mode.Items.Add(new ComboBoxItem { Content = L.T("Przypięty z prawej strony"), Tag = "pinned" });

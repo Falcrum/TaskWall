@@ -47,7 +47,9 @@ static class Installer
         if (args.Contains("--quiet")) // silent install (scripts / tests): keep the current autostart choice
         {
             Install(SettingsStore.Load().StartWithWindows);
-            StartInstalled();
+            // --no-start: the caller starts it itself (e.g. through explorer.exe, so it doesn't live and die with the
+            // tool that ran the installer)
+            if (!args.Contains("--no-start")) StartInstalled();
             return true;
         }
         var dlg = new SetupWindow();

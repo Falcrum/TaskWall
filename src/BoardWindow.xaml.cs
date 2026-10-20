@@ -95,14 +95,19 @@ public partial class BoardWindow : GlassWindow
     static string DayName(DateTime d) => Pl.DateTimeFormat.GetAbbreviatedDayName(d.DayOfWeek).TrimEnd('.').ToUpper(Pl);
     static bool IsWeekend(DateTime d) => d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
     public static int WeekNo(DateTime d) => ISOWeek.GetWeekOfYear(d);
-    public enum TaskState { Todo, Started, Done }
+    public enum TaskState { Todo, Started, Review, Done }
+
+    /// <summary>The next state on a click: to do → in progress → review → done → to do (Shift: straight to done).</summary>
+    public static TaskState NextState(TaskItem t, bool shift = false) =>
+        t.Done ? TaskState.Todo : shift ? TaskState.Done : t.IsReview ? TaskState.Done : t.IsStarted ? TaskState.Review : TaskState.Started;
 
     public void SetState(TaskItem t, TaskState state) => Do(() =>
     {
         var real = Store.Materialize(t);
         real.Done = state == TaskState.Done;
         if (real.Done && real.IsTracking) Store.StopTracking(real);
-        if (state != TaskState.Done) real.Started = state == TaskState.Started;
+        if (state != TaskState.Done) real.Started = state is TaskState.Started or TaskState.Review;
+        real.Review = state == TaskState.Review ? true : null;
         // finished before the planned end: the plan ends today (no future days left hanging)
         var todayKey = DayKey(DateTime.Today);
         if (real.Done && real.PlanEnd != null && real.Day != null && string.CompareOrdinal(todayKey, real.PlanEnd) < 0)
@@ -425,7 +430,7 @@ public partial class BoardWindow : GlassWindow
                     () => Store,
                     d => Store.Data.Tasks.Where(t => t.Day == DayKey(d) && !t.Archived).Concat(Store.VirtualTasks(d)).OrderBy(t => t.Order).ToList(),
                     (t, el) => BuildMenu(t, null, null, el),
-                    t => SetState(t, t.Done ? TaskState.Todo : t.IsStarted || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? TaskState.Done : TaskState.Started),
+                    t => SetState(t, NextState(t, Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))),
                     DaySetTime,
                     DayDropTask,
                     (key, d) => BuildAddRow(key, d),
@@ -848,7 +853,7 @@ public partial class BoardWindow : GlassWindow
             {
                 var span = (days.IndexOf(key) + 1, days.Count);
                 var el = t.Day == key && !t.Archived ? BuildTaskRow(t, false, compact, span, inLane: true)
-                    : BuildContinuedRow(t, span, compact, planned: string.CompareOrdinal(key, t.Day) > 0);
+                    : BuildContinuedRow(t, span, compact, planned: string.CompareOrdinal(key, t.Day) > 0, dayKey: key);
                 Grid.SetRow(el, lanes[t.Id] + 1);
                 block.Children.Add(el);
             }
@@ -871,7 +876,7 @@ public partial class BoardWindow : GlassWindow
         foreach (var t in Store.Data.Tasks.Where(t => !lanes.ContainsKey(t.Id) && t.Day != key && SpanDays(t)?.Contains(key) == true))
         {
             var days = SpanDays(t)!;
-            panel.Children.Add(BuildContinuedRow(t, (days.IndexOf(key) + 1, days.Count), compact, planned: string.CompareOrdinal(key, t.Day) > 0));
+            panel.Children.Add(BuildContinuedRow(t, (days.IndexOf(key) + 1, days.Count), compact, planned: string.CompareOrdinal(key, t.Day) > 0, dayKey: key));
         }
         // optional (Settings → Tablica): done tasks folded into one "✓ 3 zrobione" line, click to unfold
         // folded: always (Settings → Tablica) or on days that are over (on by default) – a past day shows what is still open
@@ -1054,14 +1059,16 @@ public partial class BoardWindow : GlassWindow
     /// in the same lane as on its other days. Done = done on all its days (tick + strike); before that, earlier days are
     /// a plain greyed row and planned days a dashed circle. Right click: start / end of the task.
     /// </summary>
-    FrameworkElement BuildContinuedRow(TaskItem t, (int Index, int Total) span, bool compact, bool planned = false)
+    FrameworkElement BuildContinuedRow(TaskItem t, (int Index, int Total) span, bool compact, bool planned = false, string? dayKey = null)
     {
         double fs = compact ? Math.Max(9.5, S.FontSize - 1.5) : S.FontSize;
         var grid = new Grid { Margin = new Thickness(0, 0, 0, compact ? 1 : 3), Opacity = t.Done ? 0.5 : planned ? 0.55 : 0.6, Background = Brushes.Transparent, Cursor = Cursors.Hand };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition());
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.Children.Add(TaskMarks.Status(t, compact ? 4 : 4.5, dashed: planned && !t.Done, gap: compact ? 5 : 7));
+        // an earlier day: the state it had that day (in progress / review); a planned one: dashed
+        var dayState = !planned && !t.Done && dayKey != null ? t.DayStates?.GetValueOrDefault(dayKey) ?? "started" : null;
+        grid.Children.Add(TaskMarks.Status(t, compact ? 4 : 4.5, dashed: planned && !t.Done, gap: compact ? 5 : 7, state: dayState));
         if (TaskMarks.Project(t) is { } proj) { Grid.SetColumn(proj, 2); proj.Margin = new Thickness(3, 1, 0, 1); grid.Children.Add(proj); }
         var text = new TextBlock { TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = fs, Foreground = Res("Fg") };
         var tags = TaskItem.Tags(t.Text, out var rest);
@@ -1317,7 +1324,7 @@ public partial class BoardWindow : GlassWindow
         // the state bar on the left (empty / half / full; priority colour, green when done) – click: the next state
         var circle = TaskMarks.Status(t, compact ? 4 : 4.5, () =>
             // three states: not started → in progress → done → not started (Shift: straight to done)
-            SetState(t, t.Done ? TaskState.Todo : t.IsStarted || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? TaskState.Done : TaskState.Started), gap: compact ? 5 : 7);
+            SetState(t, NextState(t, Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))), gap: compact ? 5 : 7);
         grid.Children.Add(circle);
         if (_justToggled == t.Id) Anim.Pop(circle);
         // the project: a thin bar in its colour on the right edge

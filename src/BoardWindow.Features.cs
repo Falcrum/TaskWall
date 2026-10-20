@@ -702,7 +702,8 @@ public partial class BoardWindow
         menu.Items.Add(ChipRow(menu, L.T("Status"), new[]
         {
             new MenuChip("○  " + L.T("Do zrobienia"), !t.Done && !t.IsStarted, null, () => SetState(t, TaskState.Todo)),
-            new MenuChip("◐  " + L.T("W trakcie"), t.IsStarted, null, () => SetState(t, TaskState.Started)),
+            new MenuChip("◐  " + L.T("W trakcie"), t.IsStarted && !t.IsReview, null, () => SetState(t, TaskState.Started)),
+            new MenuChip("◕  " + L.T("Review"), t.IsReview, null, () => SetState(t, TaskState.Review)),
             new MenuChip("✓  " + L.T("Zrobione"), t.Done, null, () => SetState(t, TaskState.Done)),
         }));
         // ----- priority (own tasks too; Notion tasks get theirs back from Notion on the next sync) -----
@@ -1114,7 +1115,7 @@ public partial class BoardWindow
         {
             Action? act = (e.Key, Keyboard.Modifiers) switch
             {
-                (Key.Space, ModifierKeys.None) => () => SetState(ht, ht.Done ? TaskState.Todo : ht.IsStarted ? TaskState.Done : TaskState.Started),
+                (Key.Space, ModifierKeys.None) => () => SetState(ht, NextState(ht)),
                 (Key.D1 or Key.NumPad1, ModifierKeys.Shift) => () => SetPriority(ht, SmartAdd.PriorityName(1)),
                 (Key.D2 or Key.NumPad2, ModifierKeys.Shift) => () => SetPriority(ht, SmartAdd.PriorityName(2)),
                 (Key.D3 or Key.NumPad3, ModifierKeys.Shift) => () => SetPriority(ht, SmartAdd.PriorityName(3)),

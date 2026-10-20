@@ -69,13 +69,33 @@ static class NotionSync
         }
     }
 
-    public static string? Protect(string token) => Crypt(Encoding.UTF8.GetBytes(token.Trim()), true) is { } b ? Convert.ToBase64String(b) : null;
+    public static string? Protect(string token) => Clean(token) is { Length: > 0 } t && Crypt(Encoding.UTF8.GetBytes(t), true) is { } b ? Convert.ToBase64String(b) : null;
+
+    /// <summary>
+    /// The token out of what was pasted: without the field's mask "****" (pasting next to it instead of over it kept
+    /// both), spaces, line breaks or quotes around it. Notion tokens start with "ntn_" or "secret_".
+    /// </summary>
+    public static string Clean(string pasted)
+    {
+        var s = pasted.Replace("*", "").Trim().Trim('"', '\'', '`').Trim();
+        var m = System.Text.RegularExpressions.Regex.Match(s, @"(ntn_|secret_)[A-Za-z0-9_\-]+");
+        return m.Success ? m.Value : System.Text.RegularExpressions.Regex.Replace(s, @"\s+", "");
+    }
 
     static string? Token(NotionLink link)
     {
         if (link.TokenProtected == null) return null;
-        try { return Crypt(Convert.FromBase64String(link.TokenProtected), false) is { } b ? Encoding.UTF8.GetString(b) : null; }
+        try { return Crypt(Convert.FromBase64String(link.TokenProtected), false) is { } b ? Clean(Encoding.UTF8.GetString(b)) : null; }
         catch { return null; }
+    }
+
+    /// <summary>Asks Notion who the token belongs to: null = it works, else what is wrong (for the settings).</summary>
+    public static async Task<string?> Check(NotionLink link)
+    {
+        if (Token(link) is not { } token) return L.T("Brak tokenu (albo został zapisany na innym koncie Windows) – wklej go ponownie.");
+        try { using var _ = await Call(token, HttpMethod.Get, "users/me"); return null; }
+        catch (NotionError e) when (e.Code == HttpStatusCode.Unauthorized) { return L.T("Notion nie przyjął tokenu (wygasł albo jest błędny)."); }
+        catch (Exception e) { return e.Message; }
     }
 
     // ---------- API ----------
@@ -394,7 +414,8 @@ static class NotionSync
                     Id = "notion-" + page.Id.Replace("-", ""), // the same id on every computer: two PCs importing the same page merge into one task
                     Text = title, NotionTitle = title, NotionId = page.Id, Url = page.Url,
                     Status = page.Status, Priority = page.Priority, Estimate = page.Estimate, Order = order++, ParentNotionId = page.ParentId,
-                    Started = LooksInProgress(page.Status) ? true : null,
+                    Started = LooksInProgress(page.Status) || LooksInReview(page.Status) ? true : null,
+                    Review = LooksInReview(page.Status) ? true : null,
                     NotionSource = link.Name.Length > 0 ? link.Name : null,
                 });
                 added++;
@@ -413,7 +434,7 @@ static class NotionSync
                 t.NotionTitle = title;
                 changed = true;
             }
-            if (page.Status != t.Status) { t.Status = page.Status; changed = true; if (t.Started == null && !t.Done && LooksInProgress(page.Status)) t.Started = true; }
+            if (page.Status != t.Status) { t.Status = page.Status; changed = true; if (t.Started == null && !t.Done && LooksInProgress(page.Status)) t.Started = true; if (t.Review == null && !t.Done && LooksInReview(page.Status)) { t.Started = true; t.Review = true; } }
             if (page.Priority != t.Priority) { t.Priority = page.Priority; changed = true; }
             if (page.Estimate != null && page.Estimate != t.Estimate) { t.Estimate = page.Estimate; changed = true; }
             if (link.SyncDone && !t.Done && NotionImport.LooksDone(page.Status)) { t.Done = true; changed = true; }
@@ -445,6 +466,10 @@ static class NotionSync
     }
 
     /// <summary>A Notion status meaning the work has begun ("W trakcie", "In progress", "Doing").</summary>
+    /// <summary>A Notion status that means "waiting for review / acceptance" (Review, Merge Request, Do odebrania, QA …).</summary>
+    public static bool LooksInReview(string? status) => status != null &&
+        System.Text.RegularExpressions.Regex.IsMatch(status, @"review|merge request|do odebrania|do sprawdzenia|weryfikacj|\bqa\b|akceptacj", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
     public static bool LooksInProgress(string? status) => status != null &&
         System.Text.RegularExpressions.Regex.IsMatch(status, @"w trakcie|in progress|doing|started|rozpocz|realizacj|wip", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 

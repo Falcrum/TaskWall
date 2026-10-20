@@ -517,6 +517,28 @@ static class Dev
             whStore.SaveNow();
             Check("sync: the same content in another order is not written again (no ping-pong between PCs)", File.ReadAllText(Path.Combine(whDir, BoardStore.FileName)) == fileBefore);
             try { Directory.Delete(whDir, true); } catch { }
+            var rv = new TaskItem { Text = "r", Day = "2026-10-19", Started = true, Review = true };
+            var fri = new TaskItem { Text = "f", Day = "2026-10-16", Started = true };
+            var doneT = new TaskItem { Text = "d", Day = "2026-10-19", Started = true, Done = true };
+            bool Wd(DateTime d) => d.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday);
+            Check("stretch: a task in review carries on to today, each working day in its history as review; weekends skipped; done stops",
+                rv.Stretch(new DateTime(2026, 10, 22), Wd) && rv.Day == "2026-10-22" && rv.WorkedDays!.SequenceEqual(new[] { "2026-10-19", "2026-10-20", "2026-10-21" })
+                && rv.DayStates!.Values.All(v => v == "review")
+                && fri.Stretch(new DateTime(2026, 10, 19), Wd) && fri.WorkedDays!.SequenceEqual(new[] { "2026-10-16" }) && fri.DayStates!["2026-10-16"] == "started"
+                && !doneT.Stretch(new DateTime(2026, 10, 22), Wd) && doneT.Day == "2026-10-19");
+            var cyc = new TaskItem { Text = "c" };
+            var seen = new System.Collections.Generic.List<BoardWindow.TaskState>();
+            for (int i = 0; i < 4; i++)
+            {
+                var next = BoardWindow.NextState(cyc);
+                seen.Add(next);
+                cyc.Done = next == BoardWindow.TaskState.Done;
+                cyc.Started = next is BoardWindow.TaskState.Started or BoardWindow.TaskState.Review ? true : cyc.Done ? cyc.Started : null;
+                cyc.Review = next == BoardWindow.TaskState.Review ? true : null;
+            }
+            Check("states: a click goes to do → in progress → review → done → to do; review fills ¾",
+                seen.SequenceEqual(new[] { BoardWindow.TaskState.Started, BoardWindow.TaskState.Review, BoardWindow.TaskState.Done, BoardWindow.TaskState.Todo })
+                && new TaskItem { Started = true, Review = true }.Progress == 0.75 && TaskMarks.Fill("review") == 0.75);
             var night = new Alarm { Kind = "meeting", Day = "2026-10-21", Time = "23:00", End = "02:00" };
             Check("meetings over midnight end the next day (23:00–02:00 = 3 h)", night.Hours == 3 && night.EndAt(new DateTime(2026, 10, 21)) == new DateTime(2026, 10, 22, 2, 0, 0));
             var carried = new TaskItem { Text = "długie", Day = "2026-10-05", Started = true };

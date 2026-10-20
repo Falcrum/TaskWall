@@ -20,8 +20,8 @@ static class TaskMarks
     static readonly Color Low = Color.FromRgb(0x7E, 0x8C, 0x9C);
 
     /// <summary>Done green, else the priority colour (no priority = low, grey).</summary>
-    public static Color StateColor(TaskItem t) =>
-        t.Done ? DoneGreen : BoardWindow.PriorityLevel(t.Priority) switch { 3 => BoardWindow.PriorityColor("high"), 2 => BoardWindow.PriorityColor("medium"), _ => Low };
+    public static Color StateColor(TaskItem t, string? state = null) =>
+        (state ?? t.State) == "done" ? DoneGreen : BoardWindow.PriorityLevel(t.Priority) switch { 3 => BoardWindow.PriorityColor("high"), 2 => BoardWindow.PriorityColor("medium"), _ => Low };
 
     /// <summary>The project's colour, or null for a task without a project.</summary>
     public static Color? ProjectColor(TaskItem t) =>
@@ -29,28 +29,36 @@ static class TaskMarks
         : App.Settings.Accounts.SelectMany(a => a.Projects).FirstOrDefault(p => string.Equals(p.Name, t.NotionSource, StringComparison.OrdinalIgnoreCase)) is { } p
             ? BoardWindow.ParseColor(p.Color) : Color.FromRgb(0x8A, 0x94, 0xA6);
 
-    public static string StateName(TaskItem t) => t.Done ? L.T("zrobione") : t.IsStarted ? L.T("w trakcie") : L.T("do zrobienia");
+    public static string StateName(TaskItem t, string? state = null) => (state ?? t.State) switch
+    {
+        "done" => L.T("zrobione"), "review" => L.T("review"), "started" => L.T("w trakcie"), _ => L.T("do zrobienia"),
+    };
+
+    /// <summary>How full the bar is: to do 0, in progress ½, review ¾, done 1.</summary>
+    public static double Fill(string state) => state switch { "done" => 1, "review" => 0.75, "started" => 0.5, _ => 0 };
 
     /// <summary>
     /// The state bar. <paramref name="width"/> is the bar; the element is a little wider so it is easy to hit.
     /// Planned days of a multi-day task: a dashed outline.
     /// </summary>
-    public static FrameworkElement Status(TaskItem t, double width = 5, Action? click = null, bool dashed = false, double gap = 6)
+    public static FrameworkElement Status(TaskItem t, double width = 5, Action? click = null, bool dashed = false, double gap = 6, string? state = null)
     {
-        var c = StateColor(t);
+        state ??= t.State; // a multi-day task's earlier day: the state it had then
+        var c = StateColor(t, state);
+        double fill = Fill(state);
         var hit = new Grid { Width = width + gap, Background = Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Stretch };
         var bar = new Grid { Width = width, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 1, 0, 1), MinHeight = 8 };
-        bar.RowDefinitions.Add(new RowDefinition());
-        bar.RowDefinitions.Add(new RowDefinition());
+        bar.RowDefinitions.Add(new RowDefinition { Height = new GridLength(Math.Max(0.0001, 1 - fill), GridUnitType.Star) });
+        bar.RowDefinitions.Add(new RowDefinition { Height = new GridLength(Math.Max(0.0001, fill), GridUnitType.Star) });
         double r = Math.Min(1.6, width / 3);
         var outline = new Rectangle { Stroke = new SolidColorBrush(c), StrokeThickness = 1.2, RadiusX = r, RadiusY = r };
         if (dashed) outline.StrokeDashArray = new DoubleCollection { 2, 1.5 };
         Grid.SetRowSpan(outline, 2);
-        if (t.Done || t.IsStarted)
+        if (fill > 0)
         {
-            var fill = new Rectangle { Fill = new SolidColorBrush(c), RadiusX = r, RadiusY = r };
-            if (t.Done) Grid.SetRowSpan(fill, 2); else Grid.SetRow(fill, 1);
-            bar.Children.Add(fill);
+            var part = new Rectangle { Fill = new SolidColorBrush(c), RadiusX = r, RadiusY = r };
+            Grid.SetRow(part, 1); // from the bottom up
+            bar.Children.Add(part);
         }
         bar.Children.Add(outline);
         hit.Children.Add(bar);
@@ -58,7 +66,7 @@ static class TaskMarks
         {
             hit.Cursor = Cursors.Hand;
             hit.ToolTip = StateName(t) + (t.Priority is { Length: > 0 } pr ? "  ·  " + L.F("Priorytet: {0}", pr) : "") + "\n"
-                + (t.Done ? L.T("Kliknij, aby przywrócić") : t.IsStarted ? L.T("Kliknij: zrobione") : L.T("Kliknij: w trakcie  ·  Shift+klik: od razu zrobione"));
+                + (t.Done ? L.T("Kliknij, aby przywrócić") : t.IsReview ? L.T("Kliknij: zrobione") : t.IsStarted ? L.T("Kliknij: review  ·  Shift+klik: zrobione") : L.T("Kliknij: w trakcie  ·  Shift+klik: od razu zrobione"));
             ToolTipService.SetInitialShowDelay(hit, 300);
             hit.MouseEnter += (_, _) => outline.StrokeThickness = 2;
             hit.MouseLeave += (_, _) => outline.StrokeThickness = 1.2;

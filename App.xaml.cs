@@ -314,6 +314,7 @@ public partial class App : Application
         s.ExternalChange += () => { if (ReferenceEquals(s, Store)) Board?.OnExternalChange(); };
         s.SyncStateChanged += () => Board?.UpdateSyncIcon();
         Stores[layer] = s;
+        if (Settings.StretchActive) s.StretchActive(DateTime.Today); // in progress / in review: on to today (after it is in Stores: its BŚU days count)
         return s;
     }
 
@@ -404,6 +405,7 @@ public partial class App : Application
 
     public void OnNewDay()
     {
+        if (Settings.StretchActive) foreach (var st in Stores.Values) st.StretchActive(DateTime.Today);
         if (Settings.AutoRollover) Board?.RollOverdue();
     }
 
