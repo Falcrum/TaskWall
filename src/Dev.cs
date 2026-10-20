@@ -454,6 +454,12 @@ static class Dev
             if (Arg("--selftest") is { } stOut) File.WriteAllText(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(stOut))!, "report-sample.html"),
                 Report.Build(App.Store ?? repStore, "work", BoardWindow.Monday(DateTime.Today), BoardWindow.Monday(DateTime.Today).AddDays(6), month: false).Html());
             try { Directory.Delete(repDir, true); } catch { }
+            var dailyOff = new Alarm { Kind = "meeting", Text = "Daily", Day = "2026-11-09", Time = "10:00", End = "10:15", Repeat = "weekdays", SkipDaysOff = true };
+            var leaveBefore = DaysOff.Leave;
+            DaysOff.Leave = d => d == new DateTime(2026, 11, 12);
+            Check("days off: a repeating meeting skips a public holiday (11 Nov) and a BŚU day, not a normal day",
+                dailyOff.Occurs(new DateTime(2026, 11, 10)) && !dailyOff.Occurs(new DateTime(2026, 11, 11)) && !dailyOff.Occurs(new DateTime(2026, 11, 12)) && new Alarm { Day = "2026-11-09", Time = "10:00", Repeat = "weekdays" }.Occurs(new DateTime(2026, 11, 12)));
+            DaysOff.Leave = leaveBefore;
             var carried = new TaskItem { Text = "długie", Day = "2026-10-05", Started = true };
             carried.NoteMove("2026-10-05", "2026-10-06", "2026-10-08");
             carried.NoteMove("2026-10-06", "2026-10-08", "2026-10-08");

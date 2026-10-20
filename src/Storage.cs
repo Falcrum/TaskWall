@@ -480,6 +480,9 @@ public sealed class BoardStore
 
     public MarkType? MarkTypeFor(string? code) => code == null ? null : MarkTypes.FirstOrDefault(m => m.Code == code);
 
+    /// <summary>A day off from work in this account: a filled mark (BŚU, leave) – a frame mark (HO) is a working day.</summary>
+    public bool IsLeave(DateTime d) => DayMark(d.ToString("yyyy-MM-dd")) is { } code && MarkTypeFor(code) is { Ring: false };
+
     /// <summary>Switch to another folder, carrying the current tasks over (merged with whatever is there).</summary>
     public void SwitchFolder(string folder)
     {

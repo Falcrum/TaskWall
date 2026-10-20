@@ -28,7 +28,7 @@ public sealed class RepeatWindow : DarkWindow
     readonly TextBox _from = new() { Style = (Style)Application.Current.Resources["FieldBox"], Width = 150 };
     readonly TextBox _to = new() { Style = (Style)Application.Current.Resources["FieldBox"], Width = 150 };
     readonly TextBlock _preview = Label("", 12, "FgDim");
-    readonly CheckBox _skipHolidays = new() { Content = L.T("Pomijaj niedziele i święta"), Margin = new Thickness(0, 12, 0, 0) };
+    readonly CheckBox _skipHolidays = new() { Content = L.T("Pomijaj niedziele, święta i dni BŚU / urlopu"), Margin = new Thickness(0, 12, 0, 0) };
     readonly Button _save;
     readonly List<(ToggleButton Button, int Day)> _dayButtons = new();
 

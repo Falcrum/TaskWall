@@ -206,6 +206,9 @@ public sealed class TimelineView : Grid
         _saveZoom.Stop();
         _saveZoom.Start();
         Refresh();
+        // tool tips at once (meetings and bars are small targets): 150 ms instead of the default second
+        foreach (var el in _bars.Children.OfType<FrameworkElement>().Concat(_header.Children.OfType<FrameworkElement>()))
+            if (el.ToolTip != null) { ToolTipService.SetInitialShowDelay(el, 150); ToolTipService.SetBetweenShowDelay(el, 50); }
         if (_growMeetings) { _growMeetings = false; Dispatcher.BeginInvoke(Refresh, DispatcherPriority.Background); }
         App.Board?.UpdateTimelineRange();
     }

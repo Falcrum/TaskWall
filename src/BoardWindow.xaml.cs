@@ -566,11 +566,11 @@ public partial class BoardWindow : GlassWindow
             BorderThickness = new Thickness(firstCol ? 0 : 1, firstRow ? 0 : 1, 0, 0),
             Opacity = outside ? 0.45 : 1,
         };
-        // today: by default an accent line along the top and the name in the accent (Settings → Wygląd: or the light fill)
-        bool todayFill = isToday && S.TodayStyle == "fill";
+        // today: a frame in the accent and its header (above the progress bar) tinted – no line that competes with the bar
         var accentNow = ((SolidColorBrush)Res("AccentBrush")).Color;
-        Brush normalBg = todayFill ? B(Th.Ink(0x1C))
-            : markColor is { } mc && markInfo?.Ring != true ? B(A(mc, 0x16)) // a "ring" mark (HO) only shows its badge
+        // days off (weekends, public holidays) tinted like a BŚU day, in their red
+        Brush normalBg = markColor is { } mc && markInfo?.Ring != true ? B(A(mc, 0x16)) // a "ring" mark (HO) only shows its badge
+            : red ? B(A(WeekendRed, 0x0E))
             : Brushes.Transparent;
         var inner = new Border
         {
@@ -580,27 +580,15 @@ public partial class BoardWindow : GlassWindow
             Background = normalBg,
             AllowDrop = true,
         };
-        if (todayFill)
+        if (isToday)
         {
-            inner.BorderBrush = B(Th.Ink(0x1E));
-            inner.BorderThickness = new Thickness(1);
+            inner.BorderBrush = B(A(accentNow, 0x90));
+            inner.BorderThickness = new Thickness(1.2);
         }
         outer.Child = inner;
 
         var dock = new DockPanel();
-        if (isToday && !todayFill)
-        {
-            // the line sits over the cell's top edge: today's header stays level with the other days
-            var layers = new Grid();
-            layers.Children.Add(dock);
-            layers.Children.Add(new Border
-            {
-                Height = 3, CornerRadius = new CornerRadius(1.5), Background = B(accentNow), VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(-2, compact ? -3 : -5, -2, 0), IsHitTestVisible = false,
-            });
-            inner.Child = layers;
-        }
-        else inner.Child = dock;
+        inner.Child = dock;
 
         // ----- header -----
         var header = new Grid { Margin = new Thickness(0, 0, 0, compact ? 2 : 5) };
@@ -608,7 +596,7 @@ public partial class BoardWindow : GlassWindow
         header.ColumnDefinitions.Add(new ColumnDefinition());
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         DockPanel.SetDock(header, Dock.Top);
-        var nameColor = isToday && !todayFill ? Res("AccentBrush") : red ? B(WeekendRed) : isPast && !isToday ? Res("FgDim") : Res("Fg");
+        var nameColor = red ? B(WeekendRed) : isPast && !isToday ? Res("FgDim") : Res("Fg");
         var dateColor = red ? B(WeekendRed) : isToday ? Res("AccentBrush") : Res("FgDim");
         var left = new StackPanel();
         var nameRow = new WrapPanel();
@@ -635,7 +623,6 @@ public partial class BoardWindow : GlassWindow
         {
             var dateText = new TextBlock { FontSize = 10.5, FontWeight = isToday ? FontWeights.Bold : FontWeights.Normal, Foreground = dateColor };
             dateText.Inlines.Add(new Run(date.Day == 1 || (firstCol && firstRow) ? date.ToString("d MMM", Pl) : date.Day.ToString()));
-            if (firstCol) dateText.Inlines.Add(new Run(L.F("  ·  tydz. {0}", WeekNo(date))) { Foreground = Res("FgFaint"), FontWeight = FontWeights.Normal });
             left.Children.Add(dateText);
         }
         if (holidayNames.Count > 0)
@@ -716,7 +703,21 @@ public partial class BoardWindow : GlassWindow
             });
         }
         header.Children.Add(right);
-        dock.Children.Add(header);
+        if (isToday)
+        {
+            // the header of today (name, date, weather, numbers) on an accent tint, out to the frame; the progress bar under it
+            var p0 = inner.Padding;
+            var headBox = new Border
+            {
+                Background = B(A(accentNow, 0x1E)), CornerRadius = new CornerRadius(compact ? 6 : 9, compact ? 6 : 9, 0, 0),
+                Margin = new Thickness(-p0.Left, -p0.Top, -p0.Right, header.Margin.Bottom - (compact ? 1 : 3)), Padding = new Thickness(p0.Left, p0.Top, p0.Right, compact ? 1 : 3), // same overall height: the bar stays level with the other days
+            };
+            header.Margin = new Thickness(0);
+            DockPanel.SetDock(headBox, Dock.Top);
+            headBox.Child = header;
+            dock.Children.Add(headBox);
+        }
+        else dock.Children.Add(header);
 
         // ----- progress bar (done / all, archived done included) – always there (empty without tasks), the same height
         // everywhere, so the lanes of multi-day tasks start at the same height on every day -----
@@ -725,13 +726,13 @@ public partial class BoardWindow : GlassWindow
             DockPanel.SetDock(track, Dock.Top);
             // more than a workday planned: the track turns orange (the numbers stay plain)
             var orange = Color.FromRgb(0xF2, 0xA6, 0x5A);
-            track.Children.Add(new Border { CornerRadius = new CornerRadius(1.5), Background = overloaded ? B(A(orange, 0x70)) : total > 0 ? B(Th.Ink(0x1A)) : Brushes.Transparent, ToolTip = overloaded ? L.T("Ponad dzień pracy (8 h)") : null });
+            track.Children.Add(new Border { CornerRadius = new CornerRadius(1.5), Background = overloaded && !isPast ? B(A(orange, 0x70)) : total > 0 ? B(Th.Ink(isPast ? (byte)0x10 : (byte)0x1A)) : Brushes.Transparent, ToolTip = overloaded ? L.T("Ponad dzień pracy (8 h)") : null });
             var fill = new Border
             {
                 CornerRadius = new CornerRadius(1.5),
                 HorizontalAlignment = HorizontalAlignment.Left,
-                // every day in the accent: full when all done, dimmer while unfinished (and on past days)
-                Background = B(A(overloaded ? orange : ((SolidColorBrush)Res("AccentBrush")).Color, done == total ? (byte)0xFF : isToday ? (byte)0xE0 : (byte)0x90)),
+                // past days in grey (done is history), today and ahead in the accent; a day over 8 h ahead in orange
+                Background = isPast ? B(Th.Ink(0x58)) : B(A(overloaded ? orange : ((SolidColorBrush)Res("AccentBrush")).Color, done == total ? (byte)0xFF : isToday ? (byte)0xFF : (byte)0x90)),
                 Visibility = total > 0 ? Visibility.Visible : Visibility.Collapsed,
                 ToolTip = L.F("Zrobione {0} z {1}", done, total),
             };

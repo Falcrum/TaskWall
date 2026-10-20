@@ -47,7 +47,6 @@ public partial class BoardWindow
         PrevButton.Content = Icons.Chevron(false);
         NextButton.Content = Icons.Chevron(true);
         MoreButton.Content = Icons.More();
-        SettingsButton.Content = Icons.Gear();
         HideButton.Content = Icons.Minimize();
         SearchButton.Content = Icons.Labeled(Icons.Search(), L.T("SZUKAJ"), cap);
         AlarmButton.Content = Icons.Labeled(Icons.Alarm(), L.T("ALARMY"), cap);

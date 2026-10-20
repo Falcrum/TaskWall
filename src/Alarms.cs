@@ -350,6 +350,7 @@ public sealed class AlarmWindow : DarkWindow
     readonly TextBox _end = Field(120);
     readonly ComboBox _remind = new() { Width = 200, HorizontalAlignment = HorizontalAlignment.Left };
     readonly ComboBox _repeat = new() { Width = 200, HorizontalAlignment = HorizontalAlignment.Left };
+    readonly CheckBox _skipDaysOff = new() { Content = L.T("Pomijaj święta i dni BŚU / urlopu"), Margin = new Thickness(0, 8, 0, 0) };
     readonly TextBlock _dayText = Label("", 15, "Fg", FontWeights.Bold);
     readonly TextBlock _preview = Label("", 12, "FgDim");
     readonly Button _save;
@@ -411,6 +412,7 @@ public sealed class AlarmWindow : DarkWindow
         p.Children.Add(Caption(L.T("POWTARZAJ")));
         foreach (var (code, label) in Alarm.Repeats) _repeat.Items.Add(new ComboBoxItem { Content = label, Tag = code });
         p.Children.Add(_repeat);
+        p.Children.Add(_skipDaysOff);
 
         _preview.Margin = new Thickness(0, 14, 0, 0);
         p.Children.Add(_preview);
@@ -452,6 +454,7 @@ public sealed class AlarmWindow : DarkWindow
             _end.Text = existing.End ?? "";
             _repeat.SelectedIndex = Math.Max(0, Array.FindIndex(Alarm.Repeats, r => r.Code == (existing.Repeat ?? "")));
             _remind.SelectedIndex = Math.Max(0, Array.FindIndex(Reminders, r => r.Minutes == existing.Remind));
+            _skipDaysOff.IsChecked = existing.SkipDaysOff;
         }
         else
         {
@@ -477,7 +480,8 @@ public sealed class AlarmWindow : DarkWindow
             Update();
         };
         _end.TextChanged += (_, _) => Update();
-        _repeat.SelectionChanged += (_, _) => Update();
+        _repeat.SelectionChanged += (_, _) => { _skipDaysOff.Visibility = RepeatCode.Length > 0 ? Visibility.Visible : Visibility.Collapsed; Update(); };
+        _skipDaysOff.Visibility = RepeatCode.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         _remind.SelectionChanged += (_, _) => Update();
         PreviewKeyDown += (_, e) =>
         {
@@ -576,6 +580,7 @@ public sealed class AlarmWindow : DarkWindow
         x.End = r.End?.ToString("HH:mm");
         x.Remind = _meeting ? RemindMinutes : null;
         x.Repeat = RepeatCode;
+        x.SkipDaysOff = RepeatCode.Length > 0 && _skipDaysOff.IsChecked == true;
         x.Armed = DateTime.Now;
         x.Deleted = false;
         if (_existing == null) _store.AddAlarm(x); else _store.Changed(x);

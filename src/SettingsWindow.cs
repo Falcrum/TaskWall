@@ -968,11 +968,6 @@ public sealed class SettingsWindow : DarkWindow
         themeRow.Children.Add(theme);
         themeRow.Children.Add(restartTheme);
         p.Children.Add(Pair(L.T("Motyw"), themeRow));
-        var todayStyle = new ComboBox { Width = 220, HorizontalAlignment = HorizontalAlignment.Left };
-        foreach (var (key, label) in new[] { ("line", L.T("linia akcentu u góry")), ("fill", L.T("jaśniejsze tło")) }) todayStyle.Items.Add(new ComboBoxItem { Content = label, Tag = key });
-        todayStyle.SelectedIndex = S.TodayStyle == "fill" ? 1 : 0;
-        todayStyle.SelectionChanged += (_, _) => { S.TodayStyle = (todayStyle.SelectedItem as ComboBoxItem)?.Tag as string ?? "line"; App.Instance.ApplySettings(); };
-        p.Children.Add(Pair(L.T("Dzisiejszy dzień"), todayStyle));
         p.Children.Add(Check(L.T("Matowe szkło (rozmyta tapeta pod tablicą)"), S.Blur, v => S.Blur = v));
         p.Children.Add(Check(L.T("Animacje"), S.Animations, v => S.Animations = v));
         p.Children.Add(Check(L.T("Podpisy przy ikonach górnego paska"), S.BarCaptions, v => S.BarCaptions = v));

@@ -93,6 +93,7 @@ public partial class App : Application
     {
 
         Settings = SettingsStore.Load();
+        DaysOff.Leave = d => Stores.Values.Any(s => s.IsLeave(d)); // BŚU / leave in any open account
         SharedSettings.Pull(Settings); // settings saved on another computer (language, theme, weather, Notion…)
         SharedSettings.Pulled += _ => Dispatcher.BeginInvoke(ApplySharedSettings);
         Th.Apply(Resources, Settings.Theme); // before any window is built

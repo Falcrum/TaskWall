@@ -10,6 +10,9 @@ static partial class L
         ("Dysk: {0}", "Drive: {0}"),
         ("Zadań w danych: {0} (w archiwum {1})", "Tasks in the data: {0} ({1} archived)"),
         // 0.20
+        ("Pomijaj święta i dni BŚU / urlopu", "Skip public holidays and BŚU / leave days"),
+        ("Pomijaj niedziele, święta i dni BŚU / urlopu", "Skip Sundays, public holidays and BŚU / leave days"),
+        ("bez niedziel, świąt i BŚU", "no Sundays, holidays or BŚU"),
         ("Dzisiejszy dzień", "Today"),
         ("Zwijaj zrobione zadania do jednej linii („✓ 3 zrobione”)", "Fold done tasks into one line (\"✓ 3 done\")"),
         ("jaśniejsze tło", "a lighter cell"),

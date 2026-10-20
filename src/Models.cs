@@ -190,7 +190,7 @@ public sealed class RecurringRule
         var key = d.ToString("yyyy-MM-dd");
         if (End != null && string.CompareOrdinal(key, End) > 0) return false;
         if (Skips.Contains(key)) return false;
-        if (SkipSundaysHolidays && (d.DayOfWeek == DayOfWeek.Sunday || PolishHolidays.DayOff(d) != null)) return false;
+        if (SkipSundaysHolidays && (d.DayOfWeek == DayOfWeek.Sunday || DaysOff.Is(d))) return false; // Sundays, holidays, BŚU / leave
         int n = Math.Max(1, Interval);
         switch (Pattern)
         {
@@ -215,7 +215,7 @@ public sealed class RecurringRule
     }
 
     /// <summary>"co 2 tygodnie: pn, śr · od 5 paź do 30 lis"</summary>
-    [JsonIgnore] public string Summary => Describe(Pattern, Interval, Weekdays, StartDate, End) + (SkipSundaysHolidays ? " · " + L.T("bez niedziel i świąt") : "");
+    [JsonIgnore] public string Summary => Describe(Pattern, Interval, Weekdays, StartDate, End) + (SkipSundaysHolidays ? " · " + L.T("bez niedziel, świąt i BŚU") : "");
 
     public static string Describe(string pattern, int interval, List<int>? weekdays, DateTime start, string? end)
     {
@@ -276,6 +276,8 @@ public sealed class Alarm
     public int? Remind { get; set; }
     /// <summary>"" (once) | daily | weekdays | weekly | biweekly | monthly</summary>
     public string Repeat { get; set; } = "";
+    /// <summary>A repeating alarm / meeting skips public holidays and BŚU / leave days.</summary>
+    public bool SkipDaysOff { get; set; }
     /// <summary>Days (yyyy-MM-dd) of a repeating entry removed by the user.</summary>
     public List<string>? Skips { get; set; }
     /// <summary>Last ring ("yyyy-MM-dd HH:mm") – on this or another PC.</summary>
@@ -305,6 +307,7 @@ public sealed class Alarm
         d = d.Date;
         if (d < start) return false;
         if (Skips != null && Skips.Contains(d.ToString("yyyy-MM-dd"))) return false;
+        if (SkipDaysOff && DaysOff.Is(d)) return false;
         return Repeat switch
         {
             "" or null => d == start,
@@ -370,6 +373,7 @@ public sealed class Alarm
         Kind = o.Kind; Text = o.Text; Day = o.Day; Time = o.Time; End = o.End; Remind = o.Remind; Repeat = o.Repeat;
         Skips = o.Skips == null ? null : new List<string>(o.Skips);
         Rang = o.Rang; Armed = o.Armed; Deleted = o.Deleted; Modified = o.Modified;
+        SkipDaysOff = o.SkipDaysOff;
         Extra = o.Extra;
     }
 }
@@ -571,8 +575,6 @@ public sealed class AppSettings
     public string? LastWeekSummary { get; set; }
     /// <summary>"dark", "light" or "auto" (from the wallpaper brightness).</summary>
     public string Theme { get; set; } = "dark";
-    /// <summary>How today is marked: "line" (an accent line along the top) or "fill" (a lighter cell).</summary>
-    public string TodayStyle { get; set; } = "line";
     public WeatherSettings Weather { get; set; } = new();
     public TimelineSettings Timeline { get; set; } = new();
     /// <summary>Update the user said "no" to (not offered again; Settings → Info can still install it).</summary>
@@ -614,5 +616,24 @@ public sealed class AppSettings
         var a = Accounts.FirstOrDefault(x => x.Id == id);
         if (a == null) Accounts.Add(a = new Account { Id = id, Name = id == "private" ? "Prywatne" : "Praca" });
         return a;
+    }
+}
+
+/// <summary>
+/// Days off for "skip days off" (alarms, meetings, repeating tasks): public holidays and days marked with a filled mark
+/// such as BŚU or leave (a frame mark like HO is a working day). The marks come from the open accounts (set by App).
+/// </summary>
+static class DaysOff
+{
+    public static Func<DateTime, bool>? Leave;
+    [ThreadStatic] static bool _inside; // a repeating mark rule asks too – no endless loop through the marks
+
+    public static bool Is(DateTime d)
+    {
+        if (PolishHolidays.DayOff(d) != null) return true;
+        if (_inside || Leave == null) return false;
+        _inside = true;
+        try { return Leave(d); }
+        finally { _inside = false; }
     }
 }
