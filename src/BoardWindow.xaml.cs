@@ -13,7 +13,7 @@ using System.Windows.Threading;
 
 namespace TaskWall;
 
-public enum ViewMode { Day, Week1, Week2, Month, Year }
+public enum ViewMode { Day, Week1, Week2, Month, Year, Timeline }
 
 /// <summary>The board: week / month / year views, day cells, task rows, editing and drag &amp; drop.
 /// Backlog, search, top bar and keyboard live in BoardWindow.Features.cs.</summary>
@@ -33,8 +33,8 @@ public partial class BoardWindow : GlassWindow
     DateTime _dayDate = DateTime.Today; // the day of the DZIEŃ view
     readonly Dictionary<string, double> _progress = new(); // last shown progress per day (animate only real changes)
 
-    static ViewMode ParseView(string v) => v switch { "day" => ViewMode.Day, "week1" => ViewMode.Week1, "month" => ViewMode.Month, "year" => ViewMode.Year, _ => ViewMode.Week2 };
-    static string ViewKey(ViewMode v) => v switch { ViewMode.Day => "day", ViewMode.Week1 => "week1", ViewMode.Month => "month", ViewMode.Year => "year", _ => "week2" };
+    static ViewMode ParseView(string v) => v switch { "day" => ViewMode.Day, "week1" => ViewMode.Week1, "month" => ViewMode.Month, "year" => ViewMode.Year, "timeline" => ViewMode.Timeline, _ => ViewMode.Week2 };
+    static string ViewKey(ViewMode v) => v switch { ViewMode.Day => "day", ViewMode.Week1 => "week1", ViewMode.Month => "month", ViewMode.Year => "year", ViewMode.Timeline => "timeline", _ => "week2" };
     int _weekOffset;
     DateTime _monthFirst = new(DateTime.Today.Year, DateTime.Today.Month, 1);
     int _year = DateTime.Today.Year;
@@ -140,6 +140,7 @@ public partial class BoardWindow : GlassWindow
     {
         ViewMode.Month => MonthRows() * 0.62,
         ViewMode.Year => 2,
+        ViewMode.Timeline => 2,
         ViewMode.Week1 => 1,
         ViewMode.Day => 1.5,
         _ => 2,
@@ -237,6 +238,7 @@ public partial class BoardWindow : GlassWindow
         var anchor = _view switch
         {
             ViewMode.Year => _year == DateTime.Today.Year ? DateTime.Today : new DateTime(_year, 1, 1),
+            ViewMode.Timeline => _timeline?.Visible is { } tv && DateTime.Today >= tv.From && DateTime.Today <= tv.To ? DateTime.Today : _timeline?.Visible.From.AddDays(3) ?? DateTime.Today,
             ViewMode.Month => _monthFirst.Year == DateTime.Today.Year && _monthFirst.Month == DateTime.Today.Month ? DateTime.Today : _monthFirst,
             ViewMode.Day => _dayDate,
             // into the day view: today when it's on screen
@@ -251,7 +253,7 @@ public partial class BoardWindow : GlassWindow
         _monthFirst = new DateTime(anchor.Year, anchor.Month, 1);
         _year = anchor.Year;
         Rebuild();
-        Anim.Enter(v == ViewMode.Year ? YearHost : WeeksGrid, 0, 10, 300);
+        Anim.Enter(v == ViewMode.Year ? YearHost : v == ViewMode.Timeline ? TimelineHost : WeeksGrid, 0, 10, 300);
         App.Instance.LayoutWindows();
         App.Instance.ScheduleTrim();
     }
@@ -298,6 +300,25 @@ public partial class BoardWindow : GlassWindow
 
     // ---------- building ----------
 
+    TimelineView? _timeline;
+
+    /// <summary>The top bar's range text for the timeline (it changes while dragging).</summary>
+    void AddTimelineRange()
+    {
+        var (from, to) = _timeline?.Visible ?? (DateTime.Today, DateTime.Today.AddDays(30));
+        RangeText.Inlines.Add(new Run(L.T("TIMELINE")) { FontWeight = FontWeights.Bold });
+        RangeText.Inlines.Add(new Run("   |   ") { Foreground = Res("FgFaint") });
+        var fmt = from.Year == to.Year ? "d MMM" : "d MMM yyyy";
+        RangeText.Inlines.Add(new Run($"{from.ToString(fmt, Pl)} – {to.ToString("d MMM yyyy", Pl)}".ToUpper(Pl)) { FontWeight = FontWeights.SemiBold, Foreground = Res("FgDim") });
+    }
+
+    public void UpdateTimelineRange()
+    {
+        if (_view != ViewMode.Timeline) return;
+        RangeText.Inlines.Clear();
+        AddTimelineRange();
+    }
+
     public void Rebuild()
     {
         // editors in the old visuals are gone after this: make sure their late focus events do nothing
@@ -314,8 +335,23 @@ public partial class BoardWindow : GlassWindow
         _panels.Clear();
         _dropLine = null;
 
-        if (_view == ViewMode.Year)
+        if (_view == ViewMode.Timeline)
         {
+            WeeksGrid.Visibility = Visibility.Collapsed;
+            YearHost.Visibility = Visibility.Collapsed;
+            YearHost.Children.Clear();
+            TimelineHost.Visibility = Visibility.Visible;
+            if (_timeline == null)
+            {
+                _timeline = new TimelineView(() => Store, (t, el) => BuildMenu(t, null, null, el), d => JumpTo(d));
+                TimelineHost.Children.Add(_timeline);
+            }
+            else _timeline.BuildToolbar();
+            _timeline.Refresh();
+        }
+        else if (_view == ViewMode.Year)
+        {
+            TimelineHost.Visibility = Visibility.Collapsed;
             WeeksGrid.Visibility = Visibility.Collapsed;
             YearHost.Visibility = Visibility.Visible;
             YearHost.Children.Clear();
@@ -325,6 +361,7 @@ public partial class BoardWindow : GlassWindow
         }
         else
         {
+            TimelineHost.Visibility = Visibility.Collapsed;
             YearHost.Visibility = Visibility.Collapsed;
             YearHost.Children.Clear();
             WeeksGrid.Visibility = Visibility.Visible;
@@ -342,13 +379,13 @@ public partial class BoardWindow : GlassWindow
     void UpdateTopBar()
     {
         var overdue = Overdue().Count;
-        OverdueButton.Visibility = overdue > 0 && _view != ViewMode.Year ? Visibility.Visible : Visibility.Collapsed;
+        OverdueButton.Visibility = overdue > 0 && _view is not (ViewMode.Year or ViewMode.Timeline) ? Visibility.Visible : Visibility.Collapsed;
         OverdueButton.Content = L.F("↷ NA DZIŚ ({0})", overdue);
         OverdueButton.ToolTip = L.F("Niezrobione zadania z minionych dni ({0}) przejdą na dziś. Zadania w trakcie (◐) zostają też w dniach, w których były, jako „↷ 1/3”; nierozpoczęte (○) po prostu się przenoszą.", overdue);
         OverdueButton.Foreground = Tx(Color.FromRgb(0xF2, 0xA6, 0x5A));
 
         YearButton.Visibility = S.ShowYearButton ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var (btn, mode) in new[] { (DayViewButton, ViewMode.Day), (OneWeekButton, ViewMode.Week1), (WeekViewButton, ViewMode.Week2), (MonthViewButton, ViewMode.Month), (YearButton, ViewMode.Year) })
+        foreach (var (btn, mode) in new[] { (DayViewButton, ViewMode.Day), (OneWeekButton, ViewMode.Week1), (WeekViewButton, ViewMode.Week2), (MonthViewButton, ViewMode.Month), (YearButton, ViewMode.Year), (TimelineButton, ViewMode.Timeline) })
         {
             bool on = _view == mode;
             btn.Background = on ? B(Th.Ink(0x26)) : Brushes.Transparent;
@@ -360,7 +397,7 @@ public partial class BoardWindow : GlassWindow
         if (_layerName != null) _layerName.Text = L.Up(App.AccountName(S.Layer));
         LayerButton.Background = priv ? B(Color.FromArgb(0x40, 0x5C, 0xCB, 0x92)) : B(Th.Ink(0x14));
         LayerButton.Foreground = Res("Fg");
-        ClearDoneButton.Visibility = _view == ViewMode.Year ? Visibility.Collapsed : Visibility.Visible;
+        ClearDoneButton.Visibility = _view is ViewMode.Year or ViewMode.Timeline ? Visibility.Collapsed : Visibility.Visible;
         UpdateBacklogButton();
 
         RangeText.Inlines.Clear();
@@ -368,6 +405,9 @@ public partial class BoardWindow : GlassWindow
         {
             case ViewMode.Year:
                 RangeText.Inlines.Add(new Run(_year.ToString()) { FontWeight = FontWeights.Bold });
+                break;
+            case ViewMode.Timeline:
+                AddTimelineRange();
                 break;
             case ViewMode.Day:
                 RangeText.Inlines.Add(new Run(L.F("T {0}", WeekNo(_dayDate))) { FontWeight = FontWeights.Bold });
@@ -1780,7 +1820,7 @@ public partial class BoardWindow : GlassWindow
 
     void EdgeScroll(object sender, DragEventArgs e)
     {
-        if (!e.Data.GetDataPresent(DragFormat) || _view == ViewMode.Year || WeeksGrid.ActualWidth <= 0) { StopEdge(); return; }
+        if (!e.Data.GetDataPresent(DragFormat) || _view is ViewMode.Year or ViewMode.Timeline || WeeksGrid.ActualWidth <= 0) { StopEdge(); return; }
         var p = e.GetPosition(WeeksGrid);
         double edge = Math.Min(36, WeeksGrid.ActualWidth / 20);
         int dir = p.Y >= 0 && p.Y <= WeeksGrid.ActualHeight ? (p.X < edge ? -1 : p.X > WeeksGrid.ActualWidth - edge ? 1 : 0) : 0;

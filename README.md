@@ -29,7 +29,7 @@ TaskWall has no taskbar button. Use the tray icon (left click: the *Today* card,
 | What | How |
 |---|---|
 | Accounts | WORK / PRIVATE in the middle of the top bar, or Ctrl+1 / Ctrl+2. Each account has its own folder, calendars, Notion link, categories, day marks, archive and alarms |
-| Views | DAY · 1 WEEK · 2 WEEKS · MONTH · YEAR (remembered). ‹ › moves by a day, week, month or year |
+| Views | DAY · 1 WEEK · 2 WEEKS · MONTH · YEAR · TIMELINE (remembered). ‹ › moves by a day, week, month or year. The timeline: tasks as bars over their days (planned days dashed, priority stripe, weekends and holidays hatched), drag to move, Ctrl + wheel to zoom, filters, sorting and grouping |
 | Add a task | "+ add task" under a day. Enter adds and opens the next field, Esc closes. Clicking a category under the field inserts e.g. `[ART]` |
 | Smart add | dates at the start or end: `tomorrow`, `fri`, `on fri`, `in 3 days`, `next week`, `14.10` (Polish: `jutro`, `pt`, `za 3 dni`); `2h` / `30 min` = estimate; `#art` = category. A preview shows what was recognised; `14-16` = planned hours, `!!!` / `!!` / `!` = priority. All commands: **F1** (also when editing a task) |
 | Multi-day tasks | an unfinished task moved on (CONTINUE TODAY or dragging) stays on its earlier days greyed as "↷ 1/3", in the same line across the week. Right click → Started… sets when work began, or "only its own day" |
@@ -106,7 +106,7 @@ Switches are in `src/Dev.cs`:
 
 - `--data <folder>`: separate test data and settings (`.dev\settings.dev.json`); runs next to the installed copy and never touches autostart
 - `--topmost --shot <dir> [--shot-delay s] --exit`: window screenshots
-- `--open day|month|year|drawer|archive|calendar|settings|today|add|private|alarm|meeting|repeat-mark|ring|ring-soon|search=…|import=…`
+- `--open day|month|year|timeline|drawer|archive|calendar|settings|today|add|private|alarm|meeting|repeat-mark|ring|ring-soon|search=…|import=…`
 - `--selftest <file>`: data-layer tests (100)
 
 UI texts are Polish keys wrapped in `L.T(...)` / `L.F(...)`; English lives in `src/Lang/En.*.cs`.

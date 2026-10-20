@@ -77,6 +77,11 @@ static class Icons
         return Box(s, Line(Sheet), text);
     }
 
+    /// <summary>Timeline: bars of different lengths, staggered, like a Gantt chart.</summary>
+    public static FrameworkElement Timeline(double s = 19) => Box(s,
+        Line("M3.5,4.5 V19.5 M3.5,19.5 H21", 1.4),
+        Fill("M6,6 H13.5 A1.2,1.2 0 0 1 13.5,8.4 H6 A1.2,1.2 0 0 1 6,6 Z M9.5,10.4 H19 A1.2,1.2 0 0 1 19,12.8 H9.5 A1.2,1.2 0 0 1 9.5,10.4 Z M7.5,14.8 H14.5 A1.2,1.2 0 0 1 14.5,17.2 H7.5 A1.2,1.2 0 0 1 7.5,14.8 Z"));
+
     public static FrameworkElement Search(double s = 18) => Box(s, Line("M10.5,4 a6.5,6.5 0 1 0 0.01,0 Z M15.3,15.3 L21,21", 1.9));
 
     /// <summary>Eraser over a line (like the reference).</summary>

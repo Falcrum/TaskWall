@@ -146,7 +146,7 @@ public sealed class ClockWindow : GlassWindow
             Put(new TextBlock { Text = names[i], FontSize = 10, FontWeight = FontWeights.SemiBold, Foreground = i >= 5 ? weekendRed : Ui.Res("FgFaint"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }, 0, i + 1);
 
         var accent = ((SolidColorBrush)Ui.Res("AccentBrush")).Color;
-        bool showRange = App.Board?.View != ViewMode.Year;
+        bool showRange = App.Board?.View is not (ViewMode.Year or ViewMode.Timeline);
         var shownFrom = App.Board?.FirstMonday ?? BoardWindow.Monday(DateTime.Today);
         var shownTo = shownFrom.AddDays(7 * (App.Board?.WeekCount ?? 2) - 1);
         // (start computed above)

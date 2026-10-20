@@ -503,6 +503,7 @@ public sealed class BoardStore
     public void Add(TaskItem t)
     {
         t.Touch();
+        t.Created ??= DateTime.UtcNow;
         Data.Deleted.Remove(t.Id);
         Data.Bin?.RemoveAll(e => e.Task.Id == t.Id); // back from the bin (or Ctrl+Z)
         Data.Tasks.Add(t);

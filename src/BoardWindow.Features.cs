@@ -43,6 +43,7 @@ public partial class BoardWindow
         WeekViewButton.Content = Icons.Labeled(Icons.TwoWeeks(), L.T("2 TYGODNIE"), cap);
         MonthViewButton.Content = Icons.Labeled(Icons.Month(), L.T("MIESIĄC"), cap);
         YearButton.Content = Icons.Labeled(Icons.Year(), L.T("ROK"), cap);
+        TimelineButton.Content = Icons.Labeled(Icons.Timeline(), "TIMELINE", cap);
         SearchButton.Content = Icons.Labeled(Icons.Search(), L.T("SZUKAJ"), cap);
         AlarmButton.Content = Icons.Labeled(Icons.Alarm(), L.T("ALARMY"), cap);
         ClearDoneButton.Content = Icons.Labeled(Icons.Clear(), L.T("WYCZYŚĆ"), cap);
@@ -214,6 +215,7 @@ public partial class BoardWindow
     (DateTime From, DateTime To, string Name) VisiblePeriod() => _view switch
     {
         ViewMode.Year => (new DateTime(_year, 1, 1), new DateTime(_year, 12, 31), _year.ToString()),
+        ViewMode.Timeline => (_timeline?.Visible.From ?? DateTime.Today, _timeline?.Visible.To ?? DateTime.Today, "timeline"),
         ViewMode.Month => (_monthFirst, _monthFirst.AddMonths(1).AddDays(-1), _monthFirst.ToString("yyyy-MM")),
         ViewMode.Day => (_dayDate, _dayDate, DayKey(_dayDate)),
         _ => (FirstMonday, FirstMonday.AddDays(7 * WeekCount - 1), WeekCount == 1 ? $"T{WeekNo(FirstMonday)}-{FirstMonday.Year}" : $"T{WeekNo(FirstMonday)}-{WeekNo(FirstMonday.AddDays(7))}-{FirstMonday.Year}"),
@@ -270,7 +272,7 @@ public partial class BoardWindow
         SearchBox.Text = "";
         CloseSearch();
         Rebuild();
-        Anim.Enter(_view == ViewMode.Year ? YearHost : WeeksGrid, 0, 12, 320);
+        Anim.Enter(_view == ViewMode.Year ? YearHost : _view == ViewMode.Timeline ? TimelineHost : WeeksGrid, 0, 12, 320);
     }
 
     public void ShowSearch(string q)
@@ -278,6 +280,8 @@ public partial class BoardWindow
         OpenSearch();
         GlobalSearch.Text = q;
     }
+
+    public void ShowTimeline() => SetView(ViewMode.Timeline);
 
     public void ShowYear()
     {
@@ -1098,6 +1102,7 @@ public partial class BoardWindow
                 Key.D3 or Key.NumPad3 => () => SetView(ViewMode.Week2),
                 Key.D4 or Key.NumPad4 => () => SetView(ViewMode.Month),
                 Key.D5 or Key.NumPad5 => () => SetView(ViewMode.Year),
+                Key.D6 or Key.NumPad6 => () => SetView(ViewMode.Timeline),
                 Key.B => () => TogglePanel(archive: false),
                 Key.R => () => ReportWindow.Show(Store, S.Layer, ReportDay(), month: _view == ViewMode.Month),
                 Key.A => () => TogglePanel(archive: true),
@@ -1134,6 +1139,7 @@ public partial class BoardWindow
         _slideDir = dir;
         switch (_view)
         {
+            case ViewMode.Timeline: _timeline?.Step(dir); UpdateTimelineRange(); return;
             case ViewMode.Year: _year += dir; break;
             case ViewMode.Day: _dayDate = _dayDate.AddDays(dir); break;
             case ViewMode.Month:
@@ -1151,6 +1157,7 @@ public partial class BoardWindow
     {
         switch (_view)
         {
+            case ViewMode.Timeline: _timeline?.ScrollToToday(); UpdateTimelineRange(); return;
             case ViewMode.Year: _slideDir = Math.Sign(DateTime.Today.Year - _year); _year = DateTime.Today.Year; break;
             case ViewMode.Day: _slideDir = Math.Sign((DateTime.Today - _dayDate).TotalDays); _dayDate = DateTime.Today; break;
             case ViewMode.Month:
@@ -1173,6 +1180,7 @@ public partial class BoardWindow
     void PrivateLayer_Click(object sender, RoutedEventArgs e) => App.Instance.SwitchLayer("private");
     void MonthView_Click(object sender, RoutedEventArgs e) => SetView(ViewMode.Month);
     void Year_Click(object sender, RoutedEventArgs e) => SetView(ViewMode.Year);
+    void Timeline_Click(object sender, RoutedEventArgs e) => SetView(ViewMode.Timeline);
     void Search_Click(object sender, RoutedEventArgs e) { if (SearchPanel.Visibility == Visibility.Visible) CloseSearch(); else OpenSearch(); }
     void Settings_Click(object sender, RoutedEventArgs e) => App.Instance.ShowSettings();
     void Bar_RightClick(object sender, MouseButtonEventArgs e) => App.Instance.ShowSettings();

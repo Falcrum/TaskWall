@@ -64,6 +64,7 @@ static class Dev
         else if (open == "report-month") App.Current.Dispatcher.BeginInvoke(() => ReportWindow.Show(App.Store, App.Settings.Layer, DateTime.Today, month: true), DispatcherPriority.ApplicationIdle);
         else if (open == "summary") App.Current.Dispatcher.BeginInvoke(() => ReportWindow.Show(App.Store, App.Settings.Layer, DateTime.Today, month: false), DispatcherPriority.ApplicationIdle);
         else if (open == "expand") App.Current.Dispatcher.BeginInvoke(() => App.Board?.DevExpandAll(), DispatcherPriority.ApplicationIdle);
+        else if (open == "timeline") App.Current.Dispatcher.BeginInvoke(() => App.Board?.ShowTimeline(), DispatcherPriority.ApplicationIdle);
         else if (open == "drawer") App.Current.Dispatcher.BeginInvoke(() => App.Board?.RevealBacklog(), DispatcherPriority.ApplicationIdle);
         else if (open == "calendar") App.Current.Dispatcher.BeginInvoke(() => App.Clock?.Open(), DispatcherPriority.ApplicationIdle);
         else if (open?.StartsWith("import=") == true)

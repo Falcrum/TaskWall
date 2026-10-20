@@ -71,6 +71,8 @@ public sealed class TaskItem
     public string? ParentNotionId { get; set; }
     /// <summary>Name of the Notion database the task comes from (when an account reads more than one).</summary>
     public string? NotionSource { get; set; }
+    /// <summary>When the task was added (UTC; null for tasks older than 0.18) – the timeline can sort by it.</summary>
+    public DateTime? Created { get; set; }
 
     [JsonIgnore] public bool IsBacklog => Day == null;
     [JsonIgnore] public bool HasLink => !string.IsNullOrEmpty(Url);
@@ -94,7 +96,7 @@ public sealed class TaskItem
     {
         Text = o.Text; Done = o.Done; Day = o.Day; Order = o.Order; Modified = o.Modified; Estimate = o.Estimate;
         Archived = o.Archived; ArchivedAt = o.ArchivedAt; RuleId = o.RuleId; RuleDay = o.RuleDay;
-        NotionId = o.NotionId; Url = o.Url; Status = o.Status; Priority = o.Priority; NotionTitle = o.NotionTitle; ParentNotionId = o.ParentNotionId; NotionSource = o.NotionSource;
+        NotionId = o.NotionId; Url = o.Url; Status = o.Status; Priority = o.Priority; NotionTitle = o.NotionTitle; ParentNotionId = o.ParentNotionId; NotionSource = o.NotionSource; Created = o.Created;
         Checklist = CopyList(o.Checklist);
         Time = o.Time; End = o.End; WorkedDays = o.WorkedDays == null ? null : new List<string>(o.WorkedDays); PlanEnd = o.PlanEnd;
         Started = o.Started;
@@ -568,6 +570,7 @@ public sealed class AppSettings
     /// <summary>"dark", "light" or "auto" (from the wallpaper brightness).</summary>
     public string Theme { get; set; } = "dark";
     public WeatherSettings Weather { get; set; } = new();
+    public TimelineSettings Timeline { get; set; } = new();
     /// <summary>Update the user said "no" to (not offered again; Settings → Info can still install it).</summary>
     public string? SkippedUpdate { get; set; }
     /// <summary>"pl" or "en".</summary>

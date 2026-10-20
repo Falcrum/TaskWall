@@ -42,7 +42,7 @@ public sealed class HelpWindow : DarkWindow
             ("Ctrl+1 · Ctrl+2", "konto Praca · Prywatne"),
             ("← → · PgUp PgDn", "poprzedni / następny okres"),
             ("T · Home", "dziś"),
-            ("1 2 3 4 5", "widok: dzień · tydzień · 2 tygodnie · miesiąc · rok"),
+            ("1 2 3 4 5 6", "widok: dzień · tydzień · 2 tygodnie · miesiąc · rok · timeline"),
             ("B · A", "backlog · archiwum"),
             ("R", "raport tygodnia (w widoku miesiąca: miesiąca) – podgląd, zapis HTML i CSV"),
             ("Ctrl+F", "szukaj wszędzie"),

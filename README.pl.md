@@ -29,7 +29,7 @@ Aplikacja nie ma okna na pasku zadań. Steruje się nią ikoną w zasobniku (lew
 | Akcja | Jak |
 |---|---|
 | Konta | PRACA / PRYWATNE na środku górnego paska albo Ctrl+1 / Ctrl+2. Każde konto ma własny folder, kalendarze, Notion, kategorie, oznaczenia dni, archiwum i alarmy |
-| Widoki | DZIEŃ · 1 TYDZIEŃ · 2 TYGODNIE · MIESIĄC · ROK (zapamiętywany). ‹ › przesuwa o dzień, tydzień, miesiąc albo rok |
+| Widoki | DZIEŃ · 1 TYDZIEŃ · 2 TYGODNIE · MIESIĄC · ROK · TIMELINE (zapamiętywany). ‹ › przesuwa o dzień, tydzień, miesiąc albo rok. Timeline: zadania jako paski przez ich dni (planowane dni przerywane, pasek priorytetu, weekendy i święta kreskowane), przeciąganie, Ctrl + kółko do skali, filtry, sortowanie i grupowanie |
 | Dodaj zadanie | „+ dodaj zadanie” pod dniem. Enter dodaje i otwiera kolejne pole, Esc zamyka. Kliknięcie kategorii pod polem wstawia np. `[ART]` |
 | Sprytne dodawanie | `jutro`, `pt`, `w pt`, `za 3 dni`, `14.10` na początku albo na końcu (też `tomorrow`, `fri`, `in 3 days`), `2h` / `30 min` (estymacja), `#art` (kategoria). Podgląd pokazuje, co zostało rozpoznane; `14-16` = godziny, `!!!` / `!!` / `!` = priorytet. Wszystkie komendy: **F1** (działają też przy edycji) |
 | Zadania wielodniowe | niezrobione zadanie przeniesione dalej (KONTYNUUJ DZIŚ albo przeciągnięciem) zostaje w poprzednich dniach jako wyszarzone „↷ 1/3”, w tym samym rzędzie przez cały tydzień. Prawy przycisk → Rozpoczęte… ustawia początek pracy albo „tylko ten dzień” |
