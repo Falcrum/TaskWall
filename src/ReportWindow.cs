@@ -32,6 +32,8 @@ public sealed class Report
     public double Hours => Days.Sum(d => d.Hours);
     public double DoneHours => Days.Sum(d => d.DoneHours);
     public double Meetings => Days.Sum(d => d.Meetings);
+    /// <summary>Time measured with the tasks' timers (hours).</summary>
+    public double Tracked => All.Select(x => x.Task).Distinct().Sum(t => t.TrackedNow) / 60;
     public IEnumerable<(DateTime Day, TaskItem Task)> Open => All.Where(x => !x.Task.Done && !x.Task.Archived);
 
     public string Title => Month
@@ -118,6 +120,7 @@ public sealed class Report
         Tile($"{Done}/{Tasks}", L.T("zadań zrobionych"), true);
         Tile(H(DoneHours), L.F("z {0} zaplanowanych", H(Hours)));
         Tile(H(Meetings), L.T("spotkań"));
+        if (Tracked > 0) Tile(H(Math.Round(Tracked, 1)), L.T("zmierzonego czasu pracy"));
         Tile((Open.Count() + Carried.Count).ToString(), L.T("przeszło dalej / otwarte"));
         foreach (var (code, m) in Marks) Tile(m.Days.ToString(), $"{code} · {m.Label}");
         sb.Append("</div>");
@@ -159,7 +162,7 @@ public sealed class Report
                 foreach (var tag in tags) sb.Append($"<span class=\"tag\">{E(tag)}</span>");
                 sb.Append(t.Url is { Length: > 0 } url ? $"<a href=\"{E(url)}\" style=\"color:inherit\">{E(rest)}</a>" : E(rest));
                 if (t.Checklist is { Count: > 0 } cl) sb.Append($" <span class=\"day\">☑ {cl.Count(x => x.Done)}/{cl.Count}</span>");
-                sb.Append($"</td><td class=\"n\">{(t.Estimate is > 0 ? E(BoardWindow.Est(t.Estimate.Value)) : "")}</td></tr>");
+                sb.Append($"</td><td class=\"n\">{(t.Estimate is > 0 ? E(BoardWindow.Est(t.Estimate.Value)) : "")}{(t.TrackedNow > 0 ? " · ⏱ " + E(BoardWindow.Duration(t.TrackedNow)) : "")}</td></tr>");
             }
             sb.Append("</table>");
         }
@@ -305,6 +308,7 @@ public sealed class ReportWindow : DarkWindow
         Stat($"{r.Done}/{r.Tasks}", L.T("zadań zrobionych"), accent: true);
         Stat(BoardWindow.Hours(r.DoneHours), L.F("z {0} zaplanowanych", BoardWindow.Hours(r.Hours)));
         Stat(BoardWindow.Hours(r.Meetings), L.T("spotkań"));
+        if (r.Tracked > 0) Stat(BoardWindow.Hours(Math.Round(r.Tracked, 1)), L.T("zmierzonego czasu pracy"));
         Stat((r.Open.Count() + r.Carried.Count).ToString(), L.T("przeszło dalej / otwarte"));
         foreach (var (code, m) in r.Marks) Stat(m.Days.ToString(), $"{code} · {m.Label}");
         _body.Children.Add(stats);

@@ -513,6 +513,26 @@ public sealed class BoardStore
         MarkDirty();
     }
 
+    // ---------- the work timer of a task ----------
+
+    /// <summary>Starts the task's timer (one runs at a time: another running one stops); the task is in progress then.</summary>
+    public void StartTracking(TaskItem t)
+    {
+        foreach (var other in Data.Tasks.Where(x => x.IsTracking && x != t).ToList()) StopTracking(other);
+        if (t.IsTracking) return;
+        t.TrackStart = DateTime.UtcNow;
+        if (!t.Done) t.Started = true;
+        Changed(t);
+    }
+
+    public void StopTracking(TaskItem t)
+    {
+        if (t.TrackStart is not { } s) return;
+        t.TrackedMinutes = Math.Round(t.TrackedMinutes + Math.Max(0, (DateTime.UtcNow - s).TotalMinutes), 1);
+        t.TrackStart = null;
+        Changed(t);
+    }
+
     // ---------- bin: deleted tasks, restorable for 30 days ----------
 
     public const int BinDays = 30;
@@ -771,7 +791,29 @@ public sealed class BoardStore
         // same as the series → no override; removing a series mark → "" (explicit "nothing")
         var series = SeriesMark(day);
         string? stored = mark == series ? null : mark ?? "";
-        Data.Days[day] = new DayInfo { Mark = stored, Modified = Stamp.After(before) };
+        Data.Days[day] = new DayInfo { Mark = stored, WorkStart = d?.WorkStart, WorkEnd = d?.WorkEnd, Modified = Stamp.After(before) };
+        MarkDirty();
+    }
+
+    /// <summary>The day's working hours: its own (set on the timeline) or the defaults.</summary>
+    public (string Start, string End) WorkHours(string day, string defStart, string defEnd) =>
+        Data.Days.TryGetValue(day, out var d) && d.WorkStart != null && d.WorkEnd != null ? (d.WorkStart, d.WorkEnd) : (defStart, defEnd);
+
+    public void SetWorkHours(string day, string? start, string? end)
+    {
+        Data.Days.TryGetValue(day, out var d);
+        Data.Days[day] = new DayInfo { Mark = d?.Mark, WorkStart = start, WorkEnd = end, Modified = Stamp.After(d?.Modified ?? DateTime.MinValue) };
+        MarkDirty();
+    }
+
+    public string Note(string day) => Data.Notes != null && Data.Notes.TryGetValue(day, out var n) ? n.Text : "";
+
+    public void SetNote(string day, string text)
+    {
+        Data.Notes ??= new();
+        var before = Data.Notes.TryGetValue(day, out var n) ? n.Modified : DateTime.MinValue;
+        if (n != null && n.Text == text) return;
+        Data.Notes[day] = new DayNote { Text = text, Modified = Stamp.After(before) };
         MarkDirty();
     }
 
@@ -1045,6 +1087,12 @@ public sealed class BoardStore
         foreach (var kv in a.Days.Concat(b.Days))
             if (!result.Days.TryGetValue(kv.Key, out var d) || kv.Value.Modified > d.Modified)
                 result.Days[kv.Key] = kv.Value;
+        if (a.Notes != null || b.Notes != null)
+        {
+            result.Notes = new();
+            foreach (var kv in (a.Notes ?? new()).Concat(b.Notes ?? new()))
+                if (!result.Notes.TryGetValue(kv.Key, out var n) || kv.Value.Modified > n.Modified) result.Notes[kv.Key] = kv.Value;
+        }
 
         bool takeB = a.Categories == null || (b.Categories != null && b.CategoriesModified > a.CategoriesModified);
         result.Categories = takeB ? b.Categories : a.Categories;

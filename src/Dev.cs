@@ -460,6 +460,27 @@ static class Dev
             Check("days off: a repeating meeting skips a public holiday (11 Nov) and a BŚU day, not a normal day",
                 dailyOff.Occurs(new DateTime(2026, 11, 10)) && !dailyOff.Occurs(new DateTime(2026, 11, 11)) && !dailyOff.Occurs(new DateTime(2026, 11, 12)) && new Alarm { Day = "2026-11-09", Time = "10:00", Repeat = "weekdays" }.Occurs(new DateTime(2026, 11, 12)));
             DaysOff.Leave = leaveBefore;
+            const string noteMd = "# Plan\n\nTekst **gruby**, *kursywa* i ~~skreślony~~\n- jeden\n- dwa\n  - pod\n1. pierwszy\n2. drugi\n- [ ] zrobić\n- [x] zrobione\n> cytat\n---\nkoniec";
+            var noteBack = NotesEditor.RoundTrip(noteMd);
+            if (Arg("--selftest") is { } stOut2) File.WriteAllText(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(stOut2))!, "note-roundtrip.txt"), noteBack);
+            Check("notes: headings, bold / italic / strike, lists (nested, numbered), check boxes, quote and divider survive a round trip", noteBack == noteMd);
+            var whDir = Path.Combine(Path.GetTempPath(), "taskwall-wh-" + Guid.NewGuid().ToString("N"));
+            var whStore = new BoardStore("work");
+            whStore.Open(whDir);
+            whStore.SetDayMark("2026-10-21", "BŚU");
+            whStore.SetWorkHours("2026-10-21", "08:00", "15:30");
+            whStore.SetNote("2026-10-21", "- [ ] test");
+            Check("day: own working hours keep the day mark, the defaults elsewhere, the note is kept",
+                whStore.WorkHours("2026-10-21", "09:00", "17:00") == ("08:00", "15:30") && whStore.DayMark("2026-10-21") == "BŚU"
+                && whStore.WorkHours("2026-10-22", "09:00", "17:00") == ("09:00", "17:00") && whStore.Note("2026-10-21") == "- [ ] test");
+            var tr1 = new TaskItem { Text = "a", Day = "2026-10-21" };
+            var tr2 = new TaskItem { Text = "b", Day = "2026-10-21" };
+            whStore.Add(tr1); whStore.Add(tr2);
+            whStore.StartTracking(tr1);
+            tr1.TrackStart = DateTime.UtcNow.AddMinutes(-30);
+            whStore.StartTracking(tr2);
+            Check("timer: one runs at a time – starting another stops and adds the time; the task is in progress", !tr1.IsTracking && tr1.TrackedMinutes is > 29 and < 31 && tr2.IsTracking && tr2.IsStarted);
+            try { Directory.Delete(whDir, true); } catch { }
             var carried = new TaskItem { Text = "długie", Day = "2026-10-05", Started = true };
             carried.NoteMove("2026-10-05", "2026-10-06", "2026-10-08");
             carried.NoteMove("2026-10-06", "2026-10-08", "2026-10-08");

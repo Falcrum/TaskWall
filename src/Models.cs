@@ -73,6 +73,12 @@ public sealed class TaskItem
     public string? NotionSource { get; set; }
     /// <summary>When the task was added (UTC; null for tasks older than 0.18) – the timeline can sort by it.</summary>
     public DateTime? Created { get; set; }
+    /// <summary>Time measured with the task's timer (minutes), and when the running timer was started (UTC, null = stopped).</summary>
+    public double TrackedMinutes { get; set; }
+    public DateTime? TrackStart { get; set; }
+    [JsonIgnore] public bool IsTracking => TrackStart != null;
+    /// <summary>Measured time including the running part.</summary>
+    [JsonIgnore] public double TrackedNow => TrackedMinutes + (TrackStart is { } s ? Math.Max(0, (DateTime.UtcNow - s).TotalMinutes) : 0);
 
     [JsonIgnore] public bool IsBacklog => Day == null;
     [JsonIgnore] public bool HasLink => !string.IsNullOrEmpty(Url);
@@ -96,7 +102,7 @@ public sealed class TaskItem
     {
         Text = o.Text; Done = o.Done; Day = o.Day; Order = o.Order; Modified = o.Modified; Estimate = o.Estimate;
         Archived = o.Archived; ArchivedAt = o.ArchivedAt; RuleId = o.RuleId; RuleDay = o.RuleDay;
-        NotionId = o.NotionId; Url = o.Url; Status = o.Status; Priority = o.Priority; NotionTitle = o.NotionTitle; ParentNotionId = o.ParentNotionId; NotionSource = o.NotionSource; Created = o.Created;
+        NotionId = o.NotionId; Url = o.Url; Status = o.Status; Priority = o.Priority; NotionTitle = o.NotionTitle; ParentNotionId = o.ParentNotionId; NotionSource = o.NotionSource; Created = o.Created; TrackedMinutes = o.TrackedMinutes; TrackStart = o.TrackStart;
         Checklist = CopyList(o.Checklist);
         Time = o.Time; End = o.End; WorkedDays = o.WorkedDays == null ? null : new List<string>(o.WorkedDays); PlanEnd = o.PlanEnd;
         Started = o.Started;
@@ -392,6 +398,16 @@ static class Stamp
 public sealed class DayInfo
 {
     public string? Mark { get; set; }
+    /// <summary>This day's working hours ("HH:mm"), set on the day view's timeline; null = the default from the settings.</summary>
+    public string? WorkStart { get; set; }
+    public string? WorkEnd { get; set; }
+    public DateTime Modified { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>The day's notes (the notebook next to the day view's timeline), as light Markdown.</summary>
+public sealed class DayNote
+{
+    public string Text { get; set; } = "";
     public DateTime Modified { get; set; } = DateTime.UtcNow;
 }
 
@@ -426,6 +442,8 @@ public sealed class BoardData
     public List<TrashEntry>? Trash { get; set; }
     /// <summary>Deleted tasks, restorable for 30 days (the task itself is gone from <see cref="Tasks"/> with a tombstone).</summary>
     public List<TrashEntry>? Bin { get; set; }
+    /// <summary>yyyy-MM-dd → the day's notes.</summary>
+    public Dictionary<string, DayNote>? Notes { get; set; }
 }
 
 /// <summary>A category = a "[Name]" prefix with a colour.</summary>
@@ -575,6 +593,9 @@ public sealed class AppSettings
     public string? LastWeekSummary { get; set; }
     /// <summary>"dark", "light" or "auto" (from the wallpaper brightness).</summary>
     public string Theme { get; set; } = "dark";
+    /// <summary>Default working hours (the day view's timeline; a day can have its own).</summary>
+    public string WorkStart { get; set; } = "09:00";
+    public string WorkEnd { get; set; } = "17:00";
     public WeatherSettings Weather { get; set; } = new();
     public TimelineSettings Timeline { get; set; } = new();
     /// <summary>Update the user said "no" to (not offered again; Settings → Info can still install it).</summary>

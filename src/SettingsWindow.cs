@@ -911,7 +911,7 @@ public sealed class SettingsWindow : DarkWindow
         p.Children.Add(Pair("Monitor", monCombo));
         p.Children.Add(SliderRow(L.T("Skala całości"), 80, 220, S.UiScale * 100, v => S.UiScale = Math.Round(v) / 100, v => $"{v:0}%"));
         p.Children.Add(SliderRow(L.T("Szerokość tablicy"), 40, 100, S.WidthPercent, v => S.WidthPercent = v, v => $"{v:0}%"));
-        p.Children.Add(SliderRow(L.T("Wysokość tygodnia"), 10, 40, S.WeekHeightPercent, v => S.WeekHeightPercent = v, v => L.F("{0:0}% ekranu", v)));
+        p.Children.Add(SliderRow(L.T("Wysokość tygodnia"), 10, 100, S.WeekHeightPercent, v => S.WeekHeightPercent = v, v => v >= 99 ? L.T("od zegara do paska zadań") : L.F("{0:0}% ekranu", v)));
         p.Children.Add(SliderRow(L.T("Położenie w pionie"), 0, 100, S.VerticalPercent, v => S.VerticalPercent = v, v => $"{v:0}%"));
         p.Children.Add(SliderRow(L.T("Rozmiar tekstu zadań"), 10, 17, S.FontSize, v => S.FontSize = Math.Round(v * 2) / 2, v => $"{Math.Round(v * 2) / 2:0.0}"));
         return p;
@@ -934,6 +934,23 @@ public sealed class SettingsWindow : DarkWindow
             App.Instance.ApplySettings();
         };
         p.Children.Add(Pair(L.T("Zwijaj zrobione zadania do jednej linii („✓ 3 zrobione”)"), fold));
+        // default working hours (the day view; a day can have its own – drag the edges there)
+        var hours = new StackPanel { Orientation = Orientation.Horizontal };
+        TextBox HourBox(string value, Action<string> set)
+        {
+            var box = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Width = 70, Text = value };
+            box.LostKeyboardFocus += (_, _) =>
+            {
+                if (TimeSpan.TryParseExact(box.Text.Trim(), new[] { @"h\:mm", @"hh\:mm", "%h" }, System.Globalization.CultureInfo.InvariantCulture, out var t) && t < TimeSpan.FromHours(24))
+                { box.Text = t.ToString(@"hh\:mm"); set(box.Text); App.Instance.ApplySettings(); }
+                else box.Text = value;
+            };
+            return box;
+        }
+        hours.Children.Add(HourBox(S.WorkStart, v => S.WorkStart = v));
+        hours.Children.Add(new TextBlock { Text = "  –  ", VerticalAlignment = VerticalAlignment.Center, Foreground = Ui.Res("FgDim") });
+        hours.Children.Add(HourBox(S.WorkEnd, v => S.WorkEnd = v));
+        p.Children.Add(Pair(L.T("Godziny pracy (widok dnia; dzień może mieć własne – przeciągnij ich krawędzie na osi)"), hours));
         p.Children.Add(Check(L.T("Podsumowanie poprzedniego tygodnia przy pierwszym uruchomieniu w tygodniu"), S.WeeklySummary, v => S.WeeklySummary = v));
         p.Children.Add(Check(L.T("Przycisk widoku roku (365 dni)"), S.ShowYearButton, v => S.ShowYearButton = v));
         p.Children.Add(Check(L.T("Automatycznie przenoś niezrobione zadania z minionych dni na dziś"), S.AutoRollover, v => S.AutoRollover = v));
@@ -1081,6 +1098,33 @@ public sealed class SettingsWindow : DarkWindow
         check.HorizontalAlignment = HorizontalAlignment.Left;
         check.Margin = new Thickness(0);
         p.Children.Add(check);
+
+        // backup: everything in one ZIP; restoring merges (the newer version of each task wins)
+        p.Children.Add(Sub(L.T("Kopia zapasowa")));
+        p.Children.Add(Label(L.T("Jeden plik ZIP z danymi wszystkich kont (zadania, kopie dzienne, raporty) i ustawieniami. Przywracanie scala zadania z tablicą – nowsza wersja każdego zadania wygrywa, nic nie jest nadpisywane w ciemno."), 11, "FgFaint"));
+        var bRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+        var exp = Btn(L.T("Zapisz kopię…"), "SecondaryButton", (_, _) =>
+        {
+            var dlg = new Microsoft.Win32.SaveFileDialog { FileName = Backup.DefaultName, Filter = "ZIP (*.zip)|*.zip", InitialDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Documents") };
+            if (dlg.ShowDialog(this) != true) return;
+            try { Backup.Export(dlg.FileName); MessageBox.Show(this, L.F("Zapisano kopię:\n{0}", dlg.FileName), "TaskWall"); }
+            catch (Exception ex) { Log.Error("backup", ex); MessageBox.Show(this, L.T("Nie udało się zapisać pliku:") + "\n" + ex.Message, "TaskWall"); }
+        });
+        exp.Margin = new Thickness(0);
+        bRow.Children.Add(exp);
+        bRow.Children.Add(Btn(L.T("Przywróć z kopii…"), "SecondaryButton", (_, _) =>
+        {
+            var dlg = new Microsoft.Win32.OpenFileDialog { Filter = "ZIP (*.zip)|*.zip" };
+            if (dlg.ShowDialog(this) != true) return;
+            try
+            {
+                int n = Backup.Restore(dlg.FileName);
+                App.Board?.Rebuild();
+                MessageBox.Show(this, n > 0 ? L.F("Scalono zadania z kopii ({0} kont). Ctrl+Z na tablicy cofa.", n) : L.T("W tej kopii nie ma danych kont."), "TaskWall");
+            }
+            catch (Exception ex) { Log.Error("restore backup", ex); MessageBox.Show(this, L.T("Nie udało się odczytać kopii:") + "\n" + ex.Message, "TaskWall"); }
+        }));
+        p.Children.Add(bRow);
         return p;
     }
 

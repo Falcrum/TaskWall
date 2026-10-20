@@ -61,6 +61,7 @@
                 <Grid x:Name="WeeksGrid"/>
                 <Grid x:Name="YearHost" Visibility="Collapsed"/>
                 <Grid x:Name="TimelineHost" Visibility="Collapsed"/>
+                <Grid x:Name="DayHost" Visibility="Collapsed"/>
             </Grid>
         </DockPanel>
 

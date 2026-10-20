@@ -731,6 +731,13 @@ public partial class BoardWindow
                 _expanded.Remove(t.Id);
                 Do(() => { var real = Store.Materialize(t); real.Checklist = null; Store.Changed(real); });
             }));
+        // the work timer (optional): measured time on the task, shown under its name and in the reports
+        if (!t.IsVirtual && !t.Done)
+            menu.Items.Add(t.IsTracking
+                ? Item(L.T("⏹ Zatrzymaj licznik czasu"), () => Do(() => Store.StopTracking(Store.Materialize(t))), value: Duration(t.TrackedNow))
+                : Item(L.T("⏵ Mierz czas pracy"), () => Do(() => Store.StartTracking(Store.Materialize(t))), value: t.TrackedMinutes > 0 ? Duration(t.TrackedMinutes) : null));
+        if (t.TrackedMinutes > 0 && !t.IsTracking)
+            menu.Items.Add(Item(L.T("Wyzeruj zmierzony czas"), () => Do(() => { var real = Store.Materialize(t); real.TrackedMinutes = 0; Store.Changed(real); })));
         menu.Items.Add(Item(L.T("Duplikuj"), () =>
         {
             var copy = t.Clone();

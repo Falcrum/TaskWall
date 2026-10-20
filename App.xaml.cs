@@ -449,7 +449,7 @@ public partial class App : Application
         int P(double dip) => (int)Math.Round(dip * s);
 
         int bw = (int)Math.Round(wa.Width * Math.Clamp(Settings.WidthPercent, 30, 100) / 100);
-        double weekH = wa.Height / s * Math.Clamp(Settings.WeekHeightPercent, 5, 60) / 100;
+        double weekH = wa.Height / s * Math.Clamp(Settings.WeekHeightPercent, 5, 100) / 100;
         int clockCollapsed = P(ClockWindow.HeaderHeight * ui);
         int clockFull = P((ClockWindow.HeaderHeight + ClockWindow.CalendarHeight) * ui);
         int cw = P(ClockWindow.TabWidth * ui);

@@ -97,6 +97,7 @@ public partial class BoardWindow : GlassWindow
     {
         var real = Store.Materialize(t);
         real.Done = state == TaskState.Done;
+        if (real.Done && real.IsTracking) Store.StopTracking(real);
         if (state != TaskState.Done) real.Started = state == TaskState.Started;
         // finished before the planned end: the plan ends today (no future days left hanging)
         var todayKey = DayKey(DateTime.Today);
@@ -142,7 +143,7 @@ public partial class BoardWindow : GlassWindow
         ViewMode.Year => 2,
         ViewMode.Timeline => 2,
         ViewMode.Week1 => 1,
-        ViewMode.Day => 1.5,
+        ViewMode.Day => 3.6, // the agenda: as tall as the screen allows
         _ => 2,
     };
 
@@ -301,6 +302,32 @@ public partial class BoardWindow : GlassWindow
     // ---------- building ----------
 
     TimelineView? _timeline;
+    DayView? _dayView;
+
+    /// <summary>A task block moved / stretched on the day view: its hours, and their length as its estimate.</summary>
+    void DaySetTime(TaskItem t, TimeSpan from, TimeSpan to) => Do(() =>
+    {
+        var real = Store.Materialize(t);
+        real.Time = from.ToString(@"hh\:mm");
+        real.End = to >= TimeSpan.FromHours(24) ? "23:59" : to.ToString(@"hh\:mm");
+        real.Estimate = Math.Round((to - from).TotalHours, 2);
+        Store.Changed(real);
+    });
+
+    /// <summary>A task dropped on the day view (from the backlog or another day): that day, at that hour.</summary>
+    void DayDropTask(string id, DateTime day, TimeSpan at)
+    {
+        if (Store.Find(id) is not { } t) return;
+        var dur = TimeSpan.FromHours(Math.Clamp(t.Estimate ?? 0.5, 0.25, 8));
+        Store.Checkpoint();
+        MoveToEnd(t, DayKey(day));
+        var real = Store.Find(id) ?? t;
+        real.Time = at.ToString(@"hh\:mm");
+        var end = at + dur;
+        real.End = end >= TimeSpan.FromHours(24) ? "23:59" : end.ToString(@"hh\:mm");
+        Store.Changed(real);
+        Dispatcher.BeginInvoke(Rebuild);
+    }
 
     /// <summary>
     /// A bar dragged on the timeline: the whole bar moves by whole days – the days worked on, its day and its planned end
@@ -354,6 +381,13 @@ public partial class BoardWindow : GlassWindow
         foreach (var cancel in _editors.ToList()) cancel();
         _editors.Clear();
         _editorBoxes.Clear();
+        _trackLabels.Clear();
+        if (_trackTimer == null)
+        {
+            _trackTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(20) };
+            _trackTimer.Tick += (_, _) => { foreach (var show in _trackLabels.ToList()) show(); };
+            _trackTimer.Start();
+        }
         _pressed = null;
         FontSize = S.FontSize;
         ApplyBacklogMode();
@@ -364,7 +398,31 @@ public partial class BoardWindow : GlassWindow
         _panels.Clear();
         _dropLine = null;
 
-        if (_view == ViewMode.Timeline)
+        if (_view != ViewMode.Day) DayHost.Visibility = Visibility.Collapsed;
+        if (_view == ViewMode.Day)
+        {
+            WeeksGrid.Visibility = Visibility.Collapsed;
+            YearHost.Visibility = Visibility.Collapsed;
+            YearHost.Children.Clear();
+            TimelineHost.Visibility = Visibility.Collapsed;
+            DayHost.Visibility = Visibility.Visible;
+            if (_dayView == null)
+            {
+                _dayView = new DayView(new DayViewHost(
+                    () => Store,
+                    d => Store.Data.Tasks.Where(t => t.Day == DayKey(d) && !t.Archived).Concat(Store.VirtualTasks(d)).OrderBy(t => t.Order).ToList(),
+                    (t, el) => BuildMenu(t, null, null, el),
+                    t => SetState(t, t.Done ? TaskState.Todo : t.IsStarted ? TaskState.Done : TaskState.Started),
+                    DaySetTime,
+                    DayDropTask,
+                    (key, d) => BuildAddRow(key, d),
+                    (a, d) => AlarmWindow.Edit(Store, a, d)));
+                DayHost.Children.Add(_dayView);
+            }
+            _dayView.Show(_dayDate);
+            if (_slideDir != 0) Anim.Enter(DayHost, 50 * _slideDir, 0, 280);
+        }
+        else if (_view == ViewMode.Timeline)
         {
             WeeksGrid.Visibility = Visibility.Collapsed;
             YearHost.Visibility = Visibility.Collapsed;
@@ -880,6 +938,7 @@ public partial class BoardWindow : GlassWindow
         tb.Inlines.Add(new Run("  ") { FontFamily = (FontFamily)FindResource("IconFont"), FontSize = Math.Max(8, S.FontSize - 4), Foreground = Tx(MeetingColor) });
         tb.Inlines.Add(new Run(e.AllDay ? "" : e.Start.ToString("HH:mm") + "  ") { FontWeight = FontWeights.SemiBold, Foreground = Tx(MeetingColor) });
         tb.Inlines.Add(new Run(e.Title) { Foreground = Res("Fg") });
+        if (!e.AllDay) MarkOverlap(row, tb, ParseKey(dayKey), e.Start, e.End, e);
         row.Child = tb;
         row.MouseRightButtonUp += (_, ev) =>
         {
@@ -907,6 +966,23 @@ public partial class BoardWindow : GlassWindow
     }
 
     static readonly Color AlarmColor = Color.FromRgb(0xF2, 0xB1, 0x4C);
+
+    /// <summary>The day's meetings with their hours: the board's own and the calendars'.</summary>
+    List<(object Source, string Title, DateTime From, DateTime To)> MeetingsOf(DateTime date) =>
+        Store.Alarms.Where(a => a.IsMeeting && a.Occurs(date)).Select(a => ((object)a, a.Text, a.At(date), a.EndAt(date)))
+            .Concat(CalendarService.On(date).Where(e => !e.IsHoliday && !e.AllDay).Select(e => ((object)e, e.Title, e.Start, e.End)))
+            .ToList();
+
+    /// <summary>A meeting that overlaps another one that day: a warning mark and who it collides with.</summary>
+    void MarkOverlap(Border row, TextBlock tb, DateTime date, DateTime from, DateTime to, object self)
+    {
+        var clash = MeetingsOf(date).Where(m => !ReferenceEquals(m.Source, self) && m.From < to && from < m.To).ToList();
+        if (clash.Count == 0) return;
+        var warn = Color.FromRgb(0xF2, 0xA6, 0x5A);
+        tb.Inlines.Add(new Run("  ⚠") { Foreground = Tx(warn), FontWeight = FontWeights.Bold });
+        row.BorderBrush = B(warn);
+        row.ToolTip = (row.ToolTip as string ?? "") + "\n\n⚠ " + L.T("Nakłada się z:") + "\n" + string.Join("\n", clash.Select(c => $"{c.From:HH:mm}–{c.To:HH:mm}  {c.Title}"));
+    }
 
     /// <summary>Alarm or meeting on a day (not a task): click edits, right click deletes.</summary>
     FrameworkElement BuildAlarmRow(Alarm a, DateTime date, bool compact)
@@ -936,6 +1012,7 @@ public partial class BoardWindow : GlassWindow
         tb.Inlines.Add(new Run(a.Text.Length > 0 ? a.Text : what) { Foreground = Res("Fg") });
         if (!a.Once) tb.Inlines.Add(new Run("  ↻") { Foreground = Res("FgFaint") });
         row.Child = tb;
+        if (a.IsMeeting) MarkOverlap(row, tb, date, at, a.EndAt(date), a);
         row.MouseLeftButtonUp += (_, e) => { e.Handled = true; AlarmWindow.Edit(Store, a, date); };
         row.MouseRightButtonUp += (_, e) =>
         {
@@ -1004,6 +1081,8 @@ public partial class BoardWindow : GlassWindow
         lines.Children.Add(meta);
         Grid.SetColumn(lines, 1);
         grid.Children.Add(lines);
+        if (t.NotionSource != null)
+            grid.Children.Add(new Border { Width = 2.5, CornerRadius = new CornerRadius(1.25), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(-3.5, 1, 0, 1), Background = B(A(SourceColor(t.NotionSource), 0xA0)) });
         var where = t.Archived ? L.T("w archiwum") : ParseKey(t.Day!).ToString("dddd d MMM", Pl);
         grid.ToolTip = t.Text + "\n" + L.F("Zadanie wielodniowe: dzień {0} z {1}. Teraz: {2}{3}", span.Index, span.Total, where, t.Done ? " – " + L.T("zrobione") : "")
             + (planned ? "\n" + L.T("Zaplanowane (Potrwa do…). Shift + przeciągnięcie na dzień zmienia koniec.") : "");
@@ -1220,6 +1299,16 @@ public partial class BoardWindow : GlassWindow
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         wrapper.Child = grid;
+        if (t.NotionSource != null) // the project as a thin bar in its colour along the left edge (FoA, Tuathan …)
+        {
+            var stripe = new Border
+            {
+                Width = 2.5, CornerRadius = new CornerRadius(1.25), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(-3.5, 1, 0, 1),
+                Background = B(SourceColor(t.NotionSource)), ToolTip = t.NotionSource,
+            };
+            Grid.SetRowSpan(stripe, 2);
+            grid.Children.Add(stripe);
+        }
         double fs = compact ? Math.Max(9.5, S.FontSize - 1.5) : S.FontSize;
 
         // completion circle (ring coloured by Notion priority)
@@ -1308,6 +1397,16 @@ public partial class BoardWindow : GlassWindow
                 CornerRadius = new CornerRadius(3), Padding = new Thickness(4, 0, 4, 0), Margin = new Thickness(0, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center,
                 BorderThickness = new Thickness(1), BorderBrush = Brushes.Transparent, Background = B(A(c, 0x2A)), Child = chip,
             });
+        }
+        if (t.IsTracking || t.TrackedMinutes > 0) // the work timer: "⏱ 1h 05m", live while it runs
+        {
+            var tl = new TextBlock { FontSize = mfs + 0.5, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center,
+                Foreground = t.IsTracking ? Res("AccentBrush") : Res("FgFaint"), FontWeight = t.IsTracking ? FontWeights.Bold : FontWeights.Normal,
+                ToolTip = t.IsTracking ? L.T("Licznik czasu pracy działa – zatrzymasz go w menu zadania") : L.T("Zmierzony czas pracy") };
+            void Show() => tl.Text = (t.IsTracking ? "⏵ " : "⏱ ") + Duration(t.TrackedNow);
+            Show();
+            if (t.IsTracking) _trackLabels.Add(Show);
+            meta.Children.Add(tl);
         }
         if (span is { } sp) // a multi-day task on its current day: "↷ 3/3"
             meta.Children.Add(new TextBlock
@@ -1461,6 +1560,17 @@ public partial class BoardWindow : GlassWindow
     (TaskItem Task, StackPanel Content, TextBlock Text, FrameworkElement Row)? _hover;
     /// <summary>Height of the small second line of a task row (fixed in multi-day lanes, so they line up across days).</summary>
     static double MetaHeight(double fs) => Math.Ceiling(Math.Max(8, fs - 3.5) * 1.45 + 4);
+
+    /// <summary>Labels of running timers, refreshed every 20 s (cleared on each rebuild).</summary>
+    readonly List<Action> _trackLabels = new();
+    System.Windows.Threading.DispatcherTimer? _trackTimer;
+
+    /// <summary>"45 min", "1h 05m".</summary>
+    public static string Duration(double minutes)
+    {
+        var m = (int)Math.Round(minutes);
+        return m < 60 ? $"{m} min" : $"{m / 60}h {m % 60:00}m";
+    }
 
     readonly HashSet<string> _expanded = new();  // tasks whose checklist is open
     string? _checkAddFor;                         // task whose "+ punkt" box is open
