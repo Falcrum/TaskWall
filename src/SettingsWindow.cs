@@ -62,7 +62,7 @@ public sealed class SettingsWindow : DarkWindow
     void AddSection(string title, string subtitle, Func<FrameworkElement> build, bool open = false)
     {
         // one card per section (like the day cells of the board): header, and the body inside the same card when open
-        var chevron = new TextBlock { Text = "", FontFamily = Ui.Font("IconFont"), FontSize = 11, Foreground = Ui.Res("FgDim"), VerticalAlignment = VerticalAlignment.Center };
+        var chevron = new TextBlock { Text = "", FontFamily = Ui.Font("IconFont"), FontSize = 11, Foreground = Ui.Res("FgDim"), VerticalAlignment = VerticalAlignment.Center };
         var head = new DockPanel();
         DockPanel.SetDock(chevron, Dock.Right);
         head.Children.Add(chevron);
@@ -88,7 +88,7 @@ public sealed class SettingsWindow : DarkWindow
             {
                 bool me = ReferenceEquals(b, body);
                 b.Visibility = me ? Visibility.Visible : Visibility.Collapsed;
-                c.Text = me ? "" : "";
+                c.Text = me ? "" : "";
                 if (h.Child is DockPanel dp && dp.Children[1] is StackPanel sp && sp.Children[0] is TextBlock tb)
                     tb.Foreground = me ? Ui.Res("AccentBrush") : Ui.Res("Fg");
             }
@@ -96,7 +96,7 @@ public sealed class SettingsWindow : DarkWindow
         }
         header.MouseLeftButtonUp += (_, _) =>
         {
-            if (body.Visibility == Visibility.Visible) { body.Visibility = Visibility.Collapsed; chevron.Text = ""; name.Foreground = Ui.Res("Fg"); }
+            if (body.Visibility == Visibility.Visible) { body.Visibility = Visibility.Collapsed; chevron.Text = ""; name.Foreground = Ui.Res("Fg"); }
             else Open();
         };
         _accordion.Add((header, body, chevron));
@@ -951,6 +951,7 @@ public sealed class SettingsWindow : DarkWindow
         hours.Children.Add(new TextBlock { Text = "  –  ", VerticalAlignment = VerticalAlignment.Center, Foreground = Ui.Res("FgDim") });
         hours.Children.Add(HourBox(S.WorkEnd, v => S.WorkEnd = v));
         p.Children.Add(Pair(L.T("Godziny pracy (widok dnia; dzień może mieć własne – przeciągnij ich krawędzie na osi)"), hours));
+        p.Children.Add(Check(L.T("Widok dnia: notatnik po lewej, oś godzin po prawej"), S.DayNotesLeft, v => S.DayNotesLeft = v));
         p.Children.Add(Check(L.T("Podsumowanie poprzedniego tygodnia przy pierwszym uruchomieniu w tygodniu"), S.WeeklySummary, v => S.WeeklySummary = v));
         p.Children.Add(Check(L.T("Przycisk widoku roku (365 dni)"), S.ShowYearButton, v => S.ShowYearButton = v));
         p.Children.Add(Check(L.T("Automatycznie przenoś niezrobione zadania z minionych dni na dziś"), S.AutoRollover, v => S.AutoRollover = v));
@@ -985,6 +986,7 @@ public sealed class SettingsWindow : DarkWindow
         themeRow.Children.Add(theme);
         themeRow.Children.Add(restartTheme);
         p.Children.Add(Pair(L.T("Motyw"), themeRow));
+        p.Children.Add(Check(L.T("Bez przezroczystości (pełne, matowe tło)"), S.Opaque, v => S.Opaque = v));
         p.Children.Add(Check(L.T("Matowe szkło (rozmyta tapeta pod tablicą)"), S.Blur, v => S.Blur = v));
         p.Children.Add(Check(L.T("Animacje"), S.Animations, v => S.Animations = v));
         p.Children.Add(Check(L.T("Podpisy przy ikonach górnego paska"), S.BarCaptions, v => S.BarCaptions = v));

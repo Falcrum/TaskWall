@@ -321,5 +321,23 @@ static partial class L
         ("Ten folder należy już do konta „{0}”. Każde konto potrzebuje osobnego folderu.", "This folder already belongs to the account “{0}”. Each account needs its own folder."),
         ("Z bazy Notion „{0}”", "From the Notion database “{0}”"),
         ("Zwijaj zrobione zadania do jednej linii („✓ 3 zrobione”)", "Fold done tasks into one line (“✓ 3 done”)"),
+
+        // 0.23 – state / project bars, notebook, opaque mode
+        ("Bez przezroczystości (pełne, matowe tło)", "No transparency (solid background)"),
+        ("Eksportuj notatki do .md / .txt", "Export notes to .md / .txt"),
+        ("Kliknij, aby przywrócić", "Click to restore"),
+        ("Kliknij: zrobione", "Click: done"),
+        ("Kod  (Ctrl+E, `tekst`; ``` + Enter: blok kodu)", "Code  (Ctrl+E, `text`; ``` + Enter: code block)"),
+        ("Kursywa  (Ctrl+I, *tekst*)", "Italic  (Ctrl+I, *text*)"),
+        ("Pogrubienie  (Ctrl+B, **tekst**)", "Bold  (Ctrl+B, **text**)"),
+        ("Przekreślenie  (Ctrl+Shift+S, ~~tekst~~)", "Strikethrough  (Ctrl+Shift+S, ~~text~~)"),
+        ("Ponów  (Ctrl+Y)", "Redo  (Ctrl+Y)"),
+        ("Markdown (*.md)|*.md|Tekst (*.txt)|*.txt", "Markdown (*.md)|*.md|Text (*.txt)|*.txt"),
+        ("Nie ma jeszcze notatek do wyeksportowania.", "There are no notes to export yet."),
+        ("Ten dzień ({0})…", "This day ({0})…"),
+        ("Wszystkie notatki…", "All notes…"),
+        ("Zapisano notatki:\n{0}", "Notes saved:\n{0}"),
+        ("Widok dnia: notatnik po lewej, oś godzin po prawej", "Day view: the notebook on the left, the hours on the right"),
+        ("tablica: nie ma czego cofnąć (Ctrl+Z)", "board: nothing to undo (Ctrl+Z)"),
     };
 }

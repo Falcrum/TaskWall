@@ -60,6 +60,15 @@ static class YearView
     /// <summary>Accent strength for 1, 2, 3, 4, 5+ done tasks on a day.</summary>
     static readonly byte[] Levels = { 0x48, 0x70, 0x98, 0xC4, 0xFF };
 
+    /// <summary>A filled day mark (BŚU, leave): hatched at 45° in its colour, like on the timeline.</summary>
+    static Brush Hatch(Color c)
+    {
+        var g = new DrawingGroup();
+        g.Children.Add(new GeometryDrawing(new SolidColorBrush(Color.FromArgb(0x40, c.R, c.G, c.B)), null, new RectangleGeometry(new Rect(0, 0, 6, 6))));
+        g.Children.Add(new GeometryDrawing(null, new Pen(new SolidColorBrush(Color.FromArgb(0xD0, c.R, c.G, c.B)), 1.4), Geometry.Parse("M0,6 L6,0 M-1.5,1.5 L1.5,-1.5 M4.5,7.5 L7.5,4.5")));
+        return new DrawingBrush(g) { TileMode = TileMode.Tile, Viewport = new Rect(0, 0, 6, 6), ViewportUnits = BrushMappingMode.Absolute, Viewbox = new Rect(0, 0, 6, 6), ViewboxUnits = BrushMappingMode.Absolute, Stretch = Stretch.None };
+    }
+
     public static FrameworkElement Build(int year, BoardStore store, Action<DateTime> pick, bool animate = true)
     {
         var data = store.Data;
@@ -68,6 +77,7 @@ static class YearView
         var today = DateTime.Today;
         int days = DateTime.IsLeapYear(year) ? 366 : 365;
         var weekendRed = Color.FromRgb(0xF2, 0x6D, 0x6D);
+        var green = TaskMarks.DoneGreen; // done tasks: green, like the state bar of a done task
 
         var byDay = data.Tasks.Where(t => t.Day != null && t.Day.StartsWith(year.ToString()))
             .GroupBy(t => t.Day!).ToDictionary(g => g.Key, g => g.ToList());
@@ -108,15 +118,15 @@ static class YearView
         void Text(string label, double left = 6) => legend.Children.Add(new TextBlock { Text = label, FontSize = 11, Foreground = Ui.Res("FgDim"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(left, 0, 14, 0) });
         // intensity scale: less → more done tasks (like a contribution graph)
         Text(L.T("mniej"), 0);
-        foreach (var a in Levels) { var b = new Border { Background = new SolidColorBrush(Color.FromArgb(a, accent.R, accent.G, accent.B)), Margin = new Thickness(0, 0, 3, 0) }; Swatch(b); }
+        foreach (var a in Levels) { var b = new Border { Background = new SolidColorBrush(Color.FromArgb(a, green.R, green.G, green.B)), Margin = new Thickness(0, 0, 3, 0) }; Swatch(b); }
         Text(L.T("więcej zrobionych"), 3);
         Swatch(new Border { BorderBrush = new SolidColorBrush(accent), BorderThickness = new Thickness(1.5) });
         Text(L.T("zaplanowane"));
         foreach (var m in types)
         {
             var c = BoardWindow.ParseColor(m.Color);
-            if (m.Ring) Swatch(new Border { Background = new SolidColorBrush(Th.Ink(0x26)), Child = new System.Windows.Shapes.Ellipse { Width = 4, Height = 4, Fill = new SolidColorBrush(c), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1.5, 1.5, 0) } });
-            else Swatch(new Border { Background = new SolidColorBrush(c) });
+            if (m.Ring) Swatch(new Border { BorderBrush = new SolidColorBrush(c), BorderThickness = new Thickness(1.5) });
+            else Swatch(new Border { Background = Hatch(c) });
             Text(m.Code);
         }
         header.Children.Add(legend);
@@ -188,43 +198,34 @@ static class YearView
                 bool markRing = mark != null && ringMarks.Contains(mark); // e.g. HO: a frame, the day still shows its tasks
                 if (mark != null && !markRing && marks.TryGetValue(mark, out var mc)) fill = mc;
                 // intensity by the number of done tasks; worked on but nothing finished = a faint tint
-                else if (past && done > 0) fill = Color.FromArgb(Levels[Math.Min(done, Levels.Length) - 1], accent.R, accent.G, accent.B);
-                else if (past && total > 0) fill = Color.FromArgb(0x26, accent.R, accent.G, accent.B);
+                else if (past && done > 0) fill = Color.FromArgb(Levels[Math.Min(done, Levels.Length) - 1], green.R, green.G, green.B);
+                else if (past && total > 0) fill = Color.FromArgb(0x26, green.R, green.G, green.B);
                 else if (!past && total > 0) { fill = future; ring = Color.FromArgb(0xB0, accent.R, accent.G, accent.B); }
-                else fill = past ? empty : future;
-                if (date == today) ring = Th.Ink(0xFF);
-                Color? dot = markRing && marks.TryGetValue(mark!, out var rcol) ? rcol : null; // e.g. HO: a small dot, the colours stay the tasks'
+                // weekends and holidays: tinted, like their cells on the board
+                else fill = row >= 5 || dayOff != null ? Color.FromArgb(past ? (byte)0x1A : (byte)0x24, weekendRed.R, weekendRed.G, weekendRed.B) : past ? empty : future;
+                // HO and the like: a frame in their colour (the day still shows its tasks); today: the accent frame
+                if (markRing && marks.TryGetValue(mark!, out var rcol)) ring = rcol;
+                if (date == today) ring = accent;
+                Brush? hatch = mark != null && !markRing && marks.TryGetValue(mark, out var hc) ? Hatch(hc) : null; // BŚU, leave: hatched in their colour
 
                 bool strong = fill.A > 0x90;
                 var cell = new Border
                 {
                     Margin = new Thickness(1.6),
-                    Background = new SolidColorBrush(fill),
+                    Background = hatch ?? new SolidColorBrush(fill),
                     BorderBrush = ring is { } rc ? new SolidColorBrush(rc) : null,
-                    BorderThickness = new Thickness(ring == null ? 0 : 1.6),
+                    BorderThickness = new Thickness(ring == null ? 0 : date == today ? 2 : 1.5),
                     Cursor = Cursors.Hand,
                     Child = new TextBlock
                     {
                         Text = date.Day.ToString(),
                         HorizontalAlignment = HorizontalAlignment.Center,
                         VerticalAlignment = VerticalAlignment.Center,
-                        Foreground = strong ? Brushes.White : row >= 5 || dayOff != null ? new SolidColorBrush(Color.FromArgb(0xC0, weekendRed.R, weekendRed.G, weekendRed.B)) : Ui.Res("FgFaint"),
+                        Foreground = strong ? Brushes.White : hatch != null ? Ui.Res("Fg") : Ui.Res("FgFaint"),
                         FontWeight = date == today || strong ? FontWeights.Bold : FontWeights.Normal,
                     },
                 };
-                cell.SizeChanged += (_, e) => cell.CornerRadius = new CornerRadius(e.NewSize.Width * 0.24);
-                if (dot is { } dc) // the mark as a small dot in the top-right corner
-                {
-                    var number = cell.Child;
-                    cell.Child = null;
-                    var g = new Grid();
-                    g.Children.Add(number);
-                    var e2 = new System.Windows.Shapes.Ellipse { Fill = new SolidColorBrush(dc), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top };
-                    g.SizeChanged += (_, ev) => { e2.Width = e2.Height = Math.Max(3, ev.NewSize.Width * 0.2); e2.Margin = new Thickness(0, ev.NewSize.Width * 0.1, ev.NewSize.Width * 0.1, 0); };
-                    g.Children.Add(e2);
-                    cell.Child = g;
-                }
-
+                cell.SizeChanged += (_, e) => cell.CornerRadius = new CornerRadius(Math.Min(4, e.NewSize.Width * 0.16));
                 var tip = date.ToString("dddd, d MMMM yyyy", BoardWindow.Pl) + "  ·  " + L.F("tydz. {0}", BoardWindow.WeekNo(date));
                 if (dayOff != null) tip += "\n" + L.F("{0} (dzień wolny)", dayOff);
                 if (total > 0) tip += "\n" + L.F("zadania: {0}, zrobione: {1}", total, done);
@@ -237,13 +238,6 @@ static class YearView
                 panel.Children.Add(cell);
 
                 if (animate) Anim.Enter(cell, 0, 0, 220, (int)(index++ * 1.5)); // "fills itself in"
-                if (date == today && Anim.On)
-                {
-                    var pulse = new DoubleAnimation(1, 0.55, TimeSpan.FromMilliseconds(900))
-                    { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, BeginTime = TimeSpan.FromMilliseconds(animate ? days * 1.5 + 300 : 0) };
-                    cell.BorderBrush.BeginAnimation(SolidColorBrush.OpacityProperty, pulse);
-                    cell.Unloaded += (_, _) => cell.BorderBrush?.BeginAnimation(SolidColorBrush.OpacityProperty, null); // stop the endless clock
-                }
             }
         }
         panel.UnitsWide = x + totalCols;

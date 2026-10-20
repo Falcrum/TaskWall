@@ -1047,22 +1047,9 @@ public partial class BoardWindow : GlassWindow
         var grid = new Grid { Margin = new Thickness(0, 0, 0, compact ? 1 : 3), Opacity = t.Done ? 0.5 : planned ? 0.55 : 0.6, Background = Brushes.Transparent, Cursor = Cursors.Hand };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition());
-        double cs = compact ? 12 : 14;
-        var circle = new Border
-        {
-            Width = cs, Height = cs, CornerRadius = new CornerRadius(cs / 2), BorderThickness = new Thickness(1.3), BorderBrush = Res("FgDim"),
-            Margin = new Thickness(0, Math.Max(0, (fs * 1.33 - cs) / 2), compact ? 6 : 8, 0), VerticalAlignment = VerticalAlignment.Top,
-        };
-        if (t.Done)
-        {
-            circle.Background = Res("AccentBrush");
-            circle.BorderBrush = Res("AccentBrush");
-            circle.Child = new TextBlock { Text = "", FontFamily = (FontFamily)FindResource("IconFont"), FontSize = compact ? 7.5 : 8.5, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        }
-        else if (planned)
-            circle.Child = new System.Windows.Shapes.Ellipse { Stroke = Res("FgDim"), StrokeThickness = 1.3, StrokeDashArray = new DoubleCollection { 2, 1.6 }, Margin = new Thickness(-1.3) };
-        if (planned && !t.Done) circle.BorderThickness = new Thickness(0);
-        grid.Children.Add(circle);
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.Children.Add(TaskMarks.Status(t, compact ? 4 : 4.5, dashed: planned && !t.Done, gap: compact ? 5 : 7));
+        if (TaskMarks.Project(t) is { } proj) { Grid.SetColumn(proj, 2); proj.Margin = new Thickness(3, 1, 0, 1); grid.Children.Add(proj); }
         var text = new TextBlock { TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = fs, Foreground = Res("Fg") };
         var tags = TaskItem.Tags(t.Text, out var rest);
         var main = new Run(tags.Count > 0 ? rest : t.Text);
@@ -1071,7 +1058,6 @@ public partial class BoardWindow : GlassWindow
         // like the task's own row: the name first, the day / project / categories on a small second line
         var meta = new TextBlock { FontSize = Math.Max(8, fs - 3.5), TextTrimming = TextTrimming.CharacterEllipsis, Foreground = Res("FgFaint"), Margin = new Thickness(0, 1, 0, 0), Height = MetaHeight(fs) };
         // project, categories, then the day of the run – the same order as on the task's own row
-        if (t.NotionSource != null) meta.Inlines.Add(new Run(t.NotionSource + "   ") { FontWeight = FontWeights.Bold, Foreground = Tx(SourceColor(t.NotionSource)) });
         foreach (var tag in tags) meta.Inlines.Add(new Run((tag == TaskItem.MeetingTag ? "Meeting" : tag) + "   ") { FontWeight = FontWeights.Bold, Foreground = Tx(TagColor(tag)) });
         meta.Inlines.Add(new Run($"↷ {span.Index}/{span.Total}") { FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush") });
         if (t.Checklist is { Count: > 0 } cl) // the subtasks themselves open on the task's current day
@@ -1081,8 +1067,6 @@ public partial class BoardWindow : GlassWindow
         lines.Children.Add(meta);
         Grid.SetColumn(lines, 1);
         grid.Children.Add(lines);
-        if (t.NotionSource != null)
-            grid.Children.Add(new Border { Width = 2.5, CornerRadius = new CornerRadius(1.25), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(-3.5, 1, 0, 1), Background = B(A(SourceColor(t.NotionSource), 0xA0)) });
         var where = t.Archived ? L.T("w archiwum") : ParseKey(t.Day!).ToString("dddd d MMM", Pl);
         grid.ToolTip = t.Text + "\n" + L.F("Zadanie wielodniowe: dzień {0} z {1}. Teraz: {2}{3}", span.Index, span.Total, where, t.Done ? " – " + L.T("zrobione") : "")
             + (planned ? "\n" + L.T("Zaplanowane (Potrwa do…). Shift + przeciągnięcie na dzień zmienia koniec.") : "");
@@ -1269,6 +1253,21 @@ public partial class BoardWindow : GlassWindow
     static Color SourceColor(string name) =>
         S.Accounts.SelectMany(a => a.Projects).FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.OrdinalIgnoreCase)) is { } l ? ParseColor(l.Color) : Color.FromRgb(0x8A, 0x94, 0xA6);
 
+    /// <summary>A category on a task's second line: its name in bold on a light fill of its colour (Meeting with its icon).</summary>
+    public static Border TagChip(string tag, double mfs)
+    {
+        var c = TagColor(tag);
+        var chip = new StackPanel { Orientation = Orientation.Horizontal };
+        if (tag == TaskItem.MeetingTag)
+            chip.Children.Add(new TextBlock { Text = "",FontFamily = (FontFamily)Application.Current.Resources["IconFont"], FontSize = Math.Max(7, mfs - 1), Foreground = Tx(c), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 1, 3, 0) });
+        chip.Children.Add(new TextBlock { Text = tag == TaskItem.MeetingTag ? "Meeting" : tag, FontSize = mfs, FontWeight = FontWeights.Bold, Foreground = Tx(c) });
+        return new Border
+        {
+            CornerRadius = new CornerRadius(3), Padding = new Thickness(4, 0, 4, 0), Margin = new Thickness(0, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center,
+            BorderThickness = new Thickness(1), BorderBrush = Brushes.Transparent, Background = B(A(c, 0x2A)), Child = chip,
+        };
+    }
+
     static Color TagColor(string tag)
     {
         if (Store.CategoryFor(tag) is { } cat)
@@ -1298,67 +1297,18 @@ public partial class BoardWindow : GlassWindow
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         wrapper.Child = grid;
-        if (t.NotionSource != null) // the project as a thin bar in its colour along the left edge (FoA, Tuathan …)
-        {
-            var stripe = new Border
-            {
-                Width = 2.5, CornerRadius = new CornerRadius(1.25), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(-3.5, 1, 0, 1),
-                Background = B(SourceColor(t.NotionSource)), ToolTip = t.NotionSource,
-            };
-            Grid.SetRowSpan(stripe, 2);
-            grid.Children.Add(stripe);
-        }
         double fs = compact ? Math.Max(9.5, S.FontSize - 1.5) : S.FontSize;
 
-        // completion circle (ring coloured by Notion priority)
-        var prioColor = string.IsNullOrEmpty(t.Priority) ? (Color?)null : PriorityColor(t.Priority);
-        var ringBrush = B(prioColor ?? Th.Ink(0x88));
-        double cs = compact ? 12 : 14;
-        var circle = new Border
-        {
-            Width = cs, Height = cs,
-            CornerRadius = new CornerRadius(cs / 2),
-            BorderThickness = new Thickness(prioColor != null ? 1.8 : 1.3),
-            BorderBrush = ringBrush,
-            Background = Brushes.Transparent,
-            Margin = new Thickness(0, Math.Max(0, (fs * 1.33 - cs) / 2), compact ? 6 : 8, 0),
-            VerticalAlignment = VerticalAlignment.Top,
-            Cursor = Cursors.Hand,
-            ToolTip = (t.Done ? L.T("Zrobione – kliknij, aby przywrócić") : t.IsStarted ? L.T("W trakcie – kliknij: zrobione") : L.T("Kliknij: w trakcie  ·  Shift+klik: od razu zrobione"))
-                + (t.Priority != null ? "\n" + L.F("Priorytet: {0}", t.Priority) : ""),
-        };
-        if (t.Done)
-        {
-            circle.Background = Res("AccentBrush");
-            circle.BorderBrush = Res("AccentBrush");
-            circle.Child = new TextBlock
-            {
-                Text = "", FontFamily = (FontFamily)FindResource("IconFont"), FontSize = compact ? 7.5 : 8.5,
-                Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
-            };
-        }
-        else if (t.IsStarted) // in progress: the left half filled, in the priority colour
-        {
-            double ring = prioColor != null ? 1.8 : 1.3, inset = 1.4;
-            double d = cs - 2 * ring - 2 * inset;
-            circle.Child = new System.Windows.Shapes.Path
-            {
-                Data = new PathGeometry(new[] { new PathFigure(new Point(d / 2, 0), new PathSegment[] { new ArcSegment(new Point(d / 2, d), new Size(d / 2, d / 2), 0, false, SweepDirection.Counterclockwise, true) }, true) }),
-                Fill = prioColor != null ? ringBrush : Res("AccentBrush"),
-                Width = d, Height = d, Margin = new Thickness(inset), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
-            };
-        }
-        circle.MouseEnter += (_, _) => { if (!t.Done) circle.BorderBrush = Res("AccentBrush"); };
-        circle.MouseLeave += (_, _) => { if (!t.Done) circle.BorderBrush = ringBrush; };
-        circle.MouseLeftButtonDown += (_, e) =>
-        {
-            e.Handled = true;
+        // the state bar on the left (empty / half / full; priority colour, green when done) – click: the next state
+        var circle = TaskMarks.Status(t, compact ? 4 : 4.5, () =>
             // three states: not started → in progress → done → not started (Shift: straight to done)
-            SetState(t, t.Done ? TaskState.Todo : t.IsStarted || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? TaskState.Done : TaskState.Started);
-        };
+            SetState(t, t.Done ? TaskState.Todo : t.IsStarted || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? TaskState.Done : TaskState.Started), gap: compact ? 5 : 7);
         grid.Children.Add(circle);
         if (_justToggled == t.Id) Anim.Pop(circle);
+        // the project: a thin bar in its colour on the right edge
+        if (TaskMarks.Project(t) is { } proj) { Grid.SetColumn(proj, 4); proj.Margin = new Thickness(3, 1, 0, 1); grid.Children.Add(proj); }
 
         // text with tag chips (+ notion meta in backlog)
         var content = new StackPanel();
@@ -1374,30 +1324,7 @@ public partial class BoardWindow : GlassWindow
         var meta = new WrapPanel { Margin = new Thickness(0, 1, 0, 0) };
         double mfs = Math.Max(8, fs - 3.5);
         if (span != null) { meta.Height = MetaHeight(fs); meta.ClipToBounds = true; } // a multi-day lane: the same height as its other days' rows
-        if (t.NotionSource != null) // the project: an outlined mark, unlike the filled categories
-        {
-            var sc = SourceColor(t.NotionSource);
-            meta.Children.Add(new Border
-            {
-                CornerRadius = new CornerRadius(3), Padding = new Thickness(4, 0, 4, 0), Margin = new Thickness(0, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center,
-                BorderThickness = new Thickness(1), BorderBrush = B(A(sc, 0x90)),
-                ToolTip = L.F("Z bazy Notion „{0}”", t.NotionSource),
-                Child = new TextBlock { Text = t.NotionSource, FontSize = mfs, FontWeight = FontWeights.Bold, Foreground = Tx(sc) },
-            });
-        }
-        foreach (var tag in tags)
-        {
-            var c = TagColor(tag);
-            var chip = new StackPanel { Orientation = Orientation.Horizontal };
-            if (tag == TaskItem.MeetingTag)
-                chip.Children.Add(new TextBlock { Text = "", FontFamily = (FontFamily)FindResource("IconFont"), FontSize = Math.Max(7, mfs - 1), Foreground = Tx(c), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 1, 3, 0) });
-            chip.Children.Add(new TextBlock { Text = tag == TaskItem.MeetingTag ? "Meeting" : tag, FontSize = mfs, FontWeight = FontWeights.Bold, Foreground = Tx(c) });
-            meta.Children.Add(new Border
-            {
-                CornerRadius = new CornerRadius(3), Padding = new Thickness(4, 0, 4, 0), Margin = new Thickness(0, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center,
-                BorderThickness = new Thickness(1), BorderBrush = Brushes.Transparent, Background = B(A(c, 0x2A)), Child = chip,
-            });
-        }
+        foreach (var tag in tags) meta.Children.Add(TagChip(tag, mfs));
         if (t.IsTracking || t.TrackedMinutes > 0) // the work timer: "⏱ 1h 05m", live while it runs
         {
             var tl = new TextBlock { FontSize = mfs + 0.5, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center,

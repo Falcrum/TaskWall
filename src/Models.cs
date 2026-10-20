@@ -596,6 +596,10 @@ public sealed class AppSettings
     /// <summary>Default working hours (the day view's timeline; a day can have its own).</summary>
     public string WorkStart { get; set; } = "09:00";
     public string WorkEnd { get; set; } = "17:00";
+    /// <summary>The day view: the notebook on the left, the line of hours on the right.</summary>
+    public bool DayNotesLeft { get; set; }
+    /// <summary>No glass at all: the board, the clock and the panels on a solid background.</summary>
+    public bool Opaque { get; set; }
     public WeatherSettings Weather { get; set; } = new();
     public TimelineSettings Timeline { get; set; } = new();
     /// <summary>Update the user said "no" to (not offered again; Settings → Info can still install it).</summary>

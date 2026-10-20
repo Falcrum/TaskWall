@@ -464,6 +464,12 @@ static class Dev
             var noteBack = NotesEditor.RoundTrip(noteMd);
             if (Arg("--selftest") is { } stOut2) File.WriteAllText(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(stOut2))!, "note-roundtrip.txt"), noteBack);
             Check("notes: headings, bold / italic / strike, lists (nested, numbered), check boxes, quote and divider survive a round trip", noteBack == noteMd);
+            const string noteMd2 = "#### Mniejszy\nZobacz [Notion](https://notion.so/x) i `kod`, __też__ _kursywa_\n```\nvar a = 1;\n  **nie formatuj**\n```\n+ plus\n***\nkoniec";
+            const string noteMd2Back = "#### Mniejszy\nZobacz [Notion](https://notion.so/x) i `kod`, **też** *kursywa*\n```\nvar a = 1;\n  **nie formatuj**\n```\n- plus\n---\nkoniec";
+            var noteBack2 = NotesEditor.RoundTrip(noteMd2);
+            if (Arg("--selftest") is { } stOut3) File.WriteAllText(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(stOut3))!, "note-roundtrip2.txt"), noteBack2);
+            Check("notes: heading 4, links, inline code, __bold__ / _italic_, code blocks (kept as typed), + lists and *** dividers", noteBack2 == noteMd2Back);
+            Check("notes: plain-text export without marks", NotesEditor.ToPlain("# Plan\n- [x] **zrobione**\n- lista\n[a](https://b.c)") == "PLAN\n====\n☑ zrobione\n• lista\na (https://b.c)");
             var whDir = Path.Combine(Path.GetTempPath(), "taskwall-wh-" + Guid.NewGuid().ToString("N"));
             var whStore = new BoardStore("work");
             whStore.Open(whDir);

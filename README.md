@@ -37,7 +37,7 @@ TaskWall has no taskbar button. Use the tray icon (left click: the *Today* card,
 | From anywhere | **Ctrl+Shift+Space** brings the board up with a box for today. Left-click the tray icon for the *Today* card with tasks, meetings and alarms |
 | Alarm | clock icon in the top bar, right-click a day → Add alarm (on that day), "+ ALARM" in the Today card, or the tray menu. Time: `15:30`, `9`, `in 20 min`. Repeat: daily, workdays, weekly, every 2 weeks, monthly |
 | Meeting | click the Meeting category under a new task, or type `[Meeting] 14-15:30 Sprint` (also `#meeting at 10 30 min`). The window has title, from–to, reminder and repeat. Meeting hours count towards the day's total |
-| Done | click the circle. The ring colour is the Notion priority |
+| Done | click the bar on the left: empty → half (in progress) → full green (done). Grey / amber / red = low / medium / high priority; the thin bar on the right is the project colour |
 | Edit | click the text (Notion tasks: right click → Edit text) |
 | Checklist | right click → Add checklist. The "☑ 2/5" chip expands it |
 | Move | drag to a day, within a list, onto BACKLOG or ARCHIVE. **Ctrl** makes a copy |
@@ -107,7 +107,7 @@ Switches are in `src/Dev.cs`:
 - `--data <folder>`: separate test data and settings (`.dev\settings.dev.json`); runs next to the installed copy and never touches autostart
 - `--topmost --shot <dir> [--shot-delay s] --exit`: window screenshots
 - `--open day|month|year|timeline|drawer|archive|calendar|settings|today|add|private|alarm|meeting|repeat-mark|ring|ring-soon|search=…|import=…`
-- `--selftest <file>`: data-layer tests (104)
+- `--selftest <file>`: data-layer tests (106)
 
 UI texts are Polish keys wrapped in `L.T(...)` / `L.F(...)`; English lives in `src/Lang/En.*.cs`.
 

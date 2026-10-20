@@ -428,7 +428,9 @@ public partial class App : Application
         Resources["AccentBrush"] = new SolidColorBrush(accent);
         Resources["AccentSoft"] = new SolidColorBrush(Color.FromArgb(0x38, accent.R, accent.G, accent.B));
         byte a = (byte)Math.Clamp(Settings.TintOpacity * 255, Settings.Blur ? 0 : 40, 255);
-        Resources["GlassTint"] = new SolidColorBrush(Th.Glass(a));
+        // no transparency at all: a solid surface in the wallpaper's hue (like the dialogs), nothing shows through
+        Resources["GlassTint"] = new SolidColorBrush(!Settings.Opaque ? Th.Glass(a)
+            : _surfaceTint is { } st ? (Th.Light ? Wallpaper.Surface(st, 0.95, 0.05) : Wallpaper.Surface(st, 0.095, 0.28)) : Th.Glass(255));
         // menus, tool tips and dialogs: the hue of the wallpaper behind the board, so they sit with the glass
         if (_surfaceTint is { } tint)
         {

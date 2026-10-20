@@ -567,7 +567,6 @@ public sealed class TimelineView : Grid
         double rh = RowHeight, top = it.Row * rh + 14, height = rh - 10;
         double x0 = X(it.Start) + 2, xCur = X(it.Current.AddDays(1)) - 2, x1 = X(it.End.AddDays(1)) - 2;
         double fullWidth = Math.Max(6, x1 - x0);
-        var prio = string.IsNullOrEmpty(t.Priority) ? (Color?)null : BoardWindow.PriorityColor(t.Priority);
         var accent = ((SolidColorBrush)Res("AccentBrush")).Color;
 
         var bar = new Grid { Width = fullWidth, Height = height, Tag = t, Cursor = Cursors.Hand, Opacity = t.Done ? 0.5 : 1, Background = Brushes.Transparent };
@@ -575,21 +574,21 @@ public sealed class TimelineView : Grid
         double solid = Math.Clamp(xCur - x0, 6, fullWidth);
         bar.Children.Add(new Border
         {
-            Width = solid, HorizontalAlignment = HorizontalAlignment.Left, CornerRadius = new CornerRadius(7, solid >= fullWidth - 1 ? 7 : 0, solid >= fullWidth - 1 ? 7 : 0, 7),
+            Width = solid, HorizontalAlignment = HorizontalAlignment.Left, CornerRadius = new CornerRadius(4, solid >= fullWidth - 1 ? 4 : 0, solid >= fullWidth - 1 ? 4 : 0, 4),
             Background = B(t.IsStarted ? A(accent, 0x30) : Th.Ink(0x1C)), BorderBrush = B(Th.Ink(0x1A)), BorderThickness = new Thickness(1),
         });
         if (fullWidth - solid > 1)
             bar.Children.Add(new Rectangle
             {
-                Width = fullWidth - solid, HorizontalAlignment = HorizontalAlignment.Right, RadiusX = 7, RadiusY = 7,
+                Width = fullWidth - solid, HorizontalAlignment = HorizontalAlignment.Right, RadiusX = 4, RadiusY = 4,
                 Fill = B(Th.Ink(0x08)), Stroke = B(Th.Ink(0x40)), StrokeThickness = 1, StrokeDashArray = new DoubleCollection { 4, 3 },
             });
-        // the priority stripe at its start (no priority: a neutral one)
-        bar.Children.Add(new Border
-        {
-            Width = 4, HorizontalAlignment = HorizontalAlignment.Left, CornerRadius = new CornerRadius(7, 0, 0, 7),
-            Background = prio is { } pc ? B(pc) : B(Th.Ink(0x40)),
-        });
+        // the state bar at its start (priority colour, green when done; empty / half / full) and the project's on the right
+        var mark = TaskMarks.Status(t, 4, gap: 0);
+        mark.Margin = new Thickness(3, 2, 0, 2);
+        mark.IsHitTestVisible = false;
+        bar.Children.Add(mark);
+        if (TaskMarks.Project(t) is { } proj) { proj.Margin = new Thickness(0, 3, 3, 3); proj.IsHitTestVisible = false; bar.Children.Add(proj); }
 
         // just the name, inside; it stays readable when the bar starts left of the screen (sticky)
         double shift = Math.Max(0, -x0);

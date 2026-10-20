@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
@@ -41,7 +42,11 @@ public sealed class DayView : Grid
     readonly DispatcherTimer _clock = new() { Interval = TimeSpan.FromMinutes(1) };
     DateTime _date = DateTime.Today;
     bool _scrolled;
-    double HourH => Math.Round(App.Settings.FontSize * 3.8);
+    readonly DockPanel _left = new(), _right = new() { Margin = new Thickness(4, 0, 4, 0) };
+    /// <summary>One hour: the whole day fits the height there is (no scrolling), but never so small it can't be grabbed.</summary>
+    double HourH => _scroll.ActualHeight > 0
+        ? Math.Clamp(Math.Floor((_scroll.ActualHeight - 18) / 24 * 4) / 4, Math.Round(App.Settings.FontSize * 2.2), Math.Round(App.Settings.FontSize * 6))
+        : Math.Round(App.Settings.FontSize * 3.8);
     const double Gutter = 56;
 
     static Brush Res(string key) => (Brush)Application.Current.Resources[key];
@@ -59,7 +64,7 @@ public sealed class DayView : Grid
         ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
         ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star), MinWidth = 260 });
 
-        var left = new DockPanel();
+        var left = _left;
         DockPanel.SetDock(_addHost, Dock.Top);
         left.Children.Add(_addHost);
         var looseScroll = new ScrollViewer { Content = _loose, MaxHeight = 96, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
@@ -73,16 +78,18 @@ public sealed class DayView : Grid
         left.Children.Add(_looseBox);
         _scroll.Content = _canvas;
         left.Children.Add(_scroll);
-        Children.Add(left);
+        Children.Add(At2(left, 0));
 
         Children.Add(At2(new Border { Width = 1, Background = Res("Line"), HorizontalAlignment = HorizontalAlignment.Center }, 1));
 
-        var right = new DockPanel { Margin = new Thickness(4, 0, 4, 0) };
+        var right = _right;
         DockPanel.SetDock(_notesTitle, Dock.Top);
         right.Children.Add(_notesTitle);
         right.Children.Add(_notes);
         Children.Add(At2(right, 2));
         _notes.Changed += md => _host.Store().SetNote(Key(_date), md);
+        _notes.ExportClicked += ExportMenu;
+        _scroll.SizeChanged += (_, e) => { if (Math.Abs(e.NewSize.Height - e.PreviousSize.Height) > 0.5) Render(); };
 
         _canvas.SizeChanged += (_, _) => Render();
         _canvas.Drop += OnDrop;
@@ -101,6 +108,14 @@ public sealed class DayView : Grid
     public void Show(DateTime date)
     {
         bool newDay = date.Date != _date;
+        // the notebook on the left or the right (Settings → Tablica)
+        bool notesLeft = App.Settings.DayNotesLeft;
+        SetColumn(_left, notesLeft ? 2 : 0);
+        SetColumn(_right, notesLeft ? 0 : 2);
+        ColumnDefinitions[0].Width = new GridLength(notesLeft ? 2 : 3, GridUnitType.Star);
+        ColumnDefinitions[2].Width = new GridLength(notesLeft ? 3 : 2, GridUnitType.Star);
+        ColumnDefinitions[0].MinWidth = notesLeft ? 260 : 0;
+        ColumnDefinitions[2].MinWidth = notesLeft ? 0 : 260;
         _date = date.Date;
         _notesTitle.Text = L.Up(L.T("Notatki")) + "  ·  " + _date.ToString("dddd d MMMM", BoardWindow.Pl);
         _notesTitle.Foreground = Res("FgDim");
@@ -109,6 +124,64 @@ public sealed class DayView : Grid
         _addHost.Children.Add(_host.AddRow(Key(_date), _date));
         if (newDay) _scrolled = false;
         Render();
+    }
+
+    // ---------- export: this day or every day's notes, as Markdown (.md) or plain text (.txt) ----------
+
+    void ExportMenu(FrameworkElement anchor)
+    {
+        var menu = new ContextMenu { PlacementTarget = anchor };
+        void Item(string header, bool all)
+        {
+            var mi = new MenuItem { Header = header };
+            mi.Click += (_, _) => Export(all);
+            menu.Items.Add(mi);
+        }
+        Item(L.F("Ten dzień ({0})…", _date.ToString("d MMM", BoardWindow.Pl)), false);
+        Item(L.T("Wszystkie notatki…"), true);
+        menu.IsOpen = true;
+    }
+
+    void Export(bool all)
+    {
+        var store = _host.Store();
+        var today = Key(_date);
+        var notes = all
+            ? (store.Data.Notes ?? new()).Where(kv => kv.Value.Text.Trim().Length > 0).OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => (kv.Key, kv.Value.Text)).ToList()
+            : new List<(string Key, string Text)> { (today, _notes.Markdown) };
+        if (notes.Count == 0 || notes.All(n => n.Text.Trim().Length == 0)) { MessageBox.Show(L.T("Nie ma jeszcze notatek do wyeksportowania."), "TaskWall"); return; }
+        var dlg = new Microsoft.Win32.SaveFileDialog
+        {
+            Filter = L.T("Markdown (*.md)|*.md|Tekst (*.txt)|*.txt"),
+            FileName = all ? "TaskWall-notatki" : "TaskWall-notatki-" + today,
+            DefaultExt = ".md",
+        };
+        if (dlg.ShowDialog() != true) return;
+        bool md = !dlg.FileName.EndsWith(".txt", StringComparison.OrdinalIgnoreCase);
+        var sb = new System.Text.StringBuilder();
+        foreach (var (key, text) in notes)
+        {
+            var day = DateTime.ParseExact(key, "yyyy-MM-dd", CultureInfo.InvariantCulture).ToString("dddd d MMMM yyyy", BoardWindow.Pl);
+            if (md)
+            {
+                // the day as the top heading, the note's own headings one level lower (outside code blocks)
+                sb.Append("# ").Append(day).Append("\n\n");
+                bool code = false;
+                foreach (var line in text.Replace("\r", "").Split('\n'))
+                {
+                    if (line.TrimStart().StartsWith("```")) code = !code;
+                    sb.Append(!code && line.StartsWith('#') && !line.StartsWith("######") ? "#" + line : line).Append('\n');
+                }
+            }
+            else sb.Append(day.ToUpper(BoardWindow.Pl)).Append('\n').Append(new string('=', day.Length)).Append("\n\n").Append(NotesEditor.ToPlain(text)).Append('\n');
+            sb.Append('\n');
+        }
+        try
+        {
+            System.IO.File.WriteAllText(dlg.FileName, sb.ToString().TrimEnd() + "\n", new System.Text.UTF8Encoding(false));
+            MessageBox.Show(L.F("Zapisano notatki:\n{0}", dlg.FileName), "TaskWall");
+        }
+        catch (Exception ex) { MessageBox.Show(ex.Message, "TaskWall"); }
     }
 
     // ---------- the agenda ----------
@@ -251,7 +324,7 @@ public sealed class DayView : Grid
         double laneW = area / b.Lanes;
         double x = Gutter + b.Lane * laneW, y = Y(b.From), h = Math.Max(18, Y(b.To) - Y(b.From) - 2);
         var store = _host.Store();
-        var card = new Border { Width = Math.Max(20, laneW - 4), Height = h, CornerRadius = new CornerRadius(6), BorderThickness = new Thickness(1), ClipToBounds = true };
+        var card = new Border { Width = Math.Max(20, laneW - 4), Height = h, CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1), ClipToBounds = true };
         var stack = new StackPanel { Margin = new Thickness(8, 3, 6, 2) };
         var title = new TextBlock { FontSize = App.Settings.FontSize - 0.5, Foreground = Res("Fg"), TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = h > 40 ? TextWrapping.Wrap : TextWrapping.NoWrap };
         var sub = new TextBlock { FontSize = App.Settings.FontSize - 2.5, Foreground = Res("FgFaint"), TextTrimming = TextTrimming.CharacterEllipsis };
@@ -280,30 +353,32 @@ public sealed class DayView : Grid
                 card.ToolTip = $"{ev.Title}\n{ev.TimeText}" + (ev.Location != null ? $"\n{ev.Location}" : "") + $"\n{ev.Feed}";
                 break;
             case TaskItem t:
-                var prio = string.IsNullOrEmpty(t.Priority) ? (Color?)null : BoardWindow.PriorityColor(t.Priority);
                 var accent = ((SolidColorBrush)Res("AccentBrush")).Color;
-                card.Background = b.Proposed ? B(Th.Ink(0x0C)) : B(t.IsStarted ? A(accent, 0x2C) : Th.Ink(0x1C));
-                card.BorderBrush = B(Th.Ink(b.Proposed ? (byte)0x34 : (byte)0x1A));
-                if (b.Proposed) { card.BorderThickness = new Thickness(0); grid.Children.Add(new Rectangle { RadiusX = 6, RadiusY = 6, Stroke = B(Th.Ink(0x40)), StrokeThickness = 1, StrokeDashArray = new DoubleCollection { 4, 3 }, IsHitTestVisible = false }); }
-                card.Opacity = t.Done ? 0.5 : 1;
-                grid.Children.Insert(0, new Border { Width = 4, HorizontalAlignment = HorizontalAlignment.Left, Background = prio is { } pc ? B(pc) : B(Th.Ink(0x3A)) });
-                if (t.NotionSource != null) grid.Children.Add(new Border { Width = 3, HorizontalAlignment = HorizontalAlignment.Right, Background = B(BoardWindow.ParseColor(App.Settings.Accounts.SelectMany(x => x.Projects).FirstOrDefault(p => string.Equals(p.Name, t.NotionSource, StringComparison.OrdinalIgnoreCase))?.Color ?? "#8A94A6")) });
-                TaskItem.Tags(t.Text, out var rest);
-                var circle = new TextBlock { Text = t.Done ? "✓ " : t.IsStarted ? "◐ " : "○ ", FontWeight = FontWeights.Bold, Foreground = t.Done || t.IsStarted ? Res("AccentBrush") : Res("FgDim"), Cursor = Cursors.Hand, ToolTip = L.T("Kliknij: następny stan") };
-                circle.MouseLeftButtonDown += (_, e) => { e.Handled = true; _host.CycleState(t); };
-                var head = new DockPanel();
-                DockPanel.SetDock(circle, Dock.Left);
-                head.Children.Add(circle);
-                title.Text = rest.Length > 0 ? rest : t.Text;
-                if (t.Done) title.TextDecorations = TextDecorations.Strikethrough;
-                head.Children.Add(title);
-                stack.Children.Add(head);
-                var tags = TaskItem.Tags(t.Text, out _);
-                sub.Text = (b.Proposed ? L.T("bez godziny") : range) + "  ·  " + BoardWindow.Hours((b.To - b.From).TotalHours)
-                    + (t.NotionSource != null ? "  ·  " + t.NotionSource : "") + (tags.Count > 0 ? "  ·  " + string.Join(" ", tags) : "")
-                    + (t.IsTracking || t.TrackedMinutes > 0 ? "  ·  ⏱ " + BoardWindow.Duration(t.TrackedNow) : "");
-                stack.Children.Add(sub);
-                card.ToolTip = t.Text + "\n" + (b.Proposed ? L.T("Bez godziny – przeciągnij na właściwą porę, dolną krawędzią ustaw, ile trwało") : range)
+                card.Background = B(t.IsStarted ? A(accent, 0x2C) : Th.Ink(0x1C));
+                card.BorderBrush = B(Th.Ink(0x1A));
+                card.Opacity = t.Done ? 0.55 : 1;
+                // the same marks as everywhere: the state bar on the left (click: next state), the project's on the right
+                var mark = TaskMarks.Status(t, 4, () => _host.CycleState(t), gap: 0);
+                mark.Margin = new Thickness(3, 3, 0, 3);
+                grid.Children.Add(mark);
+                if (TaskMarks.Project(t) is { } proj) { proj.Margin = new Thickness(0, 3, 3, 3); grid.Children.Add(proj); }
+                stack.Margin = new Thickness(12, 3, 8, 2);
+                var tags = TaskItem.Tags(t.Text, out var rest);
+                // like a task row: the hours in the accent before the name, the categories as chips on the second line
+                title.Inlines.Add(new Run(range + "  ") { FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush") });
+                var name = new Run(rest.Length > 0 ? rest : t.Text);
+                if (t.Done) name.TextDecorations = TextDecorations.Strikethrough;
+                title.Inlines.Add(name);
+                stack.Children.Add(title);
+                double mfs = Math.Max(8, App.Settings.FontSize - 3.5);
+                var meta = new WrapPanel { Margin = new Thickness(0, 2, 0, 0) };
+                foreach (var tag in tags) meta.Children.Add(BoardWindow.TagChip(tag, mfs));
+                meta.Children.Add(new TextBlock { Text = BoardWindow.Hours((b.To - b.From).TotalHours), FontSize = Math.Max(9, App.Settings.FontSize - 2.5), Foreground = Res("FgFaint"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
+                if (t.IsTracking || t.TrackedMinutes > 0)
+                    meta.Children.Add(new TextBlock { Text = (t.IsTracking ? "⏵ " : "⏱ ") + BoardWindow.Duration(t.TrackedNow), FontSize = mfs + 0.5, VerticalAlignment = VerticalAlignment.Center,
+                        Foreground = t.IsTracking ? Res("AccentBrush") : Res("FgFaint"), FontWeight = t.IsTracking ? FontWeights.Bold : FontWeights.Normal });
+                if (h >= 34) stack.Children.Add(meta);
+                card.ToolTip = (t.NotionSource != null ? t.NotionSource + " · " : "") + t.Text + "\n" + range + "  ·  " + TaskMarks.StateName(t)
                     + "\n" + L.T("Przeciągnij: zmień godzinę · dolna krawędź: czas trwania (= estymacja) · prawy przycisk: menu");
                 card.Cursor = Cursors.SizeAll;
                 // the lower edge: how long
@@ -345,9 +420,7 @@ public sealed class DayView : Grid
         foreach (var t in loose)
         {
             TaskItem.Tags(t.Text, out var rest);
-            var prio = string.IsNullOrEmpty(t.Priority) ? (Color?)null : BoardWindow.PriorityColor(t.Priority);
-            var circle = new TextBlock { Text = t.Done ? "✓" : t.IsStarted ? "◐" : "○", FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 5, 0), Foreground = t.Done || t.IsStarted ? Res("AccentBrush") : Res("FgDim"), Cursor = Cursors.Hand, ToolTip = L.T("Kliknij: następny stan") };
-            circle.MouseLeftButtonDown += (_, e) => { e.Handled = true; _host.CycleState(t); };
+            var circle = TaskMarks.Status(t, 3.5, () => _host.CycleState(t), gap: 6);
             var name = new TextBlock { Text = rest.Length > 0 ? rest : t.Text, MaxWidth = 220, TextTrimming = TextTrimming.CharacterEllipsis, Foreground = Res("Fg"), FontSize = App.Settings.FontSize - 1 };
             if (t.Done) name.TextDecorations = TextDecorations.Strikethrough;
             var est = new TextBlock { Text = "  " + BoardWindow.Hours(Math.Clamp(t.Estimate ?? 0.5, 0.25, 8)), FontSize = App.Settings.FontSize - 2.5, Foreground = Res("FgFaint"), VerticalAlignment = VerticalAlignment.Center };
@@ -355,10 +428,11 @@ public sealed class DayView : Grid
             row.Children.Add(circle);
             row.Children.Add(name);
             row.Children.Add(est);
+            if (TaskMarks.Project(t) is { } proj) { proj.Margin = new Thickness(7, 1, 0, 1); proj.HorizontalAlignment = HorizontalAlignment.Left; row.Children.Add(proj); }
             var chip = new Border
             {
-                Child = row, Margin = new Thickness(0, 0, 6, 5), Padding = new Thickness(8, 2, 8, 3), CornerRadius = new CornerRadius(5), Cursor = Cursors.SizeAll,
-                Background = B(Th.Ink(0x16)), BorderThickness = new Thickness(3, 0, 0, 0), BorderBrush = prio is { } pc ? B(pc) : B(Th.Ink(0x30)), Opacity = t.Done ? 0.55 : 1,
+                Child = row, Margin = new Thickness(0, 0, 6, 5), Padding = new Thickness(5, 2, 5, 2), CornerRadius = new CornerRadius(4), Cursor = Cursors.SizeAll,
+                Background = B(Th.Ink(0x16)), Opacity = t.Done ? 0.55 : 1,
                 ToolTip = t.Text + "\n" + L.T("Przeciągnij na oś dnia, żeby ustawić godzinę · prawy przycisk: menu"),
             };
             ToolTipService.SetInitialShowDelay(chip, 250);

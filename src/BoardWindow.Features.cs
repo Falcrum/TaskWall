@@ -1079,6 +1079,12 @@ public partial class BoardWindow
 
     void OnKey(object sender, KeyEventArgs e)
     {
+        // writing in the day's notebook: every key belongs to the text – letters, digits, Ctrl+Z, Ctrl+1/2/3 … (only F1: help)
+        if (Keyboard.FocusedElement is RichTextBox)
+        {
+            if (e.Key == Key.F1) { e.Handled = true; HelpWindow.ShowHelp(); }
+            return;
+        }
         if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control) { e.Handled = true; OpenSearch(); return; }
         if (Keyboard.Modifiers == ModifierKeys.Control && e.Key is Key.D1 or Key.D2)
         {
@@ -1143,7 +1149,7 @@ public partial class BoardWindow
     public void Undo()
     {
         if (Store.Undo()) Rebuild();
-        else SyncText.Text = L.T("nie ma czego cofnąć");
+        else { SyncText.Text = L.T("tablica: nie ma czego cofnąć (Ctrl+Z)"); _syncFlash.Stop(); _syncFlash.Start(); }
     }
 
     // ---------- top bar ----------
