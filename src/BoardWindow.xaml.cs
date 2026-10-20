@@ -108,6 +108,7 @@ public partial class BoardWindow : GlassWindow
         if (real.Done && real.IsTracking) Store.StopTracking(real);
         if (state != TaskState.Done) real.Started = state is TaskState.Started or TaskState.Review;
         real.Review = state == TaskState.Review ? true : null;
+        real.NoteState(DayKey(DateTime.Today)); // this day keeps the state it ends with (its history)
         // finished before the planned end: the plan ends today (no future days left hanging)
         var todayKey = DayKey(DateTime.Today);
         if (real.Done && real.PlanEnd != null && real.Day != null && string.CompareOrdinal(todayKey, real.PlanEnd) < 0)

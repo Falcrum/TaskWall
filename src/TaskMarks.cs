@@ -17,11 +17,13 @@ namespace TaskWall;
 static class TaskMarks
 {
     public static readonly Color DoneGreen = Color.FromRgb(0x4C, 0xB8, 0x6C);
+    /// <summary>Review: a soft violet (its own colour, whatever the priority).</summary>
+    public static readonly Color ReviewViolet = Color.FromRgb(0x8C, 0x8C, 0xF7);
     static readonly Color Low = Color.FromRgb(0x7E, 0x8C, 0x9C);
 
-    /// <summary>Done green, else the priority colour (no priority = low, grey).</summary>
+    /// <summary>Done green, review violet, else the priority colour (no priority = low, grey).</summary>
     public static Color StateColor(TaskItem t, string? state = null) =>
-        (state ?? t.State) == "done" ? DoneGreen : BoardWindow.PriorityLevel(t.Priority) switch { 3 => BoardWindow.PriorityColor("high"), 2 => BoardWindow.PriorityColor("medium"), _ => Low };
+        (state ?? t.State) switch { "done" => DoneGreen, "review" => ReviewViolet, _ => BoardWindow.PriorityLevel(t.Priority) switch { 3 => BoardWindow.PriorityColor("high"), 2 => BoardWindow.PriorityColor("medium"), _ => Low } };
 
     /// <summary>The project's colour, or null for a task without a project.</summary>
     public static Color? ProjectColor(TaskItem t) =>
@@ -34,8 +36,8 @@ static class TaskMarks
         "done" => L.T("zrobione"), "review" => L.T("review"), "started" => L.T("w trakcie"), _ => L.T("do zrobienia"),
     };
 
-    /// <summary>How full the bar is: to do 0, in progress ½, review ¾, done 1.</summary>
-    public static double Fill(string state) => state switch { "done" => 1, "review" => 0.75, "started" => 0.5, _ => 0 };
+    /// <summary>How full the bar is: to do 0, in progress ⅓, review ⅔, done 1.</summary>
+    public static double Fill(string state) => state switch { "done" => 1, "review" => 2.0 / 3, "started" => 1.0 / 3, _ => 0 };
 
     /// <summary>
     /// The state bar. <paramref name="width"/> is the bar; the element is a little wider so it is easy to hit.

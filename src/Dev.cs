@@ -416,7 +416,7 @@ static class Dev
             var hand = new TaskItem { Day = "2026-10-13", Estimate = 4, PlanEnd = "2026-10-20" };
             hand.Estimate = 16; BoardWindow.ApplyAutoPlan(hand, hand.Day, 4);
             Check("auto plan follows the estimate, a hand-picked end stays", autoA == "2026-10-15" && auto.PlanEnd == null && hand.PlanEnd == "2026-10-20");
-            Check("progress: in progress (◐) = half", new TaskItem { Started = true }.Progress == 0.5 && new TaskItem().Progress == 0);
+            Check("progress: in progress = a third", Math.Abs(new TaskItem { Started = true }.Progress - 1.0 / 3) < 1e-9 && new TaskItem().Progress == 0);
             var binDir = Path.Combine(Path.GetTempPath(), "taskwall-bin-" + Guid.NewGuid().ToString("N"));
             var binStore = new BoardStore("work");
             binStore.Open(binDir);
@@ -536,9 +536,16 @@ static class Dev
                 cyc.Started = next is BoardWindow.TaskState.Started or BoardWindow.TaskState.Review ? true : cyc.Done ? cyc.Started : null;
                 cyc.Review = next == BoardWindow.TaskState.Review ? true : null;
             }
-            Check("states: a click goes to do → in progress → review → done → to do; review fills ¾",
+            Check("states: a click goes to do → in progress → review → done → to do; review fills ⅔, in progress ⅓",
                 seen.SequenceEqual(new[] { BoardWindow.TaskState.Started, BoardWindow.TaskState.Review, BoardWindow.TaskState.Done, BoardWindow.TaskState.Todo })
-                && new TaskItem { Started = true, Review = true }.Progress == 0.75 && TaskMarks.Fill("review") == 0.75);
+                && Math.Abs(new TaskItem { Started = true, Review = true }.Progress - 2.0 / 3) < 1e-9 && Math.Abs(TaskMarks.Fill("started") - 1.0 / 3) < 1e-9);
+            var hist = new TaskItem { Text = "h", Day = "2026-10-19", Started = true };
+            hist.NoteState("2026-10-19");
+            hist.Stretch(new DateTime(2026, 10, 20), Wd);
+            hist.Review = true; hist.NoteState("2026-10-20");
+            hist.Stretch(new DateTime(2026, 10, 22), Wd);
+            Check("history: in progress stays on its days, review from the day it became review on",
+                hist.DayStates!["2026-10-19"] == "started" && hist.DayStates["2026-10-20"] == "review" && hist.DayStates["2026-10-21"] == "review" && hist.Day == "2026-10-22");
             var night = new Alarm { Kind = "meeting", Day = "2026-10-21", Time = "23:00", End = "02:00" };
             Check("meetings over midnight end the next day (23:00–02:00 = 3 h)", night.Hours == 3 && night.EndAt(new DateTime(2026, 10, 21)) == new DateTime(2026, 10, 22, 2, 0, 0));
             var carried = new TaskItem { Text = "długie", Day = "2026-10-05", Started = true };

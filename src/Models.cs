@@ -49,8 +49,8 @@ public sealed class TaskItem
     /// <summary>The state the task had on each of its earlier days ("started" / "review"), for its history and the reports.</summary>
     public Dictionary<string, string>? DayStates { get; set; }
 
-    /// <summary>Progress 0..1: done = 1, a checklist by its ticked items, otherwise review = ¾, in progress (◐) = half.</summary>
-    [JsonIgnore] public double Progress => Done ? 1 : Checklist is { Count: > 0 } c ? (double)c.Count(x => x.Done) / c.Count : IsReview ? 0.75 : IsStarted ? 0.5 : 0;
+    /// <summary>Progress 0..1: done = 1, a checklist by its ticked items, otherwise review = ⅔, in progress = ⅓.</summary>
+    [JsonIgnore] public double Progress => Done ? 1 : Checklist is { Count: > 0 } c ? (double)c.Count(x => x.Done) / c.Count : IsReview ? 2.0 / 3 : IsStarted ? 1.0 / 3 : 0;
 
     /// <summary>Moving an unfinished task forward from a past day leaves that day in its history; moving it back takes it out.</summary>
     public void NoteMove(string? from, string? to, string today)
@@ -66,6 +66,17 @@ public sealed class TaskItem
     }
 
     /// <summary>
+    /// Remembers the state the task has on its day now (the last change of the day counts): that day keeps it in the
+    /// history when the task carries on to the next day.
+    /// </summary>
+    public void NoteState(string today)
+    {
+        if (Day == null || string.CompareOrdinal(Day, today) > 0) return; // planned ahead: nothing happened yet
+        if (IsStarted) (DayStates ??= new())[Day] = State;
+        else DayStates?.Remove(Day); // back to "to do" (or done): no in-progress / review mark for that day
+    }
+
+    /// <summary>
     /// A task in progress / in review on a past day goes on to <paramref name="today"/>: its day and every working day
     /// since stay in its history with the state it had (the reports show the days worked on it). Done = it stops.
     /// </summary>
@@ -76,6 +87,8 @@ public sealed class TaskItem
         if (!DateTime.TryParseExact(Day, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var from)) return false;
         WorkedDays ??= new();
         DayStates ??= new();
+        // each day keeps the state it had (set when it changed that day, see NoteState); the days since the task's own
+        // day carry its state on – in progress until the day it became review, review from then on
         for (var d = from; d < today.Date && (today.Date - d).TotalDays <= 366; d = d.AddDays(1))
         {
             if (d != from && !workday(d)) continue; // weekends, holidays, leave: not worked
