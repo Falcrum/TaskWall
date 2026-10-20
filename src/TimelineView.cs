@@ -42,6 +42,8 @@ public sealed class TimelineView : Grid
     readonly Action<TaskItem, int> _moveBy;
     readonly Action<TaskItem, DateTime> _setEnd;
     readonly DispatcherTimer _clock = new() { Interval = TimeSpan.FromMinutes(1) };
+    readonly DispatcherTimer _saveZoom = new() { Interval = TimeSpan.FromSeconds(1.2) };
+    bool _menuOpen;
     readonly Canvas _header = new() { ClipToBounds = true, Height = 62, Background = Brushes.Transparent };
     readonly Canvas _days = new() { ClipToBounds = true, IsHitTestVisible = false };
     readonly Canvas _bars = new() { Background = Brushes.Transparent };
@@ -79,8 +81,16 @@ public sealed class TimelineView : Grid
         _moveBy = moveBy;
         _setEnd = setEnd;
         // the "now" line follows the clock
-        _clock.Tick += (_, _) => { if (IsVisible) Render(); };
+        _clock.Tick += (_, _) => { if (IsVisible && _barDrag == null && _dragFrom == null && !_menuOpen) Render(); };
+        LostMouseCapture += (_, _) =>
+        {
+            if (_barDrag is { } lost) { lost.Bar.RenderTransform = null; lost.Bar.Width = lost.Width; }
+            _barDrag = null;
+            _dragFrom = null;
+            Cursor = null;
+        };
         _clock.Start();
+        _saveZoom.Tick += (_, _) => { _saveZoom.Stop(); SettingsStore.Save(App.Settings); };
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         RowDefinitions.Add(new RowDefinition());
@@ -111,9 +121,10 @@ public sealed class TimelineView : Grid
             if (_barDrag is { } bd && e.LeftButton == MouseButtonState.Pressed)
             {
                 double bdx = e.GetPosition(this).X - bd.StartX;
+                if (Math.Abs(bdx) < SystemParameters.MinimumHorizontalDragDistance * 2) bdx = 0;
                 double snapped = Math.Round(bdx / W) * W; // whole days
                 if (bd.Resize) bd.Bar.Width = Math.Max(W * 0.8, bd.Width + snapped);
-                else bd.Bar.RenderTransform = new TranslateTransform(snapped, -1);
+                else bd.Bar.RenderTransform = new TranslateTransform(snapped, 0);
                 return;
             }
             if (_dragFrom is not { } from || e.LeftButton != MouseButtonState.Pressed) return;
@@ -127,8 +138,10 @@ public sealed class TimelineView : Grid
             if (_barDrag is { } bd)
             {
                 _barDrag = null;
+                bool captured = IsMouseCaptured;
                 ReleaseMouseCapture();
-                int days = (int)Math.Round((e.GetPosition(this).X - bd.StartX) / W);
+                double upDx = e.GetPosition(this).X - bd.StartX;
+                int days = !captured || Math.Abs(upDx) < SystemParameters.MinimumHorizontalDragDistance * 2 ? 0 : (int)Math.Round(upDx / W);
                 if (days == 0) { bd.Bar.RenderTransform = null; bd.Bar.Width = bd.Width; return; }
                 var span = Span(bd.Task);
                 if (bd.Resize) _setEnd(bd.Task, (span.End.AddDays(days) < span.Current ? span.Current : span.End.AddDays(days)));
@@ -190,8 +203,10 @@ public sealed class TimelineView : Grid
         double dayAtX = _left + x / W;
         S.DayWidth = Math.Clamp(W * factor, 8, 160);
         _left = dayAtX - x / W;
-        SettingsStore.Save(App.Settings);
+        _saveZoom.Stop();
+        _saveZoom.Start();
         Refresh();
+        if (_growMeetings) { _growMeetings = false; Dispatcher.BeginInvoke(Refresh, DispatcherPriority.Background); }
         App.Board?.UpdateTimelineRange();
     }
 
@@ -201,7 +216,7 @@ public sealed class TimelineView : Grid
         get
         {
             var from = Origin.AddDays(Math.Floor(_left));
-            return (from, from.AddDays(Math.Max(1, Math.Ceiling((ActualWidth > 0 ? ActualWidth : 1200) / W)) - 1));
+            return (from, Origin.AddDays(Math.Floor(_left + Math.Max(1, (ActualWidth > 0 ? ActualWidth : 1200) / W) - 0.001)));
         }
     }
 
@@ -211,7 +226,7 @@ public sealed class TimelineView : Grid
     public void Refresh()
     {
         var store = _store();
-        var all = store.Data.Tasks.Where(t => t.Day != null && !t.Archived && t.Text.Length > 0).Select(t => Span(t)).ToList();
+        var all = store.Data.Tasks.Where(t => !t.Archived && t.Text.Length > 0 && TryKey(t.Day, out _)).Select(t => Span(t)).ToList();
         IEnumerable<(TaskItem T, DateTime Start, DateTime Current, DateTime End, int Workdays)> list = all;
         if (S.Project != null) list = list.Where(x => string.Equals(x.T.NotionSource, S.Project == "" ? null : S.Project, StringComparison.OrdinalIgnoreCase));
         if (S.Category != null) list = list.Where(x => TaskItem.Tags(x.T.Text, out _).Contains(S.Category));
@@ -236,7 +251,9 @@ public sealed class TimelineView : Grid
         // groups in a fixed order; inside each, rows packed: a task takes the first row free over all its days
         var groups = sorted.GroupBy(x => GroupOf(x.T)).OrderBy(g => GroupRank(g.Key)).ThenBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase);
         var items = new List<Item>();
-        int row = 0;
+        // meetings first, in their own group: as many rows as meetings overlap on one day
+        _meetingRows = MeetingLanes(store);
+        int row = _meetingRows > 0 ? _meetingRows + 1 : 0;
         foreach (var g in groups)
         {
             var ends = new List<DateTime>();
@@ -255,12 +272,15 @@ public sealed class TimelineView : Grid
     }
 
     /// <summary>Its days: from the first day worked on, through its current day, to the planned end.</summary>
+    static bool TryKey(string? k, out DateTime d) => DateTime.TryParseExact(k, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out d) && d.Year is > 1990 and < 2200;
+
     static (TaskItem T, DateTime Start, DateTime Current, DateTime End, int Workdays) Span(TaskItem t)
     {
-        var current = Key(t.Day!);
-        var start = t.WorkedDays is { Count: > 0 } w ? new[] { current }.Concat(w.Select(Key)).Min() : current;
+        TryKey(t.Day, out var current); // (callers keep only tasks with a valid day)
+        var worked = (t.WorkedDays ?? new()).Select(k => TryKey(k, out var d) ? d : (DateTime?)null).Where(d => d != null && d < current).Select(d => d!.Value).ToList();
+        var start = worked.Count > 0 ? worked.Min() : current;
         var end = current;
-        if (t.PlanEnd != null && DateTime.TryParseExact(t.PlanEnd, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var pe) && pe > current) end = pe;
+        if (TryKey(t.PlanEnd, out var pe) && pe > current) end = pe < current.AddYears(2) ? pe : current.AddYears(2);
         int workdays = 0;
         for (var d = start; d <= end; d = d.AddDays(1)) if (!DayOff(d)) workdays++;
         return (t, start, current, end, Math.Max(1, workdays));
@@ -273,7 +293,7 @@ public sealed class TimelineView : Grid
     {
         "project" => t.NotionSource ?? "",
         "category" => TaskItem.Tags(t.Text, out _).FirstOrDefault() is { } tag ? (_store().CategoryFor(tag)?.Name ?? tag) : "",
-        "priority" => t.Priority ?? "",
+        "priority" => string.IsNullOrEmpty(t.Priority) ? "" : BoardWindow.PriorityLevel(t.Priority) switch { 3 => SmartAdd.PriorityName(3), 2 => SmartAdd.PriorityName(2), 1 => SmartAdd.PriorityName(1), _ => t.Priority! },
         "state" => t.Done ? L.T("Zrobione") : t.IsStarted ? L.T("W trakcie") : L.T("Do zrobienia"),
         _ => "",
     };
@@ -287,17 +307,17 @@ public sealed class TimelineView : Grid
 
     // ---------- drawing ----------
 
-    static readonly Brush Hatch = MakeHatch();
-    static Brush MakeHatch()
+    /// <summary>45° lines (weekends, public holidays, day marks like BŚU in their colour); offset with the scroll, so the
+    /// pattern runs on unbroken from one day to the next and moves with them.</summary>
+    Brush MakeHatch(Color color)
     {
-        // 45° lines for weekends and public holidays (like the striped days of a planner)
-        var pen = new Pen(new SolidColorBrush(Th.Ink(Th.Light ? (byte)0x2A : (byte)0x16)), 1.2);
+        var pen = new Pen(new SolidColorBrush(color), 1.2);
         var brush = new DrawingBrush(new GeometryDrawing(null, pen, Geometry.Parse("M0,10 L10,0 M-3,3 L3,-3 M7,13 L13,7")))
         {
             TileMode = TileMode.Tile, Viewport = new Rect(0, 0, 10, 10), ViewportUnits = BrushMappingMode.Absolute,
             Viewbox = new Rect(0, 0, 10, 10), ViewboxUnits = BrushMappingMode.Absolute, Stretch = Stretch.None,
+            Transform = new TranslateTransform(-((_left * W) % 10), 0),
         };
-        brush.Freeze();
         return brush;
     }
 
@@ -315,18 +335,32 @@ public sealed class TimelineView : Grid
         double X(DateTime d) => ((d - Origin).TotalDays - _left) * w;
         double bodyHeight = Math.Max(_scroll.ActualHeight, 50);
         var store = _store();
+        var marks = new Dictionary<DateTime, string?>();
+        string? Mark(DateTime d) => marks.TryGetValue(d, out var m) ? m : marks[d] = store.DayMark(BoardWindow.DayKey(d));
 
         // ----- days: columns, hatched days off, month lines -----
+        var offDays = new GeometryGroup();
+        var marked = new Dictionary<Color, GeometryGroup>(); // BŚU, leave … (filled marks): their days hatched in their colour
         for (int i = 0; i < count; i++)
         {
             var d = Origin.AddDays(first + i);
             double x = X(d);
-            if (DayOff(d))
-                _days.Children.Add(At(new Rectangle { Width = w, Height = 4000, Fill = Hatch }, x, 0));
+            if (DayOff(d)) offDays.Children.Add(new RectangleGeometry(new Rect(x, 0, w, 4000)));
+            else if (Mark(d) is { } mcode && store.MarkTypeFor(mcode) is { Ring: false } mtype)
+            {
+                var mc = BoardWindow.ParseColor(mtype.Color);
+                if (!marked.TryGetValue(mc, out var g)) marked[mc] = g = new GeometryGroup();
+                g.Children.Add(new RectangleGeometry(new Rect(x, 0, w, 4000)));
+                _days.Children.Add(At(new Rectangle { Width = w, Height = 4000, Fill = B(A(mc, 0x10)) }, x, 0));
+            }
             bool monthStart = d.Day == 1, weekStart = d.DayOfWeek == DayOfWeek.Monday;
             if (monthStart || (w >= 14 && (w >= 26 || weekStart)))
                 _days.Children.Add(At(new Rectangle { Width = 1, Height = 4000, Fill = B(Th.Ink(monthStart ? (byte)0x30 : weekStart ? (byte)(Th.Light ? 0x22 : 0x18) : (byte)(Th.Light ? 0x14 : 0x0C))) }, x, 0));
         }
+
+        _days.Children.Insert(0, new Rectangle { Width = width, Height = 4000, Fill = MakeHatch(Th.Ink(Th.Light ? (byte)0x2A : (byte)0x16)), Clip = offDays });
+        foreach (var (mc, g) in marked)
+            _days.Children.Add(new Rectangle { Width = width, Height = 4000, Fill = MakeHatch(A(mc, 0x60)), Clip = g });
 
         // ----- header: months on top, then days (wide) / weeks (narrow) -----
         var pl = BoardWindow.Pl;
@@ -380,12 +414,12 @@ public sealed class TimelineView : Grid
         for (int i = 0; i < count; i++)
         {
             var d = Origin.AddDays(first + i);
-            var code = store.DayMark(BoardWindow.DayKey(d));
+            var code = Mark(d);
             if (code == null) continue;
             // a run of the same mark: drawn once, from its first visible day
-            if (i > 0 && store.DayMark(BoardWindow.DayKey(d.AddDays(-1))) == code) continue;
+            if (i > 0 && Mark(d.AddDays(-1)) == code) continue;
             int len = 1;
-            while (i + len < count + 30 && store.DayMark(BoardWindow.DayKey(d.AddDays(len))) == code) len++;
+            while (i + len < count + 30 && Mark(d.AddDays(len)) == code) len++;
             var mt = store.MarkTypeFor(code);
             var mc = mt != null ? BoardWindow.ParseColor(mt.Color) : Color.FromRgb(0x9A, 0xA1, 0xB2);
             var run = new Border
@@ -397,25 +431,6 @@ public sealed class TimelineView : Grid
             };
             _header.Children.Add(At(run, X(d) + 2, DateRows + 3));
         }
-        for (int i = 0; i < count; i++)
-        {
-            var d = Origin.AddDays(first + i);
-            var meetings = CalendarService.On(d).Where(e => !e.IsHoliday && !e.AllDay).Select(e => (At: e.Start.TimeOfDay, End: e.End.TimeOfDay, e.Title))
-                .Concat(store.Alarms.Where(a => a.IsMeeting && a.Occurs(d)).Select(a => (At: a.TimeOfDay, End: a.EndAt(d).TimeOfDay, Title: a.Text)))
-                .OrderBy(m => m.At).ToList();
-            if (meetings.Count == 0) continue;
-            var tip = d.ToString("dddd d MMM", pl) + "\n" + string.Join("\n", meetings.Select(m => $"{m.At:hh\\:mm}–{m.End:hh\\:mm}  {m.Title}"));
-            var violet = Color.FromRgb(0x8C, 0x9B, 0xFF);
-            foreach (var m in meetings)
-            {
-                // where in the day it is (the day is 24 h wide); a short bar for its length
-                double mx = X(d) + w * m.At.TotalHours / 24, mw = Math.Max(3, w * Math.Max(0.25, (m.End - m.At).TotalHours) / 24);
-                _header.Children.Add(At(new Border { Width = mw, Height = 5, CornerRadius = new CornerRadius(2.5), Background = B(A(violet, 0xD0)), ToolTip = tip }, mx, DateRows + 7.5));
-            }
-            if (w >= 30)
-                _header.Children.Add(At(new TextBlock { Text = meetings.Count.ToString(), FontSize = 8.5, FontWeight = FontWeights.Bold, Foreground = Tx(violet), ToolTip = tip }, X(d) + w - 9, DateRows + 4));
-        }
-
         // ----- now: the line at the current hour of today -----
         {
             double x = X(DateTime.Today) + w * DateTime.Now.TimeOfDay.TotalHours / 24;
@@ -430,6 +445,36 @@ public sealed class TimelineView : Grid
         _bars.Width = width;
         var viewFrom = Origin.AddDays(first - 1);
         var viewTo = Origin.AddDays(first + count + 1);
+        if (_meetingRows == 0 && _barDrag == null && _dragFrom == null)
+            for (int i = -1; i < count + 1 && !_growMeetings; i++)
+                if (MeetingsOn(store, Origin.AddDays(first + i)).Count > 0) _growMeetings = true; // panned to days with meetings: make their rows
+        if (_meetingRows > 0)
+        {
+            var violet = Color.FromRgb(0x8C, 0x9B, 0xFF);
+            _bars.Children.Add(At(new Border
+            {
+                CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 0, 6, 1), Background = B(A(violet, 0x26)),
+                Child = new TextBlock { Text = L.Up(L.T("Spotkania")), FontSize = 9.5, FontWeight = FontWeights.Bold, Foreground = Tx(violet) },
+            }, 8, -1));
+            for (int i = -1; i < count + 1; i++)
+            {
+                var d = Origin.AddDays(first + i);
+                var day = MeetingsOn(store, d);
+                var lanes = Lanes(day);
+                if (lanes.Count > 0 && lanes.Max() + 1 > _meetingRows && _meetingRows < 4 && _barDrag == null && _dragFrom == null) { _growMeetings = true; }
+                for (int k = 0; k < day.Count; k++)
+                {
+                    var m = day[k];
+                    double mx = X(d) + w * m.From.TotalHours / 24, mw = Math.Max(3, w * Math.Max(0.1, (m.To - m.From).TotalHours) / 24);
+                    _bars.Children.Add(At(new Border
+                    {
+                        Width = mw, Height = RowHeight - 14, CornerRadius = new CornerRadius(4), Background = B(A(violet, m.Own ? (byte)0xB0 : (byte)0x80)),
+                        BorderBrush = B(violet), BorderThickness = new Thickness(0.8),
+                        ToolTip = $"{m.Title}\n{d.ToString("dddd d MMM", pl)}, {m.From:hh\\:mm}–{m.To:hh\\:mm}" + (m.Own ? "" : "\n" + L.T("z kalendarza")),
+                    }, mx, Math.Min(lanes[k], _meetingRows - 1) * RowHeight + 16));
+                }
+            }
+        }
         string? lastGroup = null;
         bool firstGroup = true;
         foreach (var it in _items.OrderBy(i => i.Row))
@@ -441,8 +486,7 @@ public sealed class TimelineView : Grid
                 Color gc = S.Group == "project" && it.Group.Length > 0 ? ProjectColor(it.Group)
                     : S.Group == "priority" && it.Group.Length > 0 ? BoardWindow.PriorityColor(it.Group) : Th.Ink(0x90);
                 double gy = it.Row * RowHeight - 4;
-                if (!firstGroup)
-                    _bars.Children.Add(At(new Line { X1 = 0, X2 = width, Stroke = B(A(gc, 0x70)), StrokeThickness = 1, StrokeDashArray = new DoubleCollection { 5, 4 } }, 0, gy));
+                _bars.Children.Add(At(new Line { X1 = 0, X2 = width, Stroke = B(A(gc, 0x70)), StrokeThickness = 1, StrokeDashArray = new DoubleCollection { 5, 4 } }, 0, Math.Max(1, gy)));
                 firstGroup = false;
                 var head = new Border
                 {
@@ -457,6 +501,46 @@ public sealed class TimelineView : Grid
         if (_items.Count == 0)
             _bars.Children.Add(At(new TextBlock { Text = L.T("Brak zadań do pokazania – zmień filtry albo dodaj zadania na dni."), Foreground = Res("FgFaint"), FontSize = 12 }, 12, 14));
         App.Board?.UpdateTimelineRange();
+    }
+
+    int _meetingRows;
+    bool _growMeetings;
+
+    sealed record Meeting(TimeSpan From, TimeSpan To, string Title, bool Own);
+
+    /// <summary>Meetings of a day: from the calendars and the board's own (repeating ones too), by start.</summary>
+    static List<Meeting> MeetingsOn(BoardStore store, DateTime d) =>
+        CalendarService.On(d).Where(e => !e.IsHoliday && !e.AllDay)
+            .Select(e => new Meeting(e.Start.TimeOfDay, e.End.Date > e.Start.Date ? TimeSpan.FromHours(24) : e.End.TimeOfDay, e.Title, false))
+            .Concat(store.Alarms.Where(a => a.IsMeeting && a.Occurs(d)).Select(a => new Meeting(a.TimeOfDay, a.EndAt(d).Date > d ? TimeSpan.FromHours(24) : a.EndAt(d).TimeOfDay, a.Text, true)))
+            .OrderBy(m => m.From).ToList();
+
+    /// <summary>Row of each meeting within its day: overlapping ones go under each other.</summary>
+    static List<int> Lanes(List<Meeting> day)
+    {
+        var ends = new List<TimeSpan>();
+        var result = new List<int>();
+        foreach (var m in day)
+        {
+            int lane = ends.FindIndex(e => e <= m.From);
+            if (lane < 0) { lane = ends.Count; ends.Add(m.To); } else ends[lane] = m.To;
+            result.Add(lane);
+        }
+        return result;
+    }
+
+    /// <summary>Rows the meeting group needs: the most meetings at one time on any day of the half year around today.</summary>
+    int MeetingLanes(BoardStore store)
+    {
+        int max = 0;
+        var center = Origin.AddDays(Math.Floor(_left));
+        var last = Visible.To.AddDays(45); // always all that is on screen (so drawing never needs more rows than this)
+        for (var d = center.AddDays(-45); d <= last; d = d.AddDays(1))
+        {
+            var day = MeetingsOn(store, d);
+            if (day.Count > 0) max = Math.Max(max, Lanes(day).Max() + 1);
+        }
+        return Math.Min(max, 4);
     }
 
     static Color ProjectColor(string name) =>
@@ -518,7 +602,7 @@ public sealed class TimelineView : Grid
             bar.Children.Add(title);
         }
         // the right edge: drag it to change how long the task lasts (Potrwa do…)
-        var grip = new Border { Width = 7, HorizontalAlignment = HorizontalAlignment.Right, Background = Brushes.Transparent, Cursor = Cursors.SizeWE, ToolTip = L.T("Przeciągnij, żeby zmienić koniec") };
+        var grip = new Border { Width = Math.Min(7, fullWidth / 4), Visibility = fullWidth < 18 ? Visibility.Collapsed : Visibility.Visible, HorizontalAlignment = HorizontalAlignment.Right, Background = Brushes.Transparent, Cursor = Cursors.SizeWE, ToolTip = L.T("Przeciągnij, żeby zmienić koniec") };
         bar.Children.Add(grip);
 
         var pl = BoardWindow.Pl;
@@ -532,8 +616,11 @@ public sealed class TimelineView : Grid
             + (t.Priority != null ? "\n" + L.F("Priorytet: {0}", t.Priority) : "")
             + (t.Status != null ? "\nStatus: " + t.Status : "")
             + "\n\n" + L.T("Przeciągnij: przesuń · prawa krawędź: zmień koniec · dwuklik: pokaż w tygodniu · prawy przycisk: menu");
-        bar.MouseEnter += (_, _) => { if (_barDrag == null) bar.RenderTransform = new TranslateTransform(0, -1); };
-        bar.MouseLeave += (_, _) => { if (_barDrag == null) bar.RenderTransform = null; };
+        var card = (Border)bar.Children[0];
+        var normalBg = card.Background;
+        var hoverBg = B(t.IsStarted ? A(accent, 0x48) : Th.Ink(0x2A));
+        bar.MouseEnter += (_, _) => { card.Background = hoverBg; card.BorderBrush = B(A(accent, 0xC0)); };
+        bar.MouseLeave += (_, _) => { card.Background = normalBg; card.BorderBrush = B(Th.Ink(0x1A)); };
         bar.MouseLeftButtonDown += (_, e) =>
         {
             e.Handled = true;
@@ -546,6 +633,8 @@ public sealed class TimelineView : Grid
             e.Handled = true;
             var menu = _menu(t, bar);
             menu.PlacementTarget = bar;
+            _menuOpen = true;
+            menu.Closed += (_, _) => _menuOpen = false;
             menu.IsOpen = true;
         };
         _bars.Children.Add(At(bar, x0, top));
@@ -567,7 +656,9 @@ public sealed class TimelineView : Grid
         {
             var box = new ComboBox { MinWidth = minWidth, Margin = new Thickness(0, 0, 6, 0), ToolTip = label };
             foreach (var (value, text) in options) box.Items.Add(new ComboBoxItem { Content = text, Tag = value });
-            box.SelectedItem = box.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string?)i.Tag == current) ?? box.Items[0];
+            var match = box.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string?)i.Tag == current);
+            if (match == null && current != null) set((box.Items[0] as ComboBoxItem)?.Tag as string);
+            box.SelectedItem = match ?? box.Items[0];
             box.SelectionChanged += (_, _) =>
             {
                 set((box.SelectedItem as ComboBoxItem)?.Tag as string);

@@ -921,8 +921,19 @@ public sealed class SettingsWindow : DarkWindow
     {
         var p = new StackPanel();
         p.Children.Add(Check(L.T("Pokazuj weekendy"), S.ShowWeekends, v => S.ShowWeekends = v));
-        p.Children.Add(Check(L.T("Zwijaj zrobione zadania w dniu do jednej linii („✓ 3 zrobione”)"), S.CollapseDone, v => S.CollapseDone = v));
-        p.Children.Add(Check(L.T("Zwijaj zrobione zadania w minionych dniach"), S.CollapsePastDone, v => S.CollapsePastDone = v));
+        // one choice for folding done tasks into "✓ 3 zrobione": never, on past days, everywhere
+        var fold = new ComboBox { Width = 220, HorizontalAlignment = HorizontalAlignment.Left };
+        foreach (var (key, label) in new[] { ("none", L.T("nie")), ("past", L.T("w minionych dniach")), ("all", L.T("we wszystkich dniach")) })
+            fold.Items.Add(new ComboBoxItem { Content = label, Tag = key });
+        fold.SelectedIndex = S.CollapseDone ? 2 : S.FoldPastDone ? 1 : 0;
+        fold.SelectionChanged += (_, _) =>
+        {
+            var k = (fold.SelectedItem as ComboBoxItem)?.Tag as string;
+            S.CollapseDone = k == "all";
+            S.FoldPastDone = k == "past";
+            App.Instance.ApplySettings();
+        };
+        p.Children.Add(Pair(L.T("Zwijaj zrobione zadania do jednej linii („✓ 3 zrobione”)"), fold));
         p.Children.Add(Check(L.T("Podsumowanie poprzedniego tygodnia przy pierwszym uruchomieniu w tygodniu"), S.WeeklySummary, v => S.WeeklySummary = v));
         p.Children.Add(Check(L.T("Przycisk widoku roku (365 dni)"), S.ShowYearButton, v => S.ShowYearButton = v));
         p.Children.Add(Check(L.T("Automatycznie przenoś niezrobione zadania z minionych dni na dziś"), S.AutoRollover, v => S.AutoRollover = v));
@@ -957,6 +968,11 @@ public sealed class SettingsWindow : DarkWindow
         themeRow.Children.Add(theme);
         themeRow.Children.Add(restartTheme);
         p.Children.Add(Pair(L.T("Motyw"), themeRow));
+        var todayStyle = new ComboBox { Width = 220, HorizontalAlignment = HorizontalAlignment.Left };
+        foreach (var (key, label) in new[] { ("line", L.T("linia akcentu u góry")), ("fill", L.T("jaśniejsze tło")) }) todayStyle.Items.Add(new ComboBoxItem { Content = label, Tag = key });
+        todayStyle.SelectedIndex = S.TodayStyle == "fill" ? 1 : 0;
+        todayStyle.SelectionChanged += (_, _) => { S.TodayStyle = (todayStyle.SelectedItem as ComboBoxItem)?.Tag as string ?? "line"; App.Instance.ApplySettings(); };
+        p.Children.Add(Pair(L.T("Dzisiejszy dzień"), todayStyle));
         p.Children.Add(Check(L.T("Matowe szkło (rozmyta tapeta pod tablicą)"), S.Blur, v => S.Blur = v));
         p.Children.Add(Check(L.T("Animacje"), S.Animations, v => S.Animations = v));
         p.Children.Add(Check(L.T("Podpisy przy ikonach górnego paska"), S.BarCaptions, v => S.BarCaptions = v));

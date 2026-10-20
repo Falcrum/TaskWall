@@ -302,25 +302,32 @@ public partial class BoardWindow : GlassWindow
 
     TimelineView? _timeline;
 
-    /// <summary>A bar dragged on the timeline: the task moves by whole days, its planned end along with it.</summary>
-    void TimelineMove(TaskItem t, int days) => Do(() =>
+    /// <summary>
+    /// A bar dragged on the timeline: the whole bar moves by whole days – the days worked on, its day and its planned end
+    /// (as the drag showed it). The dates are read first, so a bad one changes nothing.
+    /// </summary>
+    void TimelineMove(TaskItem t, int days)
     {
-        var real = Store.Materialize(t);
-        if (real.Day == null) return;
-        var plan = real.PlanEnd;
-        var to = DayKey(ParseKey(real.Day).AddDays(days));
-        real.NoteMove(real.Day, to, DayKey(DateTime.Today));
-        real.Day = to;
-        real.PlanEnd = plan != null && ParseKey(plan).AddDays(days) is var end && end > ParseKey(to) ? DayKey(end) : null;
-        Store.Changed(real);
-    });
+        static DateTime? Parse(string? k) => DateTime.TryParseExact(k, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : null;
+        if (days == 0 || Parse(t.Day) is not { } day) return;
+        var plan = Parse(t.PlanEnd);
+        var worked = t.WorkedDays?.Select(Parse).Where(d => d != null).Select(d => DayKey(d!.Value.AddDays(days))).ToList();
+        Do(() =>
+        {
+            var real = Store.Materialize(t);
+            real.Day = DayKey(day.AddDays(days));
+            real.WorkedDays = worked is { Count: > 0 } ? worked : null;
+            real.PlanEnd = plan is { } p && p > day ? DayKey(p.AddDays(days)) : null;
+            Store.Changed(real);
+        });
+    }
 
     /// <summary>A bar's right edge dragged: how long it lasts (Potrwa do…).</summary>
     void TimelineSetEnd(TaskItem t, DateTime end) => Do(() =>
     {
         var real = Store.Materialize(t);
-        if (real.Day == null) return;
-        real.PlanEnd = end.Date > ParseKey(real.Day) ? DayKey(end) : null;
+        if (!DateTime.TryParseExact(real.Day, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day)) return;
+        real.PlanEnd = end.Date > day ? DayKey(end) : null;
         Store.Changed(real);
     });
 
@@ -559,7 +566,10 @@ public partial class BoardWindow : GlassWindow
             BorderThickness = new Thickness(firstCol ? 0 : 1, firstRow ? 0 : 1, 0, 0),
             Opacity = outside ? 0.45 : 1,
         };
-        Brush normalBg = isToday ? B(Th.Ink(0x1C))
+        // today: by default an accent line along the top and the name in the accent (Settings → Wygląd: or the light fill)
+        bool todayFill = isToday && S.TodayStyle == "fill";
+        var accentNow = ((SolidColorBrush)Res("AccentBrush")).Color;
+        Brush normalBg = todayFill ? B(Th.Ink(0x1C))
             : markColor is { } mc && markInfo?.Ring != true ? B(A(mc, 0x16)) // a "ring" mark (HO) only shows its badge
             : Brushes.Transparent;
         var inner = new Border
@@ -570,7 +580,7 @@ public partial class BoardWindow : GlassWindow
             Background = normalBg,
             AllowDrop = true,
         };
-        if (isToday)
+        if (todayFill)
         {
             inner.BorderBrush = B(Th.Ink(0x1E));
             inner.BorderThickness = new Thickness(1);
@@ -578,7 +588,19 @@ public partial class BoardWindow : GlassWindow
         outer.Child = inner;
 
         var dock = new DockPanel();
-        inner.Child = dock;
+        if (isToday && !todayFill)
+        {
+            // the line sits over the cell's top edge: today's header stays level with the other days
+            var layers = new Grid();
+            layers.Children.Add(dock);
+            layers.Children.Add(new Border
+            {
+                Height = 3, CornerRadius = new CornerRadius(1.5), Background = B(accentNow), VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(-2, compact ? -3 : -5, -2, 0), IsHitTestVisible = false,
+            });
+            inner.Child = layers;
+        }
+        else inner.Child = dock;
 
         // ----- header -----
         var header = new Grid { Margin = new Thickness(0, 0, 0, compact ? 2 : 5) };
@@ -586,7 +608,7 @@ public partial class BoardWindow : GlassWindow
         header.ColumnDefinitions.Add(new ColumnDefinition());
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         DockPanel.SetDock(header, Dock.Top);
-        var nameColor = red ? B(WeekendRed) : isPast && !isToday ? Res("FgDim") : Res("Fg");
+        var nameColor = isToday && !todayFill ? Res("AccentBrush") : red ? B(WeekendRed) : isPast && !isToday ? Res("FgDim") : Res("Fg");
         var dateColor = red ? B(WeekendRed) : isToday ? Res("AccentBrush") : Res("FgDim");
         var left = new StackPanel();
         var nameRow = new WrapPanel();
@@ -781,7 +803,7 @@ public partial class BoardWindow : GlassWindow
         }
         // optional (Settings → Tablica): done tasks folded into one "✓ 3 zrobione" line, click to unfold
         // folded: always (Settings → Tablica) or on days that are over (on by default) – a past day shows what is still open
-        bool folding = S.CollapseDone || (S.CollapsePastDone && isPast);
+        bool folding = S.CollapseDone || (S.FoldPastDone && isPast);
         bool fold = folding && !_showDone.Contains(key);
         var listed = tasks.Where(t => !spanIds.Contains(t.Id) && !(fold && t.Done)).ToList();
         foreach (var (t, depth) in Nest(listed))
@@ -969,10 +991,11 @@ public partial class BoardWindow : GlassWindow
         if (t.Done) main.TextDecorations = TextDecorations.Strikethrough;
         text.Inlines.Add(main);
         // like the task's own row: the name first, the day / project / categories on a small second line
-        var meta = new TextBlock { FontSize = Math.Max(8, fs - 3.5), TextTrimming = TextTrimming.CharacterEllipsis, Foreground = Res("FgFaint"), Margin = new Thickness(0, 1, 0, 0) };
+        var meta = new TextBlock { FontSize = Math.Max(8, fs - 3.5), TextTrimming = TextTrimming.CharacterEllipsis, Foreground = Res("FgFaint"), Margin = new Thickness(0, 1, 0, 0), Height = MetaHeight(fs) };
+        // project, categories, then the day of the run – the same order as on the task's own row
+        if (t.NotionSource != null) meta.Inlines.Add(new Run(t.NotionSource + "   ") { FontWeight = FontWeights.Bold, Foreground = Tx(SourceColor(t.NotionSource)) });
+        foreach (var tag in tags) meta.Inlines.Add(new Run((tag == TaskItem.MeetingTag ? "Meeting" : tag) + "   ") { FontWeight = FontWeights.Bold, Foreground = Tx(TagColor(tag)) });
         meta.Inlines.Add(new Run($"↷ {span.Index}/{span.Total}") { FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush") });
-        if (t.NotionSource != null) meta.Inlines.Add(new Run("   " + t.NotionSource) { FontWeight = FontWeights.Bold, Foreground = Tx(SourceColor(t.NotionSource)) });
-        foreach (var tag in tags) meta.Inlines.Add(new Run("   " + (tag == TaskItem.MeetingTag ? "Meeting" : tag)) { FontWeight = FontWeights.Bold, Foreground = Tx(TagColor(tag)) });
         if (t.Checklist is { Count: > 0 } cl) // the subtasks themselves open on the task's current day
             meta.Inlines.Add(new Run($"   ☑ {cl.Count(x => x.Done)}/{cl.Count}"));
         var lines = new StackPanel();
@@ -1260,12 +1283,7 @@ public partial class BoardWindow : GlassWindow
         // small second line under it, so every name starts at the same place
         var meta = new WrapPanel { Margin = new Thickness(0, 1, 0, 0) };
         double mfs = Math.Max(8, fs - 3.5);
-        if (span is { } sp) // a multi-day task on its current day: "↷ 3/3"
-            meta.Children.Add(new TextBlock
-            {
-                Text = $"↷ {sp.Index}/{sp.Total}", FontSize = mfs + 0.5, FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush"),
-                Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center, ToolTip = L.F("Zadanie wielodniowe: dzień {0} z {1}", sp.Index, sp.Total),
-            });
+        if (span != null) { meta.Height = MetaHeight(fs); meta.ClipToBounds = true; } // a multi-day lane: the same height as its other days' rows
         if (t.NotionSource != null) // the project: an outlined mark, unlike the filled categories
         {
             var sc = SourceColor(t.NotionSource);
@@ -1290,6 +1308,12 @@ public partial class BoardWindow : GlassWindow
                 BorderThickness = new Thickness(1), BorderBrush = Brushes.Transparent, Background = B(A(c, 0x2A)), Child = chip,
             });
         }
+        if (span is { } sp) // a multi-day task on its current day: "↷ 3/3"
+            meta.Children.Add(new TextBlock
+            {
+                Text = $"↷ {sp.Index}/{sp.Total}", FontSize = mfs + 0.5, FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush"),
+                Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center, ToolTip = L.F("Zadanie wielodniowe: dzień {0} z {1}", sp.Index, sp.Total),
+            });
         if (t.Done) meta.Opacity = 0.55;
         var mainRun = new Run(tags.Count > 0 ? rest : t.Text);
         text.Inlines.Add(mainRun);
@@ -1434,6 +1458,9 @@ public partial class BoardWindow : GlassWindow
     public void DevExpandAll() { foreach (var t in Store.Data.Tasks.Where(t => t.Checklist is { Count: > 0 })) _expanded.Add(t.Id); Rebuild(); }
     /// <summary>Task row under the mouse (keyboard shortcuts act on it).</summary>
     (TaskItem Task, StackPanel Content, TextBlock Text, FrameworkElement Row)? _hover;
+    /// <summary>Height of the small second line of a task row (fixed in multi-day lanes, so they line up across days).</summary>
+    static double MetaHeight(double fs) => Math.Ceiling(Math.Max(8, fs - 3.5) * 1.45 + 4);
+
     readonly HashSet<string> _expanded = new();  // tasks whose checklist is open
     string? _checkAddFor;                         // task whose "+ punkt" box is open
 

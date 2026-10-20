@@ -564,13 +564,15 @@ public sealed class AppSettings
     public bool DrawerLocked { get; set; }
     /// <summary>Done tasks of a day folded into one line.</summary>
     public bool CollapseDone { get; set; }
-    /// <summary>Done tasks of past days folded into one line (on by default).</summary>
-    public bool CollapsePastDone { get; set; } = true;
+    /// <summary>Done tasks folded on past days only (with <see cref="CollapseDone"/> off).</summary>
+    public bool FoldPastDone { get; set; }
     /// <summary>On the first start of a week: the summary of the week before.</summary>
     public bool WeeklySummary { get; set; } = true;
     public string? LastWeekSummary { get; set; }
     /// <summary>"dark", "light" or "auto" (from the wallpaper brightness).</summary>
     public string Theme { get; set; } = "dark";
+    /// <summary>How today is marked: "line" (an accent line along the top) or "fill" (a lighter cell).</summary>
+    public string TodayStyle { get; set; } = "line";
     public WeatherSettings Weather { get; set; } = new();
     public TimelineSettings Timeline { get; set; } = new();
     /// <summary>Update the user said "no" to (not offered again; Settings → Info can still install it).</summary>
