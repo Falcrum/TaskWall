@@ -302,6 +302,28 @@ public partial class BoardWindow : GlassWindow
 
     TimelineView? _timeline;
 
+    /// <summary>A bar dragged on the timeline: the task moves by whole days, its planned end along with it.</summary>
+    void TimelineMove(TaskItem t, int days) => Do(() =>
+    {
+        var real = Store.Materialize(t);
+        if (real.Day == null) return;
+        var plan = real.PlanEnd;
+        var to = DayKey(ParseKey(real.Day).AddDays(days));
+        real.NoteMove(real.Day, to, DayKey(DateTime.Today));
+        real.Day = to;
+        real.PlanEnd = plan != null && ParseKey(plan).AddDays(days) is var end && end > ParseKey(to) ? DayKey(end) : null;
+        Store.Changed(real);
+    });
+
+    /// <summary>A bar's right edge dragged: how long it lasts (Potrwa do…).</summary>
+    void TimelineSetEnd(TaskItem t, DateTime end) => Do(() =>
+    {
+        var real = Store.Materialize(t);
+        if (real.Day == null) return;
+        real.PlanEnd = end.Date > ParseKey(real.Day) ? DayKey(end) : null;
+        Store.Changed(real);
+    });
+
     /// <summary>The top bar's range text for the timeline (it changes while dragging).</summary>
     void AddTimelineRange()
     {
@@ -343,7 +365,7 @@ public partial class BoardWindow : GlassWindow
             TimelineHost.Visibility = Visibility.Visible;
             if (_timeline == null)
             {
-                _timeline = new TimelineView(() => Store, (t, el) => BuildMenu(t, null, null, el), d => JumpTo(d));
+                _timeline = new TimelineView(() => Store, (t, el) => BuildMenu(t, null, null, el), d => JumpTo(d), TimelineMove, TimelineSetEnd);
                 TimelineHost.Children.Add(_timeline);
             }
             else _timeline.BuildToolbar();
@@ -650,21 +672,23 @@ public partial class BoardWindow : GlassWindow
         if (total > 0) // the counter always sits in the corner; the hours go below it
             right.Children.Add(new TextBlock
             {
-                Text = $"{done}/{total}", FontSize = 10, FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Right,
-                Foreground = done == total ? Res("AccentBrush") : Res("FgDim"),
+                Text = $"{done}/{total}", FontSize = 10, FontWeight = FontWeights.Normal, HorizontalAlignment = HorizontalAlignment.Right,
+                Foreground = done == total ? Res("FgDim") : Res("FgFaint"), // plain numbers: the progress bar is the signal
                 ToolTip = L.F("Zrobione {0} z {1}", done, total) + (archivedDone > 0 ? L.F(" (w tym {0} w archiwum)", archivedDone) : ""),
             });
+        bool overloaded = false;
         if (hours > 0 || meetingHours > 0)
         {
             double left_ = DayLoad(key, tasks, openOnly: true);
             bool workday = !red; // weekends and public holidays: just the hours, no 8 h limit
             bool over = workday && hours + meetingHours > DayHours + 0.01;
+            overloaded = over;
             right.Children.Add(new TextBlock
             {
                 // the workday limit: tasks + meetings against 8 h ("6,5 / 8h"), orange when over
                 Text = workday ? $"{(hours + meetingHours).ToString("0.#", Pl)} / {Hours(DayHours)}" : Hours(hours + meetingHours),
                 FontSize = 10, HorizontalAlignment = HorizontalAlignment.Right,
-                Foreground = over ? B(Color.FromRgb(0xF2, 0xA6, 0x5A)) : Res("FgDim"),
+                Foreground = Res("FgFaint"), // an overloaded day shows in its progress bar (orange), not in the number
                 ToolTip = L.F("Zadania: {0} (zostało {1})", Hours(hours), Hours(left_)) + (meetingHours > 0 ? "\n" + L.F("Spotkania: {0}", Hours(meetingHours)) : "")
                     + (!workday ? "" : "\n" + (over ? L.F("Ponad dzień pracy o {0}", Hours(hours + meetingHours - DayHours)) : L.F("Wolne: {0}", Hours(DayHours - hours - meetingHours)))),
             });
@@ -677,13 +701,15 @@ public partial class BoardWindow : GlassWindow
         {
             var track = new Grid { Height = 3, Margin = new Thickness(0, 0, 2, compact ? 3 : 6) };
             DockPanel.SetDock(track, Dock.Top);
-            track.Children.Add(new Border { CornerRadius = new CornerRadius(1.5), Background = total > 0 ? B(Th.Ink(0x1A)) : Brushes.Transparent });
+            // more than a workday planned: the track turns orange (the numbers stay plain)
+            var orange = Color.FromRgb(0xF2, 0xA6, 0x5A);
+            track.Children.Add(new Border { CornerRadius = new CornerRadius(1.5), Background = overloaded ? B(A(orange, 0x70)) : total > 0 ? B(Th.Ink(0x1A)) : Brushes.Transparent, ToolTip = overloaded ? L.T("Ponad dzień pracy (8 h)") : null });
             var fill = new Border
             {
                 CornerRadius = new CornerRadius(1.5),
                 HorizontalAlignment = HorizontalAlignment.Left,
                 // every day in the accent: full when all done, dimmer while unfinished (and on past days)
-                Background = B(A(((SolidColorBrush)Res("AccentBrush")).Color, done == total ? (byte)0xFF : isToday ? (byte)0xE0 : (byte)0x90)),
+                Background = B(A(overloaded ? orange : ((SolidColorBrush)Res("AccentBrush")).Color, done == total ? (byte)0xFF : isToday ? (byte)0xE0 : (byte)0x90)),
                 Visibility = total > 0 ? Visibility.Visible : Visibility.Collapsed,
                 ToolTip = L.F("Zrobione {0} z {1}", done, total),
             };
@@ -754,12 +780,14 @@ public partial class BoardWindow : GlassWindow
             panel.Children.Add(BuildContinuedRow(t, (days.IndexOf(key) + 1, days.Count), compact, planned: string.CompareOrdinal(key, t.Day) > 0));
         }
         // optional (Settings → Tablica): done tasks folded into one "✓ 3 zrobione" line, click to unfold
-        bool fold = S.CollapseDone && !_showDone.Contains(key);
+        // folded: always (Settings → Tablica) or on days that are over (on by default) – a past day shows what is still open
+        bool folding = S.CollapseDone || (S.CollapsePastDone && isPast);
+        bool fold = folding && !_showDone.Contains(key);
         var listed = tasks.Where(t => !spanIds.Contains(t.Id) && !(fold && t.Done)).ToList();
         foreach (var (t, depth) in Nest(listed))
             panel.Children.Add(BuildTaskRow(t, false, compact, SpanDays(t) is { } sd ? (sd.IndexOf(key) + 1, sd.Count) : null, depth));
         int doneHere = tasks.Count(t => t.Done && !spanIds.Contains(t.Id));
-        if (S.CollapseDone && doneHere > 0)
+        if (folding && doneHere > 0)
         {
             var toggle = new TextBlock
             {
@@ -770,6 +798,12 @@ public partial class BoardWindow : GlassWindow
             panel.Children.Add(toggle);
         }
         var addRow = BuildAddRow(key, date, compact);
+        if (isToday && !compact && tasks.Count == 0 && spanHere.Count == 0 && _addingKey != key) // an empty today: one line of what can be typed
+            panel.Children.Add(new TextBlock
+            {
+                Text = L.T("Pusto. Wpisz np. „Raport 2h #art !!” albo przeciągnij zadanie z backlogu."), TextWrapping = TextWrapping.Wrap,
+                FontSize = Math.Max(9.5, S.FontSize - 2), Foreground = Res("FgFaint"), Opacity = 0.8, Margin = new Thickness(2, 2, 0, 2),
+            });
         if (isPast && _addingKey != key) // past days: "+ dodaj zadanie" only on hover (less clutter)
         {
             addRow.Opacity = 0;
@@ -930,17 +964,22 @@ public partial class BoardWindow : GlassWindow
         if (planned && !t.Done) circle.BorderThickness = new Thickness(0);
         grid.Children.Add(circle);
         var text = new TextBlock { TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = fs, Foreground = Res("Fg") };
-        text.Inlines.Add(new Run($"↷ {span.Index}/{span.Total}  ") { FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush") });
-        if (t.NotionSource != null) text.Inlines.Add(new Run(t.NotionSource + "  ") { FontWeight = FontWeights.Bold, FontSize = Math.Max(8.5, fs - 3), Foreground = Tx(SourceColor(t.NotionSource)) });
         var tags = TaskItem.Tags(t.Text, out var rest);
-        foreach (var tag in tags) text.Inlines.Add(new Run(tag + "  ") { FontWeight = FontWeights.Bold, FontSize = Math.Max(8.5, fs - 3), Foreground = Tx(TagColor(tag)) });
         var main = new Run(tags.Count > 0 ? rest : t.Text);
         if (t.Done) main.TextDecorations = TextDecorations.Strikethrough;
         text.Inlines.Add(main);
+        // like the task's own row: the name first, the day / project / categories on a small second line
+        var meta = new TextBlock { FontSize = Math.Max(8, fs - 3.5), TextTrimming = TextTrimming.CharacterEllipsis, Foreground = Res("FgFaint"), Margin = new Thickness(0, 1, 0, 0) };
+        meta.Inlines.Add(new Run($"↷ {span.Index}/{span.Total}") { FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush") });
+        if (t.NotionSource != null) meta.Inlines.Add(new Run("   " + t.NotionSource) { FontWeight = FontWeights.Bold, Foreground = Tx(SourceColor(t.NotionSource)) });
+        foreach (var tag in tags) meta.Inlines.Add(new Run("   " + (tag == TaskItem.MeetingTag ? "Meeting" : tag)) { FontWeight = FontWeights.Bold, Foreground = Tx(TagColor(tag)) });
         if (t.Checklist is { Count: > 0 } cl) // the subtasks themselves open on the task's current day
-            text.Inlines.Add(new Run($"   ☑ {cl.Count(x => x.Done)}/{cl.Count}") { FontSize = Math.Max(8.5, fs - 2.5), Foreground = Res("FgFaint") });
-        Grid.SetColumn(text, 1);
-        grid.Children.Add(text);
+            meta.Inlines.Add(new Run($"   ☑ {cl.Count(x => x.Done)}/{cl.Count}"));
+        var lines = new StackPanel();
+        lines.Children.Add(text);
+        lines.Children.Add(meta);
+        Grid.SetColumn(lines, 1);
+        grid.Children.Add(lines);
         var where = t.Archived ? L.T("w archiwum") : ParseKey(t.Day!).ToString("dddd d MMM", Pl);
         grid.ToolTip = t.Text + "\n" + L.F("Zadanie wielodniowe: dzień {0} z {1}. Teraz: {2}{3}", span.Index, span.Total, where, t.Done ? " – " + L.T("zrobione") : "")
             + (planned ? "\n" + L.T("Zaplanowane (Potrwa do…). Shift + przeciągnięcie na dzień zmienia koniec.") : "");
@@ -1215,37 +1254,43 @@ public partial class BoardWindow : GlassWindow
         var text = new TextBlock { TextWrapping = span != null ? TextWrapping.NoWrap : TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, Foreground = Res("Fg"), FontSize = fs };
         if (span != null) text.ToolTip = t.Text;
         var tags = TaskItem.Tags(t.Text, out var rest);
-        if (span is { } sp) // a multi-day task on its current day: "↷ 3/3"
-            text.Inlines.Add(new Run($"↷ {sp.Index}/{sp.Total}  ") { FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush"), ToolTip = L.F("Zadanie wielodniowe: dzień {0} z {1}", sp.Index, sp.Total) });
-        if (t.Time != null) // planned hours ("14-16" typed with the task)
+        if (t.Time != null) // planned hours ("14-16" typed with the task) – part of what the task says, so in front
             text.Inlines.Add(new Run((t.End != null ? $"{t.Time}–{t.End}" : t.Time) + "  ") { FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush") });
-        if (t.NotionSource != null) // which Notion database (project) it comes from: an outlined mark, unlike the filled categories
+        // only the status circle before the name; the day of a multi-day task, the project and the categories go to a
+        // small second line under it, so every name starts at the same place
+        var meta = new WrapPanel { Margin = new Thickness(0, 1, 0, 0) };
+        double mfs = Math.Max(8, fs - 3.5);
+        if (span is { } sp) // a multi-day task on its current day: "↷ 3/3"
+            meta.Children.Add(new TextBlock
+            {
+                Text = $"↷ {sp.Index}/{sp.Total}", FontSize = mfs + 0.5, FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush"),
+                Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center, ToolTip = L.F("Zadanie wielodniowe: dzień {0} z {1}", sp.Index, sp.Total),
+            });
+        if (t.NotionSource != null) // the project: an outlined mark, unlike the filled categories
         {
             var sc = SourceColor(t.NotionSource);
-            text.Inlines.Add(new InlineUIContainer(new Border
+            meta.Children.Add(new Border
             {
-                CornerRadius = new CornerRadius(4), Padding = new Thickness(4, 0, 4, 1), Margin = new Thickness(0, 0, 5, 0),
-                BorderThickness = new Thickness(1), BorderBrush = B(A(sc, 0xB0)),
+                CornerRadius = new CornerRadius(3), Padding = new Thickness(4, 0, 4, 0), Margin = new Thickness(0, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center,
+                BorderThickness = new Thickness(1), BorderBrush = B(A(sc, 0x90)),
                 ToolTip = L.F("Z bazy Notion „{0}”", t.NotionSource),
-                Child = new TextBlock { Text = t.NotionSource, FontSize = Math.Max(8.5, fs - 3), FontWeight = FontWeights.Bold, Foreground = Tx(sc) },
-            }) { BaselineAlignment = BaselineAlignment.Center });
+                Child = new TextBlock { Text = t.NotionSource, FontSize = mfs, FontWeight = FontWeights.Bold, Foreground = Tx(sc) },
+            });
         }
         foreach (var tag in tags)
         {
             var c = TagColor(tag);
             var chip = new StackPanel { Orientation = Orientation.Horizontal };
             if (tag == TaskItem.MeetingTag)
-                chip.Children.Add(new TextBlock { Text = "", FontFamily = (FontFamily)FindResource("IconFont"), FontSize = Math.Max(7.5, fs - 4), Foreground = Tx(c), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 1, 4, 0) });
-            chip.Children.Add(new TextBlock { Text = tag == TaskItem.MeetingTag ? "Meeting" : tag, FontSize = Math.Max(8.5, fs - 3), FontWeight = FontWeights.Bold, Foreground = Tx(c) });
-            text.Inlines.Add(new InlineUIContainer(new Border
+                chip.Children.Add(new TextBlock { Text = "", FontFamily = (FontFamily)FindResource("IconFont"), FontSize = Math.Max(7, mfs - 1), Foreground = Tx(c), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 1, 3, 0) });
+            chip.Children.Add(new TextBlock { Text = tag == TaskItem.MeetingTag ? "Meeting" : tag, FontSize = mfs, FontWeight = FontWeights.Bold, Foreground = Tx(c) });
+            meta.Children.Add(new Border
             {
-                CornerRadius = new CornerRadius(4),
-                Padding = new Thickness(4, 0, 4, 1),
-                Margin = new Thickness(0, 0, 5, 0),
-                Background = B(A(c, 0x2E)),
-                Child = chip,
-            }) { BaselineAlignment = BaselineAlignment.Center });
+                CornerRadius = new CornerRadius(3), Padding = new Thickness(4, 0, 4, 0), Margin = new Thickness(0, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center,
+                BorderThickness = new Thickness(1), BorderBrush = Brushes.Transparent, Background = B(A(c, 0x2A)), Child = chip,
+            });
         }
+        if (t.Done) meta.Opacity = 0.55;
         var mainRun = new Run(tags.Count > 0 ? rest : t.Text);
         text.Inlines.Add(mainRun);
         if (t.RuleId != null)
@@ -1287,6 +1332,7 @@ public partial class BoardWindow : GlassWindow
             text.Opacity = 0.45;
         }
         content.Children.Add(text);
+        if (meta.Children.Count > 0) content.Children.Add(meta);
         if (_editOnBuild is { } pe && pe.Id == t.Id && !t.IsVirtual)
         {
             _editOnBuild = null;
@@ -1306,11 +1352,11 @@ public partial class BoardWindow : GlassWindow
 
         if (inBacklog && (!string.IsNullOrEmpty(t.Priority) || !string.IsNullOrEmpty(t.Status)))
         {
-            var meta = new WrapPanel { Margin = new Thickness(0, 3, 0, 1) };
+            // the backlog: priority and Notion status on the same second line
             if (!string.IsNullOrEmpty(t.Priority)) meta.Children.Add(PriorityPill(t.Priority));
             if (!string.IsNullOrEmpty(t.Status))
-                meta.Children.Add(new TextBlock { Text = t.Status, FontSize = 10.5, Foreground = Res("FgFaint"), VerticalAlignment = VerticalAlignment.Center });
-            content.Children.Add(meta);
+                meta.Children.Add(new TextBlock { Text = t.Status, FontSize = 10.5, Foreground = Res("FgFaint"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 0, 0) });
+            if (!content.Children.Contains(meta)) content.Children.Add(meta);
         }
         grid.Children.Add(content);
 
@@ -1498,14 +1544,25 @@ public partial class BoardWindow : GlassWindow
 
     public static string CleanLabel(string s) => LeadingSymbols.Replace(s.Trim(), "").Trim();
 
-    public static Color PriorityColor(string priority)
+    /// <summary>3 high, 2 medium, 1 low, 0 unknown – from the name in any language Notion or the board uses.</summary>
+    public static int PriorityLevel(string? priority)
     {
-        var p = priority.ToLowerInvariant();
-        return p.Contains("high") || p.Contains("wysok") || p.Contains("urgent") || p.Contains("pilne") || p.Contains("krytycz") || p.Contains("critical") ? Color.FromRgb(0xE0, 0x5A, 0x55)
-            : p.Contains("medium") || p.Contains("średn") || p.Contains("normal") ? Color.FromRgb(0x4A, 0x8B, 0xE8)
-            : p.Contains("low") || p.Contains("nisk") ? Color.FromRgb(0x46, 0xB0, 0x6E)
-            : Color.FromRgb(0x8A, 0x90, 0x9E);
+        var p = (priority ?? "").ToLowerInvariant();
+        return p.Contains("high") || p.Contains("wysok") || p.Contains("urgent") || p.Contains("pilne") || p.Contains("krytycz") || p.Contains("critical") ? 3
+            : p.Contains("medium") || p.Contains("średn") || p.Contains("normal") ? 2
+            : p.Contains("low") || p.Contains("nisk") ? 1 : 0;
     }
+
+    /// <summary>One scale everywhere (circles, pills, timeline stripes): high red, medium amber, low a quiet slate.</summary>
+    public static Color PriorityColor(string priority) => PriorityLevel(priority) switch
+    {
+        3 => Color.FromRgb(0xE0, 0x5A, 0x55),
+        2 => Color.FromRgb(0xE8, 0xA2, 0x3A),
+        1 => Color.FromRgb(0x7E, 0x9A, 0xAE),
+        _ => Color.FromRgb(0x8A, 0x90, 0x9E),
+    };
+
+    public static int PriorityRank(string? p) => string.IsNullOrEmpty(p) ? 9 : 3 - PriorityLevel(p);
 
     FrameworkElement PriorityPill(string priority) => new Border
     {

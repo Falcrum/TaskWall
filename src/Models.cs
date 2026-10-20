@@ -564,6 +564,8 @@ public sealed class AppSettings
     public bool DrawerLocked { get; set; }
     /// <summary>Done tasks of a day folded into one line.</summary>
     public bool CollapseDone { get; set; }
+    /// <summary>Done tasks of past days folded into one line (on by default).</summary>
+    public bool CollapsePastDone { get; set; } = true;
     /// <summary>On the first start of a week: the summary of the week before.</summary>
     public bool WeeklySummary { get; set; } = true;
     public string? LastWeekSummary { get; set; }

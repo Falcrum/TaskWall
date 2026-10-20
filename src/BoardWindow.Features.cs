@@ -23,7 +23,6 @@ public partial class BoardWindow
     const string NoPriority = "0000none";
 
     /// <summary>High → medium → low → others, for the priority filter.</summary>
-    static int PriorityRank(string p) => PriorityColor(p) is var c && c == Color.FromRgb(0xE0, 0x5A, 0x55) ? 0 : c == Color.FromRgb(0x4A, 0x8B, 0xE8) ? 1 : c == Color.FromRgb(0x46, 0xB0, 0x6E) ? 2 : 3;
     int _backlogShown = 200; // backlog rows built (more on demand)
 
     // ---------- top bar icons ----------
@@ -44,6 +43,12 @@ public partial class BoardWindow
         MonthViewButton.Content = Icons.Labeled(Icons.Month(), L.T("MIESIĄC"), cap);
         YearButton.Content = Icons.Labeled(Icons.Year(), L.T("ROK"), cap);
         TimelineButton.Content = Icons.Labeled(Icons.Timeline(), "TIMELINE", cap);
+        // one set of icons: the font glyphs of ‹ › ⋯ ⚙ and "hide" replaced by the same vector style as the rest
+        PrevButton.Content = Icons.Chevron(false);
+        NextButton.Content = Icons.Chevron(true);
+        MoreButton.Content = Icons.More();
+        SettingsButton.Content = Icons.Gear();
+        HideButton.Content = Icons.Minimize();
         SearchButton.Content = Icons.Labeled(Icons.Search(), L.T("SZUKAJ"), cap);
         AlarmButton.Content = Icons.Labeled(Icons.Alarm(), L.T("ALARMY"), cap);
         ClearDoneButton.Content = Icons.Labeled(Icons.Clear(), L.T("WYCZYŚĆ"), cap);
@@ -357,6 +362,12 @@ public partial class BoardWindow
         BacklogCount.Text = shown.Count == all.Count ? all.Count.ToString() : $"{shown.Count}/{all.Count}";
         // thousands of rows would freeze the drawer: the first ones, then "show more"
         foreach (var (t, depth) in Nest(shown.Take(_backlogShown))) BacklogList.Children.Add(BuildTaskRow(t, true, depth: depth));
+        if (all.Count == 0) // an empty backlog says what it is for
+            BacklogList.Children.Add(new TextBlock
+            {
+                Text = L.T("Backlog jest pusty. Trafiają tu zadania bez dnia – z Notion albo wpisane poniżej. Komendy działają też tutaj, np. „jutro Raport 2h #art” od razu planuje zadanie."),
+                TextWrapping = TextWrapping.Wrap, Foreground = Res("FgFaint"), FontSize = 11.5, Margin = new Thickness(2, 6, 6, 8),
+            });
         if (shown.Count > _backlogShown)
         {
             var moreRows = new Button { Style = (Style)FindResource("BarButton"), Content = L.F("POKAŻ KOLEJNE ({0} z {1})", Math.Min(200, shown.Count - _backlogShown), shown.Count - _backlogShown), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 4, 0, 4) };

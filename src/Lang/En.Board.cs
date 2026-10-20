@@ -9,6 +9,14 @@ static partial class L
         ("Folder „{0}” nie miał danych tablicy – zapisałem w nim kopię z tego komputera.", "\"{0}\" had no board data – this computer's copy was saved into it."),
         ("Dysk: {0}", "Drive: {0}"),
         ("Zadań w danych: {0} (w archiwum {1})", "Tasks in the data: {0} ({1} archived)"),
+        // 0.19: review
+        ("Backlog jest pusty. Trafiają tu zadania bez dnia – z Notion albo wpisane poniżej. Komendy działają też tutaj, np. „jutro Raport 2h #art” od razu planuje zadanie.", "The backlog is empty. Tasks without a day land here – from Notion or typed below. The commands work here too, e.g. \"tomorrow Report 2h #art\" plans the task right away."),
+        ("Ponad dzień pracy (8 h)", "More than a workday (8 h)"),
+        ("Przeciągnij, żeby zmienić koniec", "Drag to change the end"),
+        ("Przeciągnij: przesuń · prawa krawędź: zmień koniec · dwuklik: pokaż w tygodniu · prawy przycisk: menu", "Drag: move · right edge: change the end · double-click: show in the week · right-click: menu"),
+        ("Pusto. Wpisz np. „Raport 2h #art !!” albo przeciągnij zadanie z backlogu.", "Empty. Type e.g. \"Report 2h #art !!\" or drag a task from the backlog."),
+        ("Zwijaj zrobione zadania w minionych dniach", "Fold done tasks on past days"),
+        ("do zrobienia", "to do"),
         // 0.18: timeline
         ("1 2 3 4 5 6", "1 2 3 4 5 6"),
         ("widok: dzień · tydzień · 2 tygodnie · miesiąc · rok · timeline", "view: day · week · 2 weeks · month · year · timeline"),

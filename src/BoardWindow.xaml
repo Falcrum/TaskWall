@@ -22,9 +22,9 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Style="{StaticResource IconButton}" Content="&#xE76B;" Click="Prev_Click" ToolTip="Wstecz"/>
+                    <Button x:Name="PrevButton" Style="{StaticResource IconButton}" Content="&#xE76B;" Click="Prev_Click" ToolTip="Wstecz"/>
                     <TextBlock x:Name="RangeText" VerticalAlignment="Center" Margin="6,0" FontSize="12"/>
-                    <Button Style="{StaticResource IconButton}" Content="&#xE76C;" Click="Next_Click" ToolTip="Dalej"/>
+                    <Button x:Name="NextButton" Style="{StaticResource IconButton}" Content="&#xE76C;" Click="Next_Click" ToolTip="Dalej"/>
                     <Button x:Name="TodayButton" Style="{StaticResource BarIcon}" Click="Today_Click" Margin="4,0,0,0" ToolTip="Dziś"/>
                     <Border Width="1" Height="16" Margin="6,0" Background="{StaticResource Line}"/>
                     <Border x:Name="ViewSwitch" CornerRadius="8" Background="{StaticResource Hover}" Padding="2" VerticalAlignment="Center">
@@ -53,8 +53,8 @@
                     <Button x:Name="AlarmButton" Style="{StaticResource BarIcon}" Click="Alarm_Click" ToolTip="Alarmy i spotkania"/>
                     <Button x:Name="LayerButton" Style="{StaticResource BarIcon}" Click="Layer_Click" ToolTip="Warstwa (Ctrl+1 / Ctrl+2)"/>
                     <Button x:Name="MoreButton" Style="{StaticResource IconButton}" Content="&#xE712;" Click="More_Click" ToolTip="Więcej" FontSize="16"/>
-                    <Button Style="{StaticResource IconButton}" Content="&#xE713;" Click="Settings_Click" ToolTip="Ustawienia" FontSize="16"/>
-                    <Button Style="{StaticResource IconButton}" Content="&#xE921;" Click="Hide_Click" ToolTip="Ukryj tablicę (pokażesz ją ikoną w zasobniku albo skrótem)" FontSize="15"/>
+                    <Button x:Name="SettingsButton" Style="{StaticResource IconButton}" Content="&#xE713;" Click="Settings_Click" ToolTip="Ustawienia" FontSize="16"/>
+                    <Button x:Name="HideButton" Style="{StaticResource IconButton}" Content="&#xE921;" Click="Hide_Click" ToolTip="Ukryj tablicę (pokażesz ją ikoną w zasobniku albo skrótem)" FontSize="15"/>
                 </StackPanel>
             </Grid>
             <Grid x:Name="ContentHost">

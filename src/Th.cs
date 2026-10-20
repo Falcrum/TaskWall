@@ -34,7 +34,7 @@ static class Th
         Set("Fg", "#1D222C");
         Set("FgDim", "#4A5162");
         Set("FgFaint", "#79808F");
-        Set("Line", "#1F10141C");
+        Set("Line", "#2E10141C"); // day lines a bit stronger: on a light wallpaper the faint ones vanish
         Set("Hover", "#1410141C");
         Set("Field", "#0F10141C");
         Set("FieldBorder", "#2E10141C");
