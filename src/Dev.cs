@@ -549,6 +549,17 @@ static class Dev
             var night = new Alarm { Kind = "meeting", Day = "2026-10-21", Time = "23:00", End = "02:00" };
             Check("meetings over midnight end the next day (23:00–02:00 = 3 h)", night.Hours == 3 && night.EndAt(new DateTime(2026, 10, 21)) == new DateTime(2026, 10, 22, 2, 0, 0));
 
+            var otDir = Path.Combine(Path.GetTempPath(), "tw-ot-" + Guid.NewGuid().ToString("N")[..6]);
+            var otStore = new BoardStore("work");
+            otStore.Open(otDir);
+            otStore.SetWorkHours("2026-10-21", "08:00", "16:00");
+            otStore.SetOvertime("2026-10-21", new[] { (TimeSpan.FromHours(20), TimeSpan.FromHours(22)), (TimeSpan.FromHours(21), TimeSpan.FromHours(23)) });
+            otStore.SetDayMark("2026-10-21", "HO");
+            Check("overtime: overlapping periods join, a day mark keeps them, the report counts their hours",
+                otStore.Overtime("2026-10-21").Count == 1 && otStore.OvertimeHours("2026-10-21") == 3 && otStore.WorkHours("2026-10-21", "09:00", "17:00") == ("08:00", "16:00")
+                && Report.Build(otStore, "work", new DateTime(2026, 10, 19), new DateTime(2026, 10, 25), month: false).Overtime == 3);
+            try { Directory.Delete(otDir, true); } catch { }
+
             // ----- two computers on one cloud folder: each works on its own copy of the drive, and the drive copies the
             // files over like Google Drive does – per file, the newer one wins (that lost one side's changes before 0.26)
             var fa = Path.Combine(Path.GetTempPath(), "tw-sync-A-" + Guid.NewGuid().ToString("N")[..6]);

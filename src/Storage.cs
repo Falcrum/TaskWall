@@ -845,7 +845,7 @@ public sealed class BoardStore
         foreach (var key in Data.Days.Where(kv => !string.IsNullOrEmpty(kv.Value.Mark)).Select(kv => kv.Key).ToList())
         {
             var day = Data.Days[key];
-            Data.Days[key] = new DayInfo { Mark = null, WorkStart = day.WorkStart, WorkEnd = day.WorkEnd, Modified = Stamp.After(day.Modified) };
+            Data.Days[key] = new DayInfo { Mark = null, WorkStart = day.WorkStart, WorkEnd = day.WorkEnd, Overtime = day.Overtime, Modified = Stamp.After(day.Modified) };
             n++;
         }
         foreach (var r in Data.MarkRules.Where(r => !r.Deleted).ToList()) { r.Deleted = true; Changed(r); n++; }
@@ -911,7 +911,7 @@ public sealed class BoardStore
         // same as the series → no override; removing a series mark → "" (explicit "nothing")
         var series = SeriesMark(day);
         string? stored = mark == series ? null : mark ?? "";
-        Data.Days[day] = new DayInfo { Mark = stored, WorkStart = d?.WorkStart, WorkEnd = d?.WorkEnd, Modified = Stamp.After(before) };
+        Data.Days[day] = new DayInfo { Mark = stored, WorkStart = d?.WorkStart, WorkEnd = d?.WorkEnd, Overtime = d?.Overtime, Modified = Stamp.After(before) };
         MarkDirty();
     }
 
@@ -922,9 +922,54 @@ public sealed class BoardStore
     public void SetWorkHours(string day, string? start, string? end)
     {
         Data.Days.TryGetValue(day, out var d);
-        Data.Days[day] = new DayInfo { Mark = d?.Mark, WorkStart = start, WorkEnd = end, Modified = Stamp.After(d?.Modified ?? DateTime.MinValue) };
+        Data.Days[day] = new DayInfo { Mark = d?.Mark, WorkStart = start, WorkEnd = end, Overtime = d?.Overtime, Modified = Stamp.After(d?.Modified ?? DateTime.MinValue) };
         MarkDirty();
     }
+
+    // ---------- overtime: extra working periods of a day ----------
+
+    /// <summary>The day's extra periods (start, end), by start.</summary>
+    public List<(TimeSpan Start, TimeSpan End)> Overtime(string day)
+    {
+        var list = new List<(TimeSpan, TimeSpan)>();
+        if (!Data.Days.TryGetValue(day, out var d) || d.Overtime == null) return list;
+        foreach (var p in d.Overtime)
+            if (ParsePeriod(p) is { } x) list.Add(x);
+        return list.OrderBy(x => x.Item1).ToList();
+    }
+
+    public static (TimeSpan Start, TimeSpan End)? ParsePeriod(string p)
+    {
+        var parts = p.Split('-');
+        static TimeSpan? T(string s) => s.Trim() == "24:00" ? TimeSpan.FromHours(24)
+            : TimeSpan.TryParseExact(s.Trim(), @"h\:mm", System.Globalization.CultureInfo.InvariantCulture, out var t) ? t : null;
+        return parts.Length == 2 && T(parts[0]) is { } a && T(parts[1]) is { } b && b > a ? (a, b) : null;
+    }
+
+    static string Period(TimeSpan a, TimeSpan b) =>
+        $"{a:hh\\:mm}-{(b >= TimeSpan.FromHours(24) ? "24:00" : b.ToString(@"hh\:mm"))}";
+
+    /// <summary>Replaces the day's extra periods (overlapping ones are joined).</summary>
+    public void SetOvertime(string day, IEnumerable<(TimeSpan Start, TimeSpan End)> periods)
+    {
+        var merged = new List<(TimeSpan Start, TimeSpan End)>();
+        foreach (var p in periods.Where(p => p.End > p.Start).OrderBy(p => p.Start))
+        {
+            if (merged.Count > 0 && p.Start <= merged[^1].End) merged[^1] = (merged[^1].Start, p.End > merged[^1].End ? p.End : merged[^1].End);
+            else merged.Add(p);
+        }
+        Data.Days.TryGetValue(day, out var d);
+        Data.Days[day] = new DayInfo
+        {
+            Mark = d?.Mark, WorkStart = d?.WorkStart, WorkEnd = d?.WorkEnd,
+            Overtime = merged.Count > 0 ? merged.Select(p => Period(p.Start, p.End)).ToList() : null,
+            Modified = Stamp.After(d?.Modified ?? DateTime.MinValue),
+        };
+        MarkDirty();
+    }
+
+    /// <summary>Hours of overtime on a day.</summary>
+    public double OvertimeHours(string day) => Overtime(day).Sum(p => (p.End - p.Start).TotalHours);
 
     public string Note(string day) => Data.Notes != null && Data.Notes.TryGetValue(day, out var n) ? n.Text : "";
 
@@ -991,8 +1036,8 @@ public sealed class BoardStore
             var was = snap.Days.TryGetValue(key, out var a) ? a.Mark : null;
             var now = Data.Days.TryGetValue(key, out var b) ? b.Mark : null;
             var wasStart = a?.WorkStart; var wasEnd = a?.WorkEnd;
-            if (was != now || wasStart != b?.WorkStart || wasEnd != b?.WorkEnd)
-                Data.Days[key] = new DayInfo { Mark = was, WorkStart = wasStart, WorkEnd = wasEnd, Modified = Stamp.After(b?.Modified ?? DateTime.MinValue) };
+            if (was != now || wasStart != b?.WorkStart || wasEnd != b?.WorkEnd || string.Join(",", a?.Overtime ?? new()) != string.Join(",", b?.Overtime ?? new()))
+                Data.Days[key] = new DayInfo { Mark = was, WorkStart = wasStart, WorkEnd = wasEnd, Overtime = a?.Overtime, Modified = Stamp.After(b?.Modified ?? DateTime.MinValue) };
         }
         MarkDirty();
         return true;

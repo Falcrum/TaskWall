@@ -625,7 +625,7 @@ public sealed class TimelineView : Grid
                 Fill = B(Th.Ink(0x08)), Stroke = B(Th.Ink(0x40)), StrokeThickness = 1, StrokeDashArray = new DoubleCollection { 4, 3 },
             });
         // the state bar at its start (priority colour, green when done; empty / half / full) and the project's on the right
-        var mark = TaskMarks.Status(t, 4, gap: 0);
+        var mark = TaskMarks.Status(t, TaskMarks.BarWidth, gap: 0);
         mark.Margin = new Thickness(3, 2, 0, 2);
         mark.IsHitTestVisible = false;
         bar.Children.Add(mark);

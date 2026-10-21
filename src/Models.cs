@@ -452,6 +452,8 @@ public sealed class DayInfo
     /// <summary>This day's working hours ("HH:mm"), set on the day view's timeline; null = the default from the settings.</summary>
     public string? WorkStart { get; set; }
     public string? WorkEnd { get; set; }
+    /// <summary>Extra working periods of the day (overtime), "20:00-22:00" each, besides the regular hours.</summary>
+    public List<string>? Overtime { get; set; }
     public DateTime Modified { get; set; } = DateTime.UtcNow;
 }
 
@@ -655,6 +657,8 @@ public sealed class AppSettings
     public bool NotesSource { get; set; }
     /// <summary>No glass at all: the board, the clock and the panels on a solid background.</summary>
     public bool Opaque { get; set; }
+    /// <summary>A fine pattern over the board's background: "none", "dots" or "grid".</summary>
+    public string Pattern { get; set; } = "none";
     public WeatherSettings Weather { get; set; } = new();
     public TimelineSettings Timeline { get; set; } = new();
     /// <summary>Update the user said "no" to (not offered again; Settings → Info can still install it).</summary>

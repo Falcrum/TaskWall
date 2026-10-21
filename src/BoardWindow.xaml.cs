@@ -503,7 +503,7 @@ public partial class BoardWindow : GlassWindow
         if (_layerName != null) _layerName.Text = L.Up(App.AccountName(S.Layer));
         LayerButton.Background = priv ? B(Color.FromArgb(0x40, 0x5C, 0xCB, 0x92)) : B(Th.Ink(0x14));
         LayerButton.Foreground = Res("Fg");
-        ClearDoneButton.Visibility = _view is ViewMode.Year or ViewMode.Timeline ? Visibility.Collapsed : Visibility.Visible;
+        ClearDoneButton.Visibility = Visibility.Collapsed; // a rare action: it lives in the ⋯ menu (fewer icons on the bar)
         UpdateBacklogButton();
 
         RangeText.Inlines.Clear();
@@ -1069,7 +1069,7 @@ public partial class BoardWindow : GlassWindow
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         // an earlier day: the state it had that day (in progress / review); a planned one: dashed
         var dayState = !planned && !t.Done && dayKey != null ? t.DayStates?.GetValueOrDefault(dayKey) ?? "started" : null;
-        grid.Children.Add(TaskMarks.Status(t, compact ? 4 : 4.5, dashed: planned && !t.Done, gap: compact ? 5 : 7, state: dayState));
+        grid.Children.Add(TaskMarks.Status(t, TaskMarks.BarWidth, dashed: planned && !t.Done, gap: compact ? 5 : 7, state: dayState));
         if (TaskMarks.Right(t) is { } proj) { Grid.SetColumn(proj, 2); proj.Margin = new Thickness(3, 1, 0, 1); grid.Children.Add(proj); }
         var text = new TextBlock { TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = fs, Foreground = Res("Fg") };
         var tags = TaskItem.Tags(t.Text, out var rest);
@@ -1323,7 +1323,7 @@ public partial class BoardWindow : GlassWindow
         double fs = compact ? Math.Max(9.5, S.FontSize - 1.5) : S.FontSize;
 
         // the state bar on the left (empty / half / full; priority colour, green when done) – click: the next state
-        var circle = TaskMarks.Status(t, compact ? 4 : 4.5, () =>
+        var circle = TaskMarks.Status(t, TaskMarks.BarWidth, () =>
             // three states: not started → in progress → done → not started (Shift: straight to done)
             SetState(t, NextState(t, Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))), gap: compact ? 5 : 7);
         grid.Children.Add(circle);
@@ -1393,7 +1393,7 @@ public partial class BoardWindow : GlassWindow
             chip.PreviewMouseLeftButtonUp += (_, e) =>
             {
                 e.Handled = true;
-                if (!_expanded.Remove(t.Id)) _expanded.Add(t.Id);
+                if (!_expanded.Remove(t.Id)) { _expanded.Add(t.Id); _justExpanded = t.Id; }
                 Rebuild();
             };
             side.Children.Add(chip);
@@ -1416,6 +1416,7 @@ public partial class BoardWindow : GlassWindow
             // (a multi-day task in its lane: the subtasks go under the lanes of that day only, see BuildDay)
             // its own row across the text, counters and estimate columns: the points use the whole width of the day
             var checklist = BuildChecklist(t, fs);
+            if (_justExpanded == t.Id) { _justExpanded = null; Anim.Enter(checklist, 0, -6, 240); } // the subtasks unfold
             Grid.SetRow(checklist, 1);
             Grid.SetColumn(checklist, 1);
             Grid.SetColumnSpan(checklist, 3);
@@ -1503,6 +1504,7 @@ public partial class BoardWindow : GlassWindow
     }
 
     public Action? DevOpenMenu;
+    string? _justExpanded;
     public void DevExpandAll() { foreach (var t in Store.Data.Tasks.Where(t => t.Checklist is { Count: > 0 })) _expanded.Add(t.Id); Rebuild(); }
     /// <summary>Task row under the mouse (keyboard shortcuts act on it).</summary>
     (TaskItem Task, StackPanel Content, TextBlock Text, FrameworkElement Row)? _hover;

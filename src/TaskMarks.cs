@@ -81,12 +81,15 @@ static class TaskMarks
     /// The marks on the right edge, side by side: the priority (red high, amber medium, slate low; none = no bar) and the
     /// project's colour (outermost). Null when the task has neither.
     /// </summary>
-    public static FrameworkElement? Right(TaskItem t, double width = 2.5)
+    /// <summary>One width for all the bars (state, priority, project): they read as one set.</summary>
+    public const double BarWidth = 4;
+
+    public static FrameworkElement? Right(TaskItem t, double width = BarWidth)
     {
         var panel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Stretch };
         Border Bar(Color c, string tip)
         {
-            var b = new Border { Width = width, CornerRadius = new CornerRadius(width / 2), Margin = new Thickness(1.5, 1, 0, 1), Background = new SolidColorBrush(c), ToolTip = tip };
+            var b = new Border { Width = width, CornerRadius = new CornerRadius(Math.Min(1.6, width / 3)), Margin = new Thickness(2, 1, 0, 1), Background = new SolidColorBrush(c), ToolTip = tip };
             ToolTipService.SetInitialShowDelay(b, 300);
             return b;
         }

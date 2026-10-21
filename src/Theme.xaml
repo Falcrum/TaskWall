@@ -155,7 +155,7 @@
                         <Border.Effect>
                             <DropShadowEffect BlurRadius="16" ShadowDepth="4" Direction="270" Opacity="0.45" Color="Black"/>
                         </Border.Effect>
-                        <Border Background="{DynamicResource MenuBg}" BorderBrush="{DynamicResource MenuBorder}" BorderThickness="1" CornerRadius="10" Padding="4,5" MinWidth="200">
+                        <Border Background="{DynamicResource MenuBg}" BorderBrush="{DynamicResource MenuBorder}" BorderThickness="1" CornerRadius="8" Padding="4,5" MinWidth="200">
                             <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
                         </Border>
                     </Border>
@@ -192,7 +192,7 @@
                                 <Border.Effect>
                                     <DropShadowEffect BlurRadius="16" ShadowDepth="4" Direction="270" Opacity="0.45" Color="Black"/>
                                 </Border.Effect>
-                                <Border Background="{DynamicResource MenuBg}" BorderBrush="{DynamicResource MenuBorder}" BorderThickness="1" CornerRadius="10" Padding="4,5" MinWidth="160">
+                                <Border Background="{DynamicResource MenuBg}" BorderBrush="{DynamicResource MenuBorder}" BorderThickness="1" CornerRadius="8" Padding="4,5" MinWidth="160">
                                     <ScrollViewer MaxHeight="420" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                         <StackPanel IsItemsHost="True"/>
                                     </ScrollViewer>

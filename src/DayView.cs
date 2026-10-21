@@ -270,9 +270,65 @@ public sealed class DayView : Grid
         // outside the working hours: hatched like the days off elsewhere; the hours themselves clean
         var hatch = new DrawingBrush(new GeometryDrawing(null, new Pen(B(Th.Ink(Th.Light ? (byte)0x22 : (byte)0x12)), 1.1), Geometry.Parse("M0,10 L10,0 M-3,3 L3,-3 M7,13 L13,7")))
             { TileMode = TileMode.Tile, Viewport = new Rect(0, 0, 10, 10), ViewportUnits = BrushMappingMode.Absolute, Viewbox = new Rect(0, 0, 10, 10), ViewboxUnits = BrushMappingMode.Absolute, Stretch = Stretch.None };
-        _canvas.Children.Add(At(new Rectangle { Width = area + 4, Height = Math.Max(0, Y(ws) - 8), Fill = hatch }, Gutter - 2, 8));
-        _canvas.Children.Add(At(new Rectangle { Width = area + 4, Height = Math.Max(0, Y(TimeSpan.FromHours(24)) - Y(we)), Fill = hatch }, Gutter - 2, Y(we)));
+        // extra working periods (overtime, e.g. 20:00–22:00): clean like the regular hours, with their own slot for tasks
+        var store = _host.Store();
+        var overtime = store.Overtime(Key(_date));
+        var accentC = ((SolidColorBrush)Res("AccentBrush")).Color;
+        var cursor = TimeSpan.Zero;
+        foreach (var (a, b) in overtime.Append((ws, we)).OrderBy(p => p.Item1))
+        {
+            if (a > cursor) HatchRect(cursor, a);
+            if (b > cursor) cursor = b;
+        }
+        if (cursor < TimeSpan.FromHours(24)) HatchRect(cursor, TimeSpan.FromHours(24));
         _canvas.Children.Add(At(new Rectangle { Width = area + 4, Height = Y(we) - Y(ws), Fill = B(Th.Ink(0x06)) }, Gutter - 2, Y(ws)));
+        for (int i = 0; i < overtime.Count; i++)
+        {
+            var (a, b) = overtime[i];
+            int index = i;
+            var slot = new Border
+            {
+                Width = area + 4, Height = Math.Max(4, Y(b) - Y(a)), Background = B(A(accentC, 0x10)), BorderBrush = B(A(accentC, 0x50)),
+                BorderThickness = new Thickness(0, 1, 0, 1), ToolTip = L.F("Nadgodziny {0}–{1}", a.ToString(@"hh\:mm"), Hhmm(b)) + "\n" + L.T("Przeciągnij krawędzie, żeby zmienić · prawy przycisk: usuń"),
+            };
+            slot.MouseRightButtonUp += (_, e) =>
+            {
+                e.Handled = true;
+                var menu = new ContextMenu();
+                var del = new MenuItem { Header = L.T("Usuń te nadgodziny") };
+                del.Click += (_, _) => { store.SetOvertime(Key(_date), store.Overtime(Key(_date)).Where((_, k) => k != index)); Render(); };
+                menu.Items.Add(del);
+                menu.PlacementTarget = slot;
+                menu.IsOpen = true;
+            };
+            _canvas.Children.Add(At(slot, Gutter - 2, Y(a)));
+            _canvas.Children.Add(At(new TextBlock
+            {
+                Text = L.Up(L.T("Nadgodziny")) + "  " + BoardWindow.Hours((b - a).TotalHours), FontSize = 9, FontWeight = FontWeights.Bold,
+                Foreground = Tx(accentC), IsHitTestVisible = false,
+            }, Gutter + 6, Y(a) + 3));
+        }
+
+        void HatchRect(TimeSpan from, TimeSpan to)
+        {
+            var r = new Rectangle { Width = area + 4, Height = Math.Max(0, Y(to) - Y(from)), Fill = hatch, ToolTip = L.T("Poza godzinami pracy · prawy przycisk: dodaj tu nadgodziny") };
+            r.MouseRightButtonUp += (_, e) =>
+            {
+                e.Handled = true;
+                // two hours from the full hour clicked, within this free stretch
+                var at = TimeSpan.FromHours(Math.Floor(T(e.GetPosition(_canvas).Y).TotalHours));
+                if (at < from) at = from;
+                var end = at + TimeSpan.FromHours(2) > to ? to : at + TimeSpan.FromHours(2);
+                if (end - at < TimeSpan.FromMinutes(15)) return;
+                var menu = new ContextMenu();
+                var add = new MenuItem { Header = L.F("Dodaj nadgodziny {0}–{1}", at.ToString(@"hh\:mm"), Hhmm(end)) };
+                add.Click += (_, _) => { store.SetOvertime(Key(_date), store.Overtime(Key(_date)).Append((at, end))); Render(); };
+                menu.Items.Add(add);
+                menu.PlacementTarget = r;
+                menu.IsOpen = true;
+            };
+            _canvas.Children.Add(At(r, Gutter - 2, Y(from)));
+        }
 
         for (int h = 0; h <= 24; h++)
         {
@@ -285,6 +341,11 @@ public sealed class DayView : Grid
         // the working hours' edges: drag them (this day only); double-click goes back to the default
         WorkHandle(ws, true, area);
         WorkHandle(we, false, area);
+        for (int i = 0; i < overtime.Count; i++)
+        {
+            WorkHandle(overtime[i].Start, true, area, i);
+            WorkHandle(overtime[i].End, false, area, i);
+        }
 
         foreach (var b in Blocks()) DrawBlock(b, area);
 
@@ -312,19 +373,32 @@ public sealed class DayView : Grid
         _enter = false;
     }
 
-    void WorkHandle(TimeSpan at, bool start, double area)
+    static string Hhmm(TimeSpan t) => t >= TimeSpan.FromHours(24) ? "24:00" : t.ToString(@"hh\:mm");
+
+    /// <summary>A working period's edge: the regular hours (<paramref name="overtime"/> null) or an overtime period's.</summary>
+    void WorkHandle(TimeSpan at, bool start, double area, int? overtime = null)
     {
         var pill = new Border
         {
             CornerRadius = new CornerRadius(4), Padding = new Thickness(5, 0, 5, 1), Background = B(Th.Ink(0x26)), Cursor = Cursors.SizeNS,
-            ToolTip = (start ? L.T("Początek pracy") : L.T("Koniec pracy")) + "\n" + L.T("Przeciągnij, żeby zmienić dla tego dnia · dwuklik: domyślne godziny"),
-            Child = new TextBlock { Text = (start ? "▸ " : "◂ ") + (at >= TimeSpan.FromHours(24) ? "24:00" : at.ToString(@"hh\:mm")), FontSize = 9.5, FontWeight = FontWeights.SemiBold, Foreground = Res("FgDim") },
+            ToolTip = overtime != null
+                ? (start ? L.T("Początek nadgodzin") : L.T("Koniec nadgodzin")) + "\n" + L.T("Przeciągnij, żeby zmienić · dwuklik: usuń te nadgodziny")
+                : (start ? L.T("Początek pracy") : L.T("Koniec pracy")) + "\n" + L.T("Przeciągnij, żeby zmienić dla tego dnia · dwuklik: domyślne godziny"),
+            Child = new TextBlock { Text = (start ? "▸ " : "◂ ") + Hhmm(at), FontSize = 9.5, FontWeight = FontWeights.SemiBold, Foreground = Res("FgDim") },
         };
         pill.MouseLeftButtonDown += (_, e) =>
         {
             e.Handled = true;
-            if (e.ClickCount == 2) { _host.Store().SetWorkHours(Key(_date), null, null); Render(); return; }
-            _drag = new Drag(start ? "workStart" : "workEnd", null, pill, e.GetPosition(_canvas).Y, at, at);
+            var store = _host.Store();
+            if (e.ClickCount == 2)
+            {
+                if (overtime is { } oi) store.SetOvertime(Key(_date), store.Overtime(Key(_date)).Where((_, k) => k != oi));
+                else store.SetWorkHours(Key(_date), null, null);
+                Render();
+                return;
+            }
+            var kind = overtime is { } i ? $"ot:{i}:{(start ? "s" : "e")}" : start ? "workStart" : "workEnd";
+            _drag = new Drag(kind, null, pill, e.GetPosition(_canvas).Y, at, at);
             _canvas.CaptureMouse();
         };
         _canvas.Children.Add(At(pill, Gutter + area - 70, Y(at) - (start ? 0 : 16)));
@@ -369,7 +443,7 @@ public sealed class DayView : Grid
                 card.BorderBrush = B(Th.Ink(0x1A));
                 card.Opacity = t.Done ? 0.55 : 1;
                 // the same marks as everywhere: the state bar on the left (click: next state), the project's on the right
-                var mark = TaskMarks.Status(t, 4, () => _host.CycleState(t), gap: 0);
+                var mark = TaskMarks.Status(t, TaskMarks.BarWidth, () => _host.CycleState(t), gap: 0);
                 mark.Margin = new Thickness(3, 3, 0, 3);
                 grid.Children.Add(mark);
                 if (TaskMarks.Right(t) is { } proj) { proj.Margin = new Thickness(0, 3, 3, 3); grid.Children.Add(proj); }
@@ -434,7 +508,7 @@ public sealed class DayView : Grid
         foreach (var t in loose)
         {
             TaskItem.Tags(t.Text, out var rest);
-            var circle = TaskMarks.Status(t, 3.5, () => _host.CycleState(t), gap: 6);
+            var circle = TaskMarks.Status(t, TaskMarks.BarWidth, () => _host.CycleState(t), gap: 6);
             var name = new TextBlock { Text = rest.Length > 0 ? rest : t.Text, MaxWidth = 220, TextTrimming = TextTrimming.CharacterEllipsis, Foreground = Res("Fg"), FontSize = App.Settings.FontSize - 1 };
             if (t.Done) name.TextDecorations = TextDecorations.Strikethrough;
             var est = new TextBlock { Text = "  " + BoardWindow.Hours(Math.Clamp(t.Estimate ?? 0.5, 0.25, 8)), FontSize = App.Settings.FontSize - 2.5, Foreground = Res("FgFaint"), VerticalAlignment = VerticalAlignment.Center };
@@ -525,6 +599,21 @@ public sealed class DayView : Grid
                 else we = Clamp(at > ws ? at : ws + TimeSpan.FromMinutes(30), TimeSpan.FromMinutes(30), TimeSpan.FromHours(24));
                 // midnight is kept as 23:59 ("24:00" isn't a time of day)
                 store.SetWorkHours(Key(_date), ws.ToString(@"hh\:mm"), we >= TimeSpan.FromHours(24) ? "23:59" : we.ToString(@"hh\:mm"));
+                Render();
+                break;
+            case { } k when k.StartsWith("ot:"):
+                // an overtime period's edge: at least a quarter of an hour long, within the day
+                var parts = k.Split(':');
+                var periods = store.Overtime(Key(_date));
+                if (int.TryParse(parts[1], out var oi) && oi < periods.Count)
+                {
+                    var (pa, pb) = periods[oi];
+                    var to2 = Clamp(d.From + delta, TimeSpan.Zero, TimeSpan.FromHours(24));
+                    if (parts[2] == "s") pa = to2 < pb - TimeSpan.FromMinutes(15) ? to2 : pb - TimeSpan.FromMinutes(15);
+                    else pb = to2 > pa + TimeSpan.FromMinutes(15) ? to2 : pa + TimeSpan.FromMinutes(15);
+                    periods[oi] = (pa, pb);
+                    store.SetOvertime(Key(_date), periods);
+                }
                 Render();
                 break;
         }

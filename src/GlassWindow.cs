@@ -36,6 +36,8 @@ public class GlassWindow : Window
     protected readonly Grid Frame = new();
     readonly Border _glass = new();
     readonly Border _tint = new();
+    /// <summary>An optional fine pattern over the glass (dots or a grid, Settings → Wygląd).</summary>
+    readonly Border _pattern = new() { IsHitTestVisible = false };
     readonly Border _bodyHost = new();
     readonly Grid _shell = new();
 
@@ -60,6 +62,8 @@ public class GlassWindow : Window
         _tint.BorderThickness = new Thickness(1);
         Frame.Children.Add(_glass);
         Frame.Children.Add(_tint);
+        _pattern.SetResourceReference(Border.BackgroundProperty, "GlassPattern");
+        Frame.Children.Add(_pattern);
         Frame.Children.Add(_bodyHost);
         Frame.SizeChanged += (_, _) => UpdateClip();
         _shell.Children.Add(Frame);
@@ -94,6 +98,7 @@ public class GlassWindow : Window
         var r = SquareTopCorners ? new CornerRadius(0, 0, Radius, Radius) : new CornerRadius(Radius);
         _glass.CornerRadius = r;
         _tint.CornerRadius = r;
+        _pattern.CornerRadius = r;
         _tint.BorderThickness = SquareTopCorners ? new Thickness(1, 0, 1, 1) : new Thickness(1);
         UpdateClip();
     }

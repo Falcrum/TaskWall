@@ -55,7 +55,12 @@ public partial class BoardWindow
         ArchiveButton.Content = Icons.Labeled(Icons.WithBadge(Icons.Archive(), out var ac), L.T("ARCHIWUM"), cap);
         _backlogCount = bc;
         _archiveCount = ac;
-        SyncButton.Content = Icons.Sync(out var spinner);
+        // the sync icon with a small state dot: green = in sync, amber = waiting for the folder, red = an error
+        var syncHost = new Grid();
+        syncHost.Children.Add(Icons.Sync(out var spinner));
+        _syncDot = new System.Windows.Shapes.Ellipse { Width = 6, Height = 6, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, -2, -2), IsHitTestVisible = false };
+        syncHost.Children.Add(_syncDot);
+        SyncButton.Content = syncHost;
         _syncSpinner = spinner;
         var layer = new StackPanel { Orientation = Orientation.Horizontal };
         layer.Children.Add(Icons.Layers());
@@ -111,6 +116,24 @@ public partial class BoardWindow
         bool error = st.LastError != null || st.Offline != null || notion.LastResult?.Contains(L.T("błąd")) == true;
         SyncButton.Foreground = st.Syncing || App.Instance.NotionRunning || rot.HasAnimatedProperties ? Res("AccentBrush") // in the accent while it works
             : error ? B(Color.FromRgb(0xF2, 0x6D, 0x6D)) : Res("FgDim");
+        if (_syncDot != null)
+            _syncDot.Fill = B(st.LastError != null ? Color.FromRgb(0xF2, 0x6D, 0x6D) : st.Offline != null ? Color.FromRgb(0xE8, 0xA2, 0x3A) : TaskMarks.DoneGreen);
+    }
+
+    System.Windows.Shapes.Ellipse? _syncDot;
+
+    /// <summary>"Komputery: KAMIL-HOME (ten), QUESTLINE-KAMIL – 12 min temu" (when each one last wrote its file).</summary>
+    static string DevicesLine(BoardStore st)
+    {
+        var list = st.Devices();
+        if (list.Count == 0) return "";
+        string Ago(DateTime t)
+        {
+            var d = DateTime.Now - t;
+            return d.TotalMinutes < 1 ? L.T("przed chwilą") : d.TotalHours < 1 ? L.F("{0} min temu", (int)d.TotalMinutes)
+                : d.TotalDays < 1 ? L.F("{0} h temu", (int)d.TotalHours) : t.ToString("ddd d MMM HH:mm", Pl);
+        }
+        return "\n" + L.T("Komputery:") + " " + string.Join(", ", list.Select(x => x.Computer + (x.Computer == BoardStore.Machine ? " (" + L.T("ten") + ")" : "") + " – " + Ago(x.Written)));
     }
 
     void StopSpin(object? s, EventArgs e)
@@ -1108,6 +1131,7 @@ public partial class BoardWindow
         }
         if (e.Key == Key.Escape && SearchPanel.Visibility == Visibility.Visible) { e.Handled = true; CloseSearch(); return; }
         if (e.Key == Key.F1) { e.Handled = true; HelpWindow.ShowHelp(); return; }
+        if (e.Key is Key.OemQuestion or Key.Divide && Keyboard.Modifiers == ModifierKeys.Control) { e.Handled = true; HelpWindow.ShowHelp(); return; } // the cheat sheet
         if (Keyboard.FocusedElement is TextBox) return;
         // the task under the mouse: Space = next state (○ → ◐ → ✓), Shift+1/2/3 = priority (! !! !!!), Shift+0 = none,
         // F2 = edit, Delete = to the bin
@@ -1235,7 +1259,8 @@ public partial class BoardWindow
         }
         Add(L.T("Szukaj…  (Ctrl+F)"), OpenSearch);
         Add(L.T("Cofnij  (Ctrl+Z)"), Undo, Store.CanUndo);
-        Add(L.T("Komendy i skróty…  (F1)"), HelpWindow.ShowHelp);
+        Add(L.T("Wyczyść zrobione → archiwum"), () => ClearDone_Click(this, new RoutedEventArgs()), _view is not (ViewMode.Year or ViewMode.Timeline));
+        Add(L.T("Komendy i skróty…  (F1, Ctrl+/)"), HelpWindow.ShowHelp);
         menu.Items.Add(new Separator());
         if (S.AccountFor(S.Layer).Notion.Configured)
             Add(L.T("Synchronizuj Notion teraz"), async () => { var r = await NotionSync.Run(S.Layer); SyncText.Text = r.Error ?? L.F("Notion: nowe {0}, zmienione {1}", r.Added, r.Updated); _syncFlash.Stop(); _syncFlash.Start(); });
