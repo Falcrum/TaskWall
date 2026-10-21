@@ -9,21 +9,21 @@ using System.Windows.Shapes;
 namespace TaskWall;
 
 /// <summary>
-/// The two marks every task carries, the same in every view:
-/// on the left a narrow bar over the task's whole height – empty before it starts, half filled while in progress, full
-/// when done; grey / amber / red for low / medium / high priority, green when done;
-/// on the right a thin bar in the colour of its project (FoA, Tuathan …).
+/// The marks every task carries, the same in every view: on the left the state bar over the task's whole height
+/// (grey empty to do, orange a third in progress, violet two thirds review, green full done); on the right two thin
+/// bars side by side – the priority (red / amber / slate) and the project's colour (FoA, Tuathan …).
 /// </summary>
 static class TaskMarks
 {
     public static readonly Color DoneGreen = Color.FromRgb(0x4C, 0xB8, 0x6C);
     /// <summary>Review: a soft violet (its own colour, whatever the priority).</summary>
     public static readonly Color ReviewViolet = Color.FromRgb(0x8C, 0x8C, 0xF7);
+    public static readonly Color InProgressOrange = Color.FromRgb(0xF0, 0x8C, 0x3A);
     static readonly Color Low = Color.FromRgb(0x7E, 0x8C, 0x9C);
 
     /// <summary>Done green, review violet, else the priority colour (no priority = low, grey).</summary>
     public static Color StateColor(TaskItem t, string? state = null) =>
-        (state ?? t.State) switch { "done" => DoneGreen, "review" => ReviewViolet, _ => BoardWindow.PriorityLevel(t.Priority) switch { 3 => BoardWindow.PriorityColor("high"), 2 => BoardWindow.PriorityColor("medium"), _ => Low } };
+        (state ?? t.State) switch { "done" => DoneGreen, "review" => ReviewViolet, "started" => InProgressOrange, _ => Low };
 
     /// <summary>The project's colour, or null for a task without a project.</summary>
     public static Color? ProjectColor(TaskItem t) =>
@@ -58,7 +58,7 @@ static class TaskMarks
         Grid.SetRowSpan(outline, 2);
         if (fill > 0)
         {
-            var part = new Rectangle { Fill = new SolidColorBrush(c), RadiusX = r, RadiusY = r };
+            var part = new Rectangle { Fill = new SolidColorBrush(c), RadiusX = r, RadiusY = r, Tag = "fill" };
             Grid.SetRow(part, 1); // from the bottom up
             bar.Children.Add(part);
         }
@@ -77,16 +77,21 @@ static class TaskMarks
         return hit;
     }
 
-    /// <summary>The project bar (thin, right edge); null without a project.</summary>
-    public static FrameworkElement? Project(TaskItem t, double width = 2.5)
+    /// <summary>
+    /// The marks on the right edge, side by side: the priority (red high, amber medium, slate low; none = no bar) and the
+    /// project's colour (outermost). Null when the task has neither.
+    /// </summary>
+    public static FrameworkElement? Right(TaskItem t, double width = 2.5)
     {
-        if (ProjectColor(t) is not { } c) return null;
-        var b = new Border
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Stretch };
+        Border Bar(Color c, string tip)
         {
-            Width = width, CornerRadius = new CornerRadius(width / 2), Margin = new Thickness(0, 1, 0, 1),
-            HorizontalAlignment = HorizontalAlignment.Right, Background = new SolidColorBrush(c), ToolTip = t.NotionSource,
-        };
-        ToolTipService.SetInitialShowDelay(b, 300);
-        return b;
+            var b = new Border { Width = width, CornerRadius = new CornerRadius(width / 2), Margin = new Thickness(1.5, 1, 0, 1), Background = new SolidColorBrush(c), ToolTip = tip };
+            ToolTipService.SetInitialShowDelay(b, 300);
+            return b;
+        }
+        if (!string.IsNullOrEmpty(t.Priority)) panel.Children.Add(Bar(BoardWindow.PriorityColor(t.Priority), L.F("Priorytet: {0}", t.Priority)));
+        if (ProjectColor(t) is { } pc) panel.Children.Add(Bar(pc, t.NotionSource!));
+        return panel.Children.Count > 0 ? panel : null;
     }
 }

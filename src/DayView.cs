@@ -42,6 +42,8 @@ public sealed class DayView : Grid
     readonly DispatcherTimer _clock = new() { Interval = TimeSpan.FromMinutes(1) };
     DateTime _date = DateTime.Today;
     bool _menuOpen; // a task's menu is open: no redraw under it
+    bool _enter; // the next render shows a new day
+    int _enterIndex;
     bool _scrolled;
     readonly DockPanel _left = new(), _right = new() { Margin = new Thickness(4, 0, 4, 0) };
     /// <summary>One hour: the whole day fits the height there is (no scrolling), but never so small it can't be grabbed.</summary>
@@ -124,7 +126,7 @@ public sealed class DayView : Grid
         _notes.Load(_host.Store().Note(Key(_date)), force: newDay);
         _addHost.Children.Clear();
         _addHost.Children.Add(_host.AddRow(Key(_date), _date));
-        if (newDay) _scrolled = false;
+        if (newDay) { _scrolled = false; _enter = true; _enterIndex = 0; }
         Render();
     }
 
@@ -307,6 +309,7 @@ public sealed class DayView : Grid
             _scroll.ScrollToVerticalOffset(Math.Max(0, Y(first) - HourH * 0.75));
         }
         foreach (var el in _canvas.Children.OfType<FrameworkElement>()) if (el.ToolTip != null) ToolTipService.SetInitialShowDelay(el, 250);
+        _enter = false;
     }
 
     void WorkHandle(TimeSpan at, bool start, double area)
@@ -369,11 +372,11 @@ public sealed class DayView : Grid
                 var mark = TaskMarks.Status(t, 4, () => _host.CycleState(t), gap: 0);
                 mark.Margin = new Thickness(3, 3, 0, 3);
                 grid.Children.Add(mark);
-                if (TaskMarks.Project(t) is { } proj) { proj.Margin = new Thickness(0, 3, 3, 3); grid.Children.Add(proj); }
+                if (TaskMarks.Right(t) is { } proj) { proj.Margin = new Thickness(0, 3, 3, 3); grid.Children.Add(proj); }
                 stack.Margin = new Thickness(12, 3, 8, 2);
                 var tags = TaskItem.Tags(t.Text, out var rest);
                 // like a task row: the hours in the accent before the name, the categories as chips on the second line
-                title.Inlines.Add(new Run(range + "  ") { FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush") });
+                title.Inlines.Add(new Run(range + "  ") { FontWeight = FontWeights.SemiBold, Foreground = Res("FgDim") }); // a plan, not an appointment: quieter than a meeting's hours
                 var name = new Run(rest.Length > 0 ? rest : t.Text);
                 if (t.Done) name.TextDecorations = TextDecorations.Strikethrough;
                 title.Inlines.Add(name);
@@ -418,6 +421,7 @@ public sealed class DayView : Grid
         }
         else if (h < 34) sub.Visibility = Visibility.Collapsed;
         _canvas.Children.Add(At(card, x + 2, y + 1));
+        if (_enter) Anim.Enter(card, 0, 6, 260, Math.Min(400, _enterIndex++ * 30)); // a new day: its blocks come in one after another
     }
 
     /// <summary>The day's tasks without an hour, as small chips: drag one onto the line to give it its time.</summary>
@@ -438,7 +442,7 @@ public sealed class DayView : Grid
             row.Children.Add(circle);
             row.Children.Add(name);
             row.Children.Add(est);
-            if (TaskMarks.Project(t) is { } proj) { proj.Margin = new Thickness(7, 1, 0, 1); proj.HorizontalAlignment = HorizontalAlignment.Left; row.Children.Add(proj); }
+            if (TaskMarks.Right(t) is { } proj) { proj.Margin = new Thickness(7, 1, 0, 1); proj.HorizontalAlignment = HorizontalAlignment.Left; row.Children.Add(proj); }
             var chip = new Border
             {
                 Child = row, Margin = new Thickness(0, 0, 6, 5), Padding = new Thickness(5, 2, 5, 2), CornerRadius = new CornerRadius(4), Cursor = Cursors.SizeAll,

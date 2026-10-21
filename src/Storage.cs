@@ -42,7 +42,7 @@ static class SettingsStore
     static string FilePath => Dev.Arg("--data") is { } dev
         ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dev.TrimEnd(Path.DirectorySeparatorChar))) ?? Dir, "settings.dev.json")
         : Path.Combine(Dir, "settings.json");
-    const int CurrentVersion = 7;
+    const int CurrentVersion = 8;
 
     /// <summary>The app used to be called DeskWall: its settings folder (settings, Notion token, calendar cache) moves over once.</summary>
     public static void MigrateFromDeskWall()
@@ -112,6 +112,7 @@ static class SettingsStore
             s.Calendars.Add(new CalendarFeed { Name = "Święta w Polsce", Url = CalendarFeed.PolishHolidaysUrl, Kind = "holidays" });
         if (s.SettingsVersion < 6) s.View = s.ShowNextWeek ? "week2" : "week1";
         if (string.IsNullOrWhiteSpace(s.PrivateFolder)) s.PrivateFolder = DefaultPrivateFolder(s.DataFolder);
+        if (s.SettingsVersion < 8) s.TaskReminder = -1; // v8: a task's hours (the day view) are for planning – no reminder unless turned on again
         if (s.SettingsVersion < 7 && s.Accounts.Count == 0)
         {
             // v7: layers became accounts, each with its own folder and calendars
@@ -318,6 +319,67 @@ public sealed class BoardStore
 
     public BoardStore(string layer = "work") : this() => Layer = layer;
     public string FilePath => Path.Combine(Folder, FileName);
+
+    // ---------- one file per computer ----------
+    // A cloud drive syncs a file written by one computer reliably, but a file both computers write loses one side's
+    // changes: right after logon the drive still shows the old copy, TaskWall saves it, and the drive keeps that local
+    // write over the other computer's newer one. So every computer writes only devices\board-<COMPUTER>.json (its whole
+    // merged board) and reads everybody's; board.json is still read and written for older versions.
+
+    /// <summary>This computer in file names (letters, digits, '-', '_').</summary>
+    public static string Machine { get; } = new string(Environment.MachineName.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_').ToArray());
+    public string DeviceFolder => Path.Combine(Folder, "devices");
+    /// <summary>This computer's name in its file (the self-test plays two computers with it).</summary>
+    public string DeviceName { get; set; } = Machine;
+    public string DeviceFile => Path.Combine(DeviceFolder, $"board-{DeviceName}.json");
+    readonly Dictionary<string, string> _seenDevices = new(StringComparer.OrdinalIgnoreCase);
+    string? _lastDeviceHash;
+    /// <summary>The computers whose files are in the folder, with when each last wrote (for the sync tool tip).</summary>
+    public List<(string Computer, DateTime Written)> Devices()
+    {
+        var list = new List<(string, DateTime)>();
+        try
+        {
+            if (Directory.Exists(DeviceFolder))
+                foreach (var f in Directory.GetFiles(DeviceFolder, "board-*.json"))
+                    list.Add((Path.GetFileNameWithoutExtension(f)[6..], File.GetLastWriteTime(f)));
+        }
+        catch { }
+        return list.OrderByDescending(x => x.Item2).ToList();
+    }
+
+    /// <summary>Merges the computers' files that changed since they were last read. True = something new came in.</summary>
+    bool MergeDevices()
+    {
+        if (string.IsNullOrEmpty(Folder) || !Directory.Exists(DeviceFolder)) return false;
+        string? before = null;
+        bool read = false;
+        foreach (var f in Directory.GetFiles(DeviceFolder, "board-*.json"))
+        {
+            var d = TryRead(f);
+            if (d.Data == null || d.Hash == null) continue;
+            if (_seenDevices.TryGetValue(f, out var seen) && seen == d.Hash) continue;
+            _seenDevices[f] = d.Hash;
+            if (string.Equals(f, DeviceFile, StringComparison.OrdinalIgnoreCase) && d.Hash == _lastDeviceHash) continue; // ours, as written
+            before ??= Canon(Data);
+            Data = Merge(Data, d.Data);
+            read = true;
+        }
+        return read && Canon(Data) != before;
+    }
+
+    /// <summary>Writes this computer's file (only when its content changed).</summary>
+    void WriteDevice(string json)
+    {
+        var hash = Hash(json);
+        if (hash == _lastDeviceHash && File.Exists(DeviceFile)) return;
+        Directory.CreateDirectory(DeviceFolder);
+        var tmp = DeviceFile + ".tmp";
+        File.WriteAllText(tmp, json, new UTF8Encoding(false));
+        File.Move(tmp, DeviceFile, true);
+        _lastDeviceHash = hash;
+        _seenDevices[DeviceFile] = hash;
+    }
     public string BackupFolder => Path.Combine(Folder, "backup");
     public DateTime? LastSaved { get; private set; }
     public DateTime? LastExternalChange { get; private set; }
@@ -423,10 +485,13 @@ public sealed class BoardStore
         Data = disk.Data ?? new BoardData();
         _lastHash = disk.Data != null ? disk.Hash : null;
         _undo.Clear();
+        _seenDevices.Clear();
+        _lastDeviceHash = null;
+        MergeDevices(); // what the other computers wrote
         MergeConflictCopies();
         EnsureCategories();
         ForgetAutoCarry();
-        if (!File.Exists(FilePath)) SaveNow();
+        if (!File.Exists(FilePath) || !File.Exists(DeviceFile)) SaveNow();
         StartWatching();
     }
 
@@ -992,10 +1057,12 @@ public sealed class BoardStore
                 Data = Merge(Data, disk.Data);
                 merged = true;
             }
+            if (MergeDevices()) merged = true;
 
             Prune();
             var json = JsonSerializer.Serialize(Data, Json.Options);
             var hash = Hash(json);
+            WriteDevice(json); // this computer's own file first: it never loses to another computer's write
             if (disk.Data != null && (hash == disk.Hash || Canon(Data) == Canon(disk.Data)))
             {
                 _lastHash = disk.Hash; // the same content (maybe in another order): nothing to write, nothing new to read
@@ -1054,7 +1121,7 @@ public sealed class BoardStore
         catch (Exception ex) { Log.Error("backup", ex); }
     }
 
-    void CheckDisk()
+    internal void CheckDisk()
     {
         try
         {
@@ -1071,6 +1138,16 @@ public sealed class BoardStore
                 // If we hold changes the other side doesn't have yet, push them back.
                 EnsureCategories();
                 if (Canon(merged) != diskCanon) MarkDirty();
+                WriteMirror(null);
+                ExternalChange?.Invoke();
+            }
+            if (MergeDevices())
+            {
+                _version++;
+                _undo.Clear();
+                LastExternalChange = DateTime.Now;
+                EnsureCategories();
+                MarkDirty(); // our own file (and board.json) get the merged state
                 WriteMirror(null);
                 ExternalChange?.Invoke();
             }
@@ -1331,6 +1408,7 @@ public sealed class BoardStore
         {
             _watcher = new FileSystemWatcher(Folder, "*.json")
             {
+                IncludeSubdirectories = true, // devicesoard-*.json
                 NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
                 EnableRaisingEvents = true,
             };

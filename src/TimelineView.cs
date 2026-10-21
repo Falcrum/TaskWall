@@ -473,18 +473,45 @@ public sealed class TimelineView : Grid
             {
                 var d = Origin.AddDays(first + i);
                 var day = MeetingsOn(store, d);
-                var lanes = Lanes(day);
-                if (lanes.Count > 0 && lanes.Max() + 1 > _meetingRows && _meetingRows < 4 && _barDrag == null && _dragFrom == null) { _growMeetings = true; }
-                for (int k = 0; k < day.Count; k++)
+                int wanted = w < MeetingListWidth ? Math.Min(day.Count, 1) : Math.Min(day.Count, 3);
+                if (wanted > _meetingRows && _barDrag == null && _dragFrom == null) _growMeetings = true;
+                if (day.Count == 0) continue;
+                string Line1(Meeting m) => $"{m.From:hh\\:mm}–{m.To:hh\\:mm}  {m.Title}" + (m.Own ? "" : "  (" + L.T("z kalendarza") + ")");
+                var tipAll = d.ToString("dddd d MMM", pl) + "\n" + string.Join("\n", day.Select(Line1));
+                if (w < MeetingListWidth)
                 {
-                    var m = day[k];
-                    double mx = X(d) + w * m.From.TotalHours / 24, mw = Math.Max(3, w * Math.Max(0.1, (m.To - m.From).TotalHours) / 24);
+                    // zoomed out: how many, the list in the tool tip
                     _bars.Children.Add(At(new Border
                     {
-                        Width = mw, Height = RowHeight - 14, CornerRadius = new CornerRadius(4), Background = B(A(violet, m.Own ? (byte)0xB0 : (byte)0x80)),
-                        BorderBrush = B(violet), BorderThickness = new Thickness(0.8),
-                        ToolTip = $"{m.Title}\n{d.ToString("dddd d MMM", pl)}, {m.From:hh\\:mm}–{m.To:hh\\:mm}" + (m.Own ? "" : "\n" + L.T("z kalendarza")),
-                    }, mx, Math.Min(lanes[k], _meetingRows - 1) * RowHeight + 16));
+                        Height = RowHeight - 14, MinWidth = 16, CornerRadius = new CornerRadius(4), Padding = new Thickness(4, 0, 4, 0), Background = B(A(violet, 0x50)),
+                        BorderBrush = B(A(violet, 0xB0)), BorderThickness = new Thickness(0.8), ToolTip = tipAll,
+                        Child = new TextBlock { Text = day.Count.ToString(), FontSize = 10, FontWeight = FontWeights.Bold, Foreground = Tx(violet), VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center },
+                    }, X(d) + Math.Max(1, w / 2 - 9), 16));
+                    continue;
+                }
+                // a small agenda per day, like a calendar's month view: "10:00 Daily", one row each; more than fit: "+N"
+                int rows = Math.Max(1, _meetingRows), shown = day.Count > rows ? rows - 1 : day.Count;
+                for (int k = 0; k <= shown && k < rows; k++)
+                {
+                    bool more = k == shown;
+                    if (more && day.Count <= shown) break;
+                    var m = more ? null : day[k];
+                    var pill = new Border
+                    {
+                        Width = Math.Max(10, w - 6), Height = RowHeight - 14, CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 0, 4, 0),
+                        Background = B(A(violet, m?.Own == true ? (byte)0x4A : (byte)0x30)), BorderBrush = B(A(violet, 0xC0)), BorderThickness = new Thickness(2.5, 0, 0, 0),
+                        ToolTip = more ? tipAll : Line1(m!) + "\n" + d.ToString("dddd d MMM", pl),
+                    };
+                    var label = new TextBlock { FontSize = Math.Max(9.5, App.Settings.FontSize - 2.5), Foreground = Res("Fg"), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+                    if (more) label.Text = L.F("+{0} więcej", day.Count - shown);
+                    else
+                    {
+                        label.Inlines.Add(new System.Windows.Documents.Run(m!.From.ToString(@"hh\:mm") + "  ") { FontWeight = FontWeights.SemiBold, Foreground = Tx(violet) });
+                        label.Inlines.Add(new System.Windows.Documents.Run(m.Title));
+                    }
+                    pill.Child = label;
+                    ToolTipService.SetInitialShowDelay(pill, 150);
+                    _bars.Children.Add(At(pill, X(d) + 3, k * RowHeight + 16));
                 }
             }
         }
@@ -544,7 +571,8 @@ public sealed class TimelineView : Grid
         return result;
     }
 
-    /// <summary>Rows the meeting group needs: the most meetings at one time on any day of the half year around today.</summary>
+    /// <summary>Rows the meeting group needs: the most meetings on one day around what is on screen.</summary>
+    const double MeetingListWidth = 56;
     int MeetingLanes(BoardStore store)
     {
         int max = 0;
@@ -553,9 +581,10 @@ public sealed class TimelineView : Grid
         for (var d = center.AddDays(-45); d <= last; d = d.AddDays(1))
         {
             var day = MeetingsOn(store, d);
-            if (day.Count > 0) max = Math.Max(max, Lanes(day).Max() + 1);
+            max = Math.Max(max, day.Count);
         }
-        return Math.Min(max, 4);
+        // a list per day: up to three rows (the third says "+N"); zoomed out, one badge per day
+        return W < MeetingListWidth ? Math.Min(max, 1) : Math.Min(max, 3);
     }
 
     static Color ProjectColor(string name) =>
@@ -600,7 +629,7 @@ public sealed class TimelineView : Grid
         mark.Margin = new Thickness(3, 2, 0, 2);
         mark.IsHitTestVisible = false;
         bar.Children.Add(mark);
-        if (TaskMarks.Project(t) is { } proj) { proj.Margin = new Thickness(0, 3, 3, 3); proj.IsHitTestVisible = false; bar.Children.Add(proj); }
+        if (TaskMarks.Right(t) is { } proj) { proj.Margin = new Thickness(0, 3, 3, 3); proj.IsHitTestVisible = false; bar.Children.Add(proj); }
 
         // just the name, inside; it stays readable when the bar starts left of the screen (sticky)
         double shift = Math.Max(0, -x0);

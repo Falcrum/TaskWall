@@ -99,6 +99,9 @@ public sealed class TaskItem
         WorkedDays.Sort(StringComparer.Ordinal);
         if (PlanEnd != null && string.CompareOrdinal(PlanEnd, tk) <= 0) PlanEnd = null; // the plan ran out: today is the day
         Day = tk;
+        // the hours were that day's plan: the new day is planned afresh (the task waits in "Bez godziny")
+        Time = null;
+        End = null;
         return true;
     }
 
@@ -628,7 +631,7 @@ public sealed class AppSettings
     public bool StretchActive { get; set; } = true;
     public bool AlarmSound { get; set; } = true;
     /// <summary>Minutes before a task with planned hours starts to remind (-1 = off).</summary>
-    public int TaskReminder { get; set; } = 5;
+    public int TaskReminder { get; set; } = -1; // off: hours on tasks plan the day, they don't ring (alarms and meetings do)
     public bool BoardHidden { get; set; }
     /// <summary>Captions next to the top-bar icons.</summary>
     public bool BarCaptions { get; set; }

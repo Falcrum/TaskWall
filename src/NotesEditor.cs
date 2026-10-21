@@ -175,6 +175,7 @@ public sealed class NotesEditor : DockPanel
         }
         _box.Visibility = _source ? Visibility.Collapsed : Visibility.Visible;
         _src.Visibility = _source ? Visibility.Visible : Visibility.Collapsed;
+        if (save) Anim.Enter(_source ? _src : _box, 0, 4, 200); // a soft change of the way of writing
         foreach (var (b, src) in _modeButtons)
         {
             b.Background = src == _source ? (Brush)Application.Current.Resources["AccentSoft"] : Brushes.Transparent;

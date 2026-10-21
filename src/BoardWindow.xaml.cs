@@ -1070,7 +1070,7 @@ public partial class BoardWindow : GlassWindow
         // an earlier day: the state it had that day (in progress / review); a planned one: dashed
         var dayState = !planned && !t.Done && dayKey != null ? t.DayStates?.GetValueOrDefault(dayKey) ?? "started" : null;
         grid.Children.Add(TaskMarks.Status(t, compact ? 4 : 4.5, dashed: planned && !t.Done, gap: compact ? 5 : 7, state: dayState));
-        if (TaskMarks.Project(t) is { } proj) { Grid.SetColumn(proj, 2); proj.Margin = new Thickness(3, 1, 0, 1); grid.Children.Add(proj); }
+        if (TaskMarks.Right(t) is { } proj) { Grid.SetColumn(proj, 2); proj.Margin = new Thickness(3, 1, 0, 1); grid.Children.Add(proj); }
         var text = new TextBlock { TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = fs, Foreground = Res("Fg") };
         var tags = TaskItem.Tags(t.Text, out var rest);
         var main = new Run(tags.Count > 0 ? rest : t.Text);
@@ -1327,9 +1327,9 @@ public partial class BoardWindow : GlassWindow
             // three states: not started → in progress → done → not started (Shift: straight to done)
             SetState(t, NextState(t, Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))), gap: compact ? 5 : 7);
         grid.Children.Add(circle);
-        if (_justToggled == t.Id) Anim.Pop(circle);
+        if (_justToggled == t.Id) Anim.FillUp(circle); // the new state fills in
         // the project: a thin bar in its colour on the right edge
-        if (TaskMarks.Project(t) is { } proj) { Grid.SetColumn(proj, 4); Grid.SetRowSpan(proj, 2); proj.Margin = new Thickness(3, 1, 0, 1); grid.Children.Add(proj); }
+        if (TaskMarks.Right(t) is { } proj) { Grid.SetColumn(proj, 4); Grid.SetRowSpan(proj, 2); proj.Margin = new Thickness(3, 1, 0, 1); grid.Children.Add(proj); }
 
         // text with tag chips (+ notion meta in backlog)
         var content = new StackPanel();
@@ -1339,7 +1339,7 @@ public partial class BoardWindow : GlassWindow
         if (span != null) text.ToolTip = t.Text;
         var tags = TaskItem.Tags(t.Text, out var rest);
         if (t.Time != null) // planned hours ("14-16" typed with the task) – part of what the task says, so in front
-            text.Inlines.Add(new Run((t.End != null ? $"{t.Time}–{t.End}" : t.Time) + "  ") { FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush") });
+            text.Inlines.Add(new Run((t.End != null ? $"{t.Time}–{t.End}" : t.Time) + "  ") { FontWeight = FontWeights.SemiBold, Foreground = Res("FgDim") });
         // only the status circle before the name; the day of a multi-day task, the project and the categories go to a
         // small second line under it, so every name starts at the same place
         var meta = new WrapPanel { Margin = new Thickness(0, 1, 0, 0) };

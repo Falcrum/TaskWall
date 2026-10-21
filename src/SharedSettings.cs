@@ -32,6 +32,24 @@ static class SharedSettings
     static string? PathFor(AppSettings s) => Dev.Arg("--data") is { } dev ? Path.Combine(dev, FileName)
         : s.Accounts.FirstOrDefault(a => a.Id == "work")?.Folder is { Length: > 0 } f ? Path.Combine(f, FileName) : null;
 
+    // one file per computer (devices/settings-<COMPUTER>.json), like the board: a file only one computer writes always
+    // syncs whole; the newest of all of them (and the old shared file) is what the others take over
+    static string? DeviceFor(AppSettings s) => PathFor(s) is { } p ? Path.Combine(Path.GetDirectoryName(p)!, "devices", $"settings-{Device ?? BoardStore.Machine}.json") : null;
+    /// <summary>The self-test plays two computers.</summary>
+    internal static string? Device;
+
+    /// <summary>Every computer's settings file and the old shared one – the newest is taken.</summary>
+    static IEnumerable<string> Candidates(string legacy)
+    {
+        if (File.Exists(legacy)) yield return legacy;
+        var dir = Path.Combine(Path.GetDirectoryName(legacy)!, "devices");
+        if (Directory.Exists(dir))
+            foreach (var f in Directory.GetFiles(dir, "settings-*.json")) yield return f;
+    }
+
+    /// <summary>The folder the last sync came from (older versions kept the file's path there).</summary>
+    static string? FolderOf(string? p) => p == null ? null : p.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? Path.GetDirectoryName(p) : p;
+
     public static DateTime? LastRead { get; private set; }
     public static string? LastError { get; private set; }
     /// <summary>Raised when settings came from another computer during a save.</summary>
@@ -82,7 +100,7 @@ static class SharedSettings
     /// </summary>
     public static void Push(AppSettings s)
     {
-        if (PathFor(s) is not { } path || !Directory.Exists(Path.GetDirectoryName(path))) return;
+        if (PathFor(s) is not { } legacy || DeviceFor(s) is not { } path || !Directory.Exists(Path.GetDirectoryName(legacy))) return;
         try
         {
             if (Pull(s) is { Length: > 0 } changed) Pulled?.Invoke(changed);
@@ -91,9 +109,10 @@ static class SharedSettings
             if (hash == s.SharedHash && File.Exists(path)) return;
             s.SharedHash = hash;
             s.SharedModified = Stamp.After(s.SharedModified ?? DateTime.MinValue);
-            s.SharedPath = path;
+            s.SharedPath = Path.GetDirectoryName(legacy);
             s.SharedBaseline = shared.ToJsonString();
             var file = new JsonObject { ["Modified"] = s.SharedModified, ["Computer"] = Environment.MachineName, ["Settings"] = shared };
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             var tmp = path + ".tmp";
             File.WriteAllText(tmp, file.ToJsonString(Json.Options), new UTF8Encoding(false));
             File.Move(tmp, path, true);
@@ -109,15 +128,25 @@ static class SharedSettings
     /// </summary>
     public static string[] Pull(AppSettings s)
     {
-        if (PathFor(s) is not { } path) return Array.Empty<string>();
+        if (PathFor(s) is not { } legacy) return Array.Empty<string>();
         try
         {
-            if (!File.Exists(path)) return Array.Empty<string>();
-            var file = JsonNode.Parse(File.ReadAllText(path))?.AsObject();
+            // the newest version among all computers' files
+            JsonObject? file = null;
+            DateTime newest = DateTime.MinValue;
+            foreach (var f in Candidates(legacy))
+            {
+                try
+                {
+                    if (JsonNode.Parse(File.ReadAllText(f))?.AsObject() is { } o && o["Modified"]?.GetValue<DateTime>() is { } m && m > newest) { newest = m; file = o; }
+                }
+                catch (Exception ex) { Log.Error("shared settings read " + f, ex); }
+            }
             LastRead = DateTime.Now;
             LastError = null;
             if (file?["Settings"] is not JsonObject theirs || file["Modified"]?.GetValue<DateTime>() is not { } modified) return Array.Empty<string>();
-            bool samePath = string.Equals(s.SharedPath, path, StringComparison.OrdinalIgnoreCase);
+            var path = Path.GetDirectoryName(legacy)!;
+            bool samePath = string.Equals(FolderOf(s.SharedPath), path, StringComparison.OrdinalIgnoreCase);
             if (samePath && s.SharedModified is { } mine && modified <= mine) return Array.Empty<string>();
 
             var before = Extract(s);

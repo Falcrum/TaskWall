@@ -388,7 +388,7 @@ static class Dev
             var future = System.Text.Json.JsonSerializer.Deserialize<BoardData>(futureJson, Json.Options)!;
             var back = System.Text.Json.JsonSerializer.Serialize(future, Json.Options);
             Check("fields of a newer version survive a save by this one", back.Contains("FutureField") && back.Contains("FutureTop"));
-            if (Arg("--data") is { } devData) File.Delete(Path.Combine(devData, SharedSettings.FileName)); // a fresh start for the shared-settings test
+            if (Arg("--data") is { } devData) { File.Delete(Path.Combine(devData, SharedSettings.FileName)); foreach (var sfile in Directory.Exists(Path.Combine(devData, "devices")) ? Directory.GetFiles(Path.Combine(devData, "devices"), "settings-*.json") : Array.Empty<string>()) File.Delete(sfile); } // a fresh start for the shared-settings test
             var pc1 = new AppSettings { Theme = "light", UiScale = 2, Weather = new WeatherSettings { City = "Testowo", Enabled = true } };
             pc1.AccountFor("work").Name = "Biuro";
             pc1.AccountFor("work").Notion.Database = "https://notion.so/db";
@@ -406,7 +406,7 @@ static class Dev
             SharedSettings.Pull(pc2);
             Check("shared settings: a change from the other PC comes in, an unpushed local change stays",
                 pc2.Weather.City == "Nowe Miasto" && pc2.Theme == "dark" && pc2.SharedHash == null);
-            if (Arg("--data") is { } devData2) File.Delete(Path.Combine(devData2, SharedSettings.FileName));
+            if (Arg("--data") is { } devData2) { File.Delete(Path.Combine(devData2, SharedSettings.FileName)); foreach (var sfile2 in Directory.Exists(Path.Combine(devData2, "devices")) ? Directory.GetFiles(Path.Combine(devData2, "devices"), "settings-*.json") : Array.Empty<string>()) File.Delete(sfile2); }
             Check("estimate over 8 h plans the next workdays: 12h from Fri 9 Oct → Mon 12 Oct, 2d → 2 days, 8h → one day",
                 BoardWindow.AutoPlanEnd("2026-10-09", 12) == "2026-10-12" && BoardWindow.AutoPlanEnd("2026-10-13", 16) == "2026-10-14" && BoardWindow.AutoPlanEnd("2026-10-13", 8) == null);
             var auto = new TaskItem { Day = "2026-10-13", Estimate = 24 };
@@ -517,12 +517,12 @@ static class Dev
             whStore.SaveNow();
             Check("sync: the same content in another order is not written again (no ping-pong between PCs)", File.ReadAllText(Path.Combine(whDir, BoardStore.FileName)) == fileBefore);
             try { Directory.Delete(whDir, true); } catch { }
-            var rv = new TaskItem { Text = "r", Day = "2026-10-19", Started = true, Review = true };
+            var rv = new TaskItem { Text = "r", Day = "2026-10-19", Started = true, Review = true, Time = "10:00", End = "12:00" };
             var fri = new TaskItem { Text = "f", Day = "2026-10-16", Started = true };
             var doneT = new TaskItem { Text = "d", Day = "2026-10-19", Started = true, Done = true };
             bool Wd(DateTime d) => d.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday);
             Check("stretch: a task in review carries on to today, each working day in its history as review; weekends skipped; done stops",
-                rv.Stretch(new DateTime(2026, 10, 22), Wd) && rv.Day == "2026-10-22" && rv.WorkedDays!.SequenceEqual(new[] { "2026-10-19", "2026-10-20", "2026-10-21" })
+                rv.Stretch(new DateTime(2026, 10, 22), Wd) && rv.Day == "2026-10-22" && rv.Time == null && rv.End == null && rv.WorkedDays!.SequenceEqual(new[] { "2026-10-19", "2026-10-20", "2026-10-21" })
                 && rv.DayStates!.Values.All(v => v == "review")
                 && fri.Stretch(new DateTime(2026, 10, 19), Wd) && fri.WorkedDays!.SequenceEqual(new[] { "2026-10-16" }) && fri.DayStates!["2026-10-16"] == "started"
                 && !doneT.Stretch(new DateTime(2026, 10, 22), Wd) && doneT.Day == "2026-10-19");
@@ -548,6 +548,95 @@ static class Dev
                 hist.DayStates!["2026-10-19"] == "started" && hist.DayStates["2026-10-20"] == "review" && hist.DayStates["2026-10-21"] == "review" && hist.Day == "2026-10-22");
             var night = new Alarm { Kind = "meeting", Day = "2026-10-21", Time = "23:00", End = "02:00" };
             Check("meetings over midnight end the next day (23:00–02:00 = 3 h)", night.Hours == 3 && night.EndAt(new DateTime(2026, 10, 21)) == new DateTime(2026, 10, 22, 2, 0, 0));
+
+            // ----- two computers on one cloud folder: each works on its own copy of the drive, and the drive copies the
+            // files over like Google Drive does – per file, the newer one wins (that lost one side's changes before 0.26)
+            var fa = Path.Combine(Path.GetTempPath(), "tw-sync-A-" + Guid.NewGuid().ToString("N")[..6]);
+            var fb = Path.Combine(Path.GetTempPath(), "tw-sync-B-" + Guid.NewGuid().ToString("N")[..6]);
+            Directory.CreateDirectory(fa);
+            Directory.CreateDirectory(fb);
+            // a file changed on one side only is copied to the other; changed on both since the last sync = a conflict, and
+            // each computer keeps its own copy (what we saw: "each PC has different data")
+            var synced = new System.Collections.Generic.Dictionary<string, string>();
+            void Drive()
+            {
+                var rel = Directory.GetFiles(fa, "*.json", SearchOption.AllDirectories).Select(f => Path.GetRelativePath(fa, f))
+                    .Union(Directory.GetFiles(fb, "*.json", SearchOption.AllDirectories).Select(f => Path.GetRelativePath(fb, f))).ToList();
+                foreach (var r in rel)
+                {
+                    string a1 = Path.Combine(fa, r), b1 = Path.Combine(fb, r);
+                    var ca = File.Exists(a1) ? File.ReadAllText(a1) : null;
+                    var cb = File.Exists(b1) ? File.ReadAllText(b1) : null;
+                    synced.TryGetValue(r, out var last);
+                    bool aChanged = ca != last, bChanged = cb != last;
+                    if (aChanged && bChanged && ca != cb) continue; // conflict: both keep theirs
+                    var winner = aChanged ? ca : cb;
+                    if (winner == null) continue;
+                    foreach (var p in new[] { a1, b1 }) { Directory.CreateDirectory(Path.GetDirectoryName(p)!); File.WriteAllText(p, winner); }
+                    synced[r] = winner;
+                }
+            }
+            var pcA = new BoardStore("work") { DeviceName = "PC-A" };
+            var pcB = new BoardStore("work") { DeviceName = "PC-B" };
+            pcA.Open(fa);
+            pcB.Open(fb);
+            bool Has(BoardStore st, string text) => st.Data.Tasks.Any(x => x.Text == text);
+            pcA.Add(new TaskItem { Text = "z pracy", Day = "2026-10-21" });
+            pcA.SaveNow();
+            System.Threading.Thread.Sleep(40);
+            pcB.Add(new TaskItem { Text = "z domu", Day = "2026-10-21" }); // B never saw A's task: its board.json is newer and wins on the drive
+            pcB.SaveNow();
+            Drive();
+            pcA.CheckDisk(); pcB.CheckDisk();
+            pcA.SaveNow(); pcB.SaveNow();
+            Drive();
+            pcA.CheckDisk(); pcB.CheckDisk();
+            Check("sync: two computers saving before the other's change arrived – both end up with both tasks",
+                Has(pcA, "z pracy") && Has(pcA, "z domu") && Has(pcB, "z pracy") && Has(pcB, "z domu"));
+            var editB = pcB.Data.Tasks.First(x => x.Text == "z pracy");
+            editB.Text = "z pracy (zmienione)";
+            pcB.Changed(editB);
+            pcB.SaveNow();
+            pcA.Remove(pcA.Data.Tasks.First(x => x.Text == "z domu"));
+            pcA.SaveNow();
+            Drive();
+            pcA.CheckDisk(); pcB.CheckDisk();
+            pcA.SaveNow(); pcB.SaveNow();
+            Drive();
+            pcA.CheckDisk(); pcB.CheckDisk();
+            Check("sync: an edit on one computer and a delete on the other both reach both",
+                Has(pcA, "z pracy (zmienione)") && !Has(pcA, "z pracy") && !Has(pcA, "z domu") && Has(pcB, "z pracy (zmienione)") && !Has(pcB, "z domu"));
+            // logon on B: the drive still shows yesterday's files; B saves; later the drive brings A's newer file
+            pcA.Add(new TaskItem { Text = "nowe w pracy", Day = "2026-10-22" });
+            pcA.SaveNow();
+            pcB.Add(new TaskItem { Text = "nowe w domu", Day = "2026-10-22" });
+            pcB.SaveNow();
+            Drive();
+            pcA.CheckDisk(); pcB.CheckDisk(); pcA.SaveNow(); pcB.SaveNow(); Drive(); pcA.CheckDisk(); pcB.CheckDisk();
+            Check("sync: both computers' new tasks survive every order of saving and copying",
+                new[] { "nowe w pracy", "nowe w domu", "z pracy (zmienione)" }.All(x => Has(pcA, x) && Has(pcB, x)));
+            try { Directory.Delete(fa, true); Directory.Delete(fb, true); } catch { }
+
+            // the same for the settings: each computer writes its own file, the newest one is taken
+            if (Arg("--data") is { } devSet)
+            {
+                var legacyS = Path.Combine(devSet, SharedSettings.FileName);
+                SharedSettings.Device = "PC-A";
+                var setA = new AppSettings { Theme = "dark" };
+                setA.Weather.City = "Kraków";
+                SharedSettings.Push(setA);
+                System.Threading.Thread.Sleep(20);
+                SharedSettings.Device = "PC-B";
+                var setB = new AppSettings { Theme = "light", SharedModified = setA.SharedModified, SharedPath = setA.SharedPath, SharedBaseline = setA.SharedBaseline, SharedHash = null };
+                setB.Weather.City = "Kraków";
+                SharedSettings.Push(setB); // a change on B
+                SharedSettings.Device = "PC-A";
+                var gotA = SharedSettings.Pull(setA);
+                Check("shared settings: a change on another computer comes over from its own file", setA.Theme == "light" && gotA.Contains(nameof(AppSettings.Theme)));
+                SharedSettings.Device = null;
+                foreach (var sf3 in Directory.GetFiles(Path.Combine(devSet, "devices"), "settings-PC-*.json")) File.Delete(sf3);
+                if (File.Exists(legacyS)) File.Delete(legacyS);
+            }
             var carried = new TaskItem { Text = "długie", Day = "2026-10-05", Started = true };
             carried.NoteMove("2026-10-05", "2026-10-06", "2026-10-08");
             carried.NoteMove("2026-10-06", "2026-10-08", "2026-10-08");

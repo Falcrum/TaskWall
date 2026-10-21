@@ -56,7 +56,7 @@ public sealed class HelpWindow : DarkWindow
         }),
         ("Mysz", new[]
         {
-            ("klik w pasek po lewej", "pusty → ⅓ w trakcie → ⅔ review (fioletowy) → pełny, zielony: zrobione (Shift+klik: od razu zrobione). Kolor: szary niski, pomarańczowy średni, czerwony wysoki priorytet; cienki pasek po prawej = projekt. W trakcie i review same przechodzą na kolejne dni robocze"),
+            ("klik w pasek po lewej", "stan: szary pusty do zrobienia → pomarańczowy ⅓ w trakcie → fioletowy ⅔ review → zielony pełny zrobione (Shift+klik: od razu zrobione). Po prawej dwa cienkie paski: priorytet (czerwony wysoki, bursztynowy średni, szary niski) i kolor projektu. W trakcie i review same przechodzą na kolejne dni robocze"),
             ("klik w tekst", "edycja (zadanie z Notion: otwiera stronę)"),
             ("prawy przycisk na zadaniu", "menu: estymacja, priorytet, kategoria, powtarzanie, podzadania, archiwum"),
             ("prawy przycisk na dniu", "oznaczenia dni, powtarzane oznaczenia, alarm"),

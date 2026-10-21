@@ -35,6 +35,26 @@ static class Anim
         if (dy != 0) t.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(dy, 0, TimeSpan.FromMilliseconds(ms)) { EasingFunction = Out, BeginTime = fade.BeginTime });
     }
 
+    /// <summary>A state bar that just changed: its fill grows up from the bottom to its new level.</summary>
+    public static void FillUp(FrameworkElement statusBar)
+    {
+        if (!On) return;
+        var fill = Find(statusBar);
+        if (fill == null) return;
+        var s = new ScaleTransform(1, 0);
+        fill.RenderTransformOrigin = new Point(0.5, 1);
+        fill.RenderTransform = s;
+        s.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(420)) { EasingFunction = new BackEase { Amplitude = 0.35, EasingMode = EasingMode.EaseOut } });
+
+        static FrameworkElement? Find(DependencyObject d)
+        {
+            if (d is FrameworkElement { Tag: "fill" } f) return f;
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(d); i++) if (Find(VisualTreeHelper.GetChild(d, i)) is { } r) return r;
+            if (d is System.Windows.Controls.Panel p) foreach (UIElement c in p.Children) if (Find(c) is { } r2) return r2;
+            return null;
+        }
+    }
+
     /// <summary>Small "pop" (used when a task gets checked).</summary>
     public static void Pop(FrameworkElement el)
     {
