@@ -830,6 +830,23 @@ public sealed class SettingsWindow : DarkWindow
             style.ToolTip = L.T("Ramka: dzień zachowuje kolory zadań (np. w widoku roku), widać tylko obrys i etykietę. Tło: cały dzień w kolorze oznaczenia.");
             DockPanel.SetDock(style, Dock.Right);
             row.Children.Add(style);
+            // days a year (BŚU 27, sick leave 33 …): the year view counts what is used and what is left
+            var allowance = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = list[i].Allowance?.ToString() ?? "", Width = 50, Margin = new Thickness(6, 0, 4, 0), ToolTip = L.T("Dni w roku (np. 27) – widok 365 pokazuje wykorzystane i pozostałe; puste = nie liczyć") };
+            void CommitAllowance()
+            {
+                int? v = int.TryParse(allowance.Text.Trim(), out var a) && a > 0 ? a : null;
+                if (v == list[index].Allowance) return;
+                list[index].Allowance = v;
+                allowance.Text = v?.ToString() ?? "";
+                Save();
+            }
+            allowance.LostKeyboardFocus += (_, _) => CommitAllowance();
+            allowance.KeyDown += (_, e) => { if (e.Key == Key.Enter) CommitAllowance(); };
+            var allowanceLabel = new TextBlock { Text = L.T("dni/rok"), FontSize = 11, Foreground = Ui.Res("FgFaint"), VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(allowanceLabel, Dock.Right);
+            DockPanel.SetDock(allowance, Dock.Right);
+            row.Children.Add(allowanceLabel);
+            row.Children.Add(allowance);
             var code = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = list[i].Code, MaxLength = 8, Width = 90, Margin = new Thickness(0, 0, 6, 0), ToolTip = L.T("Kod w nagłówku dnia") };
             var label = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = list[i].Label, MaxLength = 40, ToolTip = L.T("Opis (np. Home Office)") };
             void Commit()
@@ -1011,6 +1028,8 @@ public sealed class SettingsWindow : DarkWindow
         pattern.SelectedItem = pattern.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == S.Pattern) ?? pattern.Items[0];
         pattern.SelectionChanged += (_, _) => { if (pattern.SelectedItem is ComboBoxItem it) { S.Pattern = (string)it.Tag; App.Instance.ApplySettings(); } };
         p.Children.Add(Pair(L.T("Wzór tła"), pattern));
+        p.Children.Add(SliderRow(L.T("Widoczność wzoru"), 0, 300, S.PatternVisibility * 100, v => S.PatternVisibility = v / 100, v => $"{v:0}%"));
+        p.Children.Add(SliderRow(L.T("Skala wzoru"), 25, 400, S.PatternScale * 100, v => S.PatternScale = v / 100, v => $"{v:0}%"));
         p.Children.Add(Check(L.T("Matowe szkło (rozmyta tapeta pod tablicą)"), S.Blur, v => S.Blur = v));
         p.Children.Add(Check(L.T("Animacje"), S.Animations, v => S.Animations = v));
         p.Children.Add(Check(L.T("Podpisy przy ikonach górnego paska"), S.BarCaptions, v => S.BarCaptions = v));

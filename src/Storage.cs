@@ -614,6 +614,19 @@ public sealed class BoardStore
             if (t.Created == null) { t.Created = t.Modified; changed = true; }
             if (changed) n++; // Modified stays: a fill-in must never win over a real edit made on another computer
         }
+        // day marks of before 0.29: BŚU in its new blue with its yearly days, sick leave (ZL) as a mark of its own –
+        // once per board (MarkSet); later changes by hand stay
+        if (Data.MarkSet < 1 && Data.Marks is { } marks && marks.Any(m => m.Code == "BŚU"))
+        {
+            Data.MarkSet = 1; // once per board (both computers end the same)
+            var list = marks.Select(m => new MarkType { Code = m.Code, Label = m.Label, Color = m.Color, Style = m.Style, Allowance = m.Allowance }).ToList();
+            var l2 = list.First(m => m.Code == "BŚU");
+            l2.Color = MarkType.LeaveBlue;
+            l2.Allowance ??= 27;
+            if (list.All(m => m.Code != "ZL")) list.Add(new MarkType { Code = "ZL", Label = "Zwolnienie lekarskie", Color = MarkType.SickPink, Allowance = 33 });
+            SetMarkTypes(list);
+            n++;
+        }
         if (n > 0) MarkDirty();
         return n;
     }
@@ -1362,6 +1375,7 @@ public sealed class BoardStore
         bool takeBMarks = a.Marks == null || (b.Marks != null && b.MarksModified > a.MarksModified);
         result.Marks = takeBMarks ? b.Marks : a.Marks;
         result.MarksModified = takeBMarks ? b.MarksModified : a.MarksModified;
+        result.MarkSet = Math.Max(a.MarkSet, b.MarkSet);
 
         result.Rules = MergeRules(a.Rules, b.Rules);
         result.MarkRules = MergeRules(a.MarkRules, b.MarkRules);

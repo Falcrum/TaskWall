@@ -64,7 +64,7 @@ static class YearView
     /// Under the year's grid: done tasks per month as small columns (this month in the accent), the year in numbers
     /// (done, hours, the longest streak of working days with something done, the best month) and the share of each project.
     /// </summary>
-    static FrameworkElement Summary(int year, System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<TaskItem>> byDay, bool animate)
+    static FrameworkElement Summary(int year, System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<TaskItem>> byDay, bool animate, System.Collections.Generic.List<MarkType> types, Func<string, int> markCount)
     {
         var today = DateTime.Today;
         var green = TaskMarks.DoneGreen;
@@ -72,8 +72,10 @@ static class YearView
         var done = byDay.Values.SelectMany(l => l).Where(t => t.Done && t.Day != null).ToList();
         TextBlock Caption(string s) => new() { Text = L.Up(s), FontSize = 10, FontWeight = FontWeights.Bold, Foreground = Ui.Res("FgFaint"), Margin = new Thickness(0, 0, 0, 6) };
 
-        var root = new Grid { Margin = new Thickness(6, 16, 6, 4), MaxHeight = 150 };
+        var root = new Grid { Margin = new Thickness(6, 16, 6, 4), MaxHeight = 200 };
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5, GridUnitType.Star) });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3, GridUnitType.Star) });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
@@ -125,15 +127,6 @@ static class YearView
         var stats = new StackPanel();
         Grid.SetColumn(stats, 2);
         stats.Children.Add(Caption(L.T("Rok w liczbach")));
-        bool Workday(DateTime d) => d.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday) && !DaysOff.Is(d);
-        int streak = 0, best = 0;
-        for (var d = new DateTime(year, 1, 1); d.Year == year && d <= today; d = d.AddDays(1))
-        {
-            bool any = byDay.TryGetValue(BoardWindow.DayKey(d), out var l) && l.Any(t => t.Done);
-            if (any) best = Math.Max(best, ++streak);
-            else if (Workday(d) && d < today) streak = 0; // a weekend or a day off doesn't break it, nor today still going
-        }
-        int bestMonth = Array.IndexOf(perMonth, perMonth.Max()) + 1;
         double hours = done.Sum(t => t.Estimate ?? 0);
         void Stat(string value, string label)
         {
@@ -144,13 +137,40 @@ static class YearView
         }
         Stat(done.Count.ToString(), L.T("zadań zrobionych"));
         if (hours > 0) Stat(BoardWindow.Hours(Math.Round(hours, 1)), L.T("zrobionej estymacji"));
-        Stat(best.ToString(), L.T("dni z rzędu – najdłuższa seria"));
-        if (perMonth.Max() > 0) Stat(BoardWindow.Pl.TextInfo.ToTitleCase(BoardWindow.Pl.DateTimeFormat.GetMonthName(bestMonth)), L.F("najlepszy miesiąc ({0})", perMonth.Max()));
         root.Children.Add(stats);
+
+        // ----- days off: what is used and what is left of each kind with a yearly allowance (BŚU, sick leave …) -----
+        var leave = new StackPanel();
+        Grid.SetColumn(leave, 4);
+        leave.Children.Add(Caption(L.T("Dni wolne")));
+        foreach (var m in types.Where(m => m.Allowance is > 0 || (!m.Ring && markCount(m.Code) > 0)))
+        {
+            int used = markCount(m.Code), all = m.Allowance ?? 0, left = Math.Max(0, all - used);
+            var c = BoardWindow.ParseColor(m.Color);
+            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+            var ring = Ring(all > 0 ? (double)left / all : 0, c, all > 0 ? left.ToString() : used.ToString());
+            DockPanel.SetDock(ring, Dock.Left);
+            row.Children.Add(ring);
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) };
+            text.Children.Add(new TextBlock { Text = MarkType.ShowLabel(m.Code, m.Label.Length > 0 ? m.Label : m.Code) + "  (" + MarkType.Show(m.Code) + ")", FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = Ui.Res("Fg"), TextTrimming = TextTrimming.CharacterEllipsis });
+            var line = new TextBlock { FontSize = 11, Foreground = Ui.Res("FgDim") };
+            if (all > 0)
+            {
+                line.Inlines.Add(new Run(L.F("{0}: dostępne ", year)));
+                line.Inlines.Add(new Run(left.ToString()) { FontWeight = FontWeights.Bold, Foreground = Ui.Res("Fg") });
+                line.Inlines.Add(new Run(" " + L.F("z {0} dni", all) + "  ·  " + L.F("wykorzystane {0}", used)));
+            }
+            else line.Inlines.Add(new Run(L.F("{0}: {1} dni", year, used)));
+            text.Children.Add(line);
+            row.Children.Add(text);
+            leave.Children.Add(row);
+        }
+        if (leave.Children.Count == 1) leave.Children.Add(new TextBlock { Text = L.T("Ustaw liczbę dni w roku przy oznaczeniach (Ustawienia → Konta).") , FontSize = 11, Foreground = Ui.Res("FgFaint"), TextWrapping = TextWrapping.Wrap });
+        root.Children.Add(leave);
 
         // ----- projects -----
         var proj = new StackPanel();
-        Grid.SetColumn(proj, 4);
+        Grid.SetColumn(proj, 6);
         proj.Children.Add(Caption(L.T("Projekty")));
         var groups = done.GroupBy(t => t.NotionSource ?? "").Select(g => (Name: g.Key, Count: g.Count(), Color: TaskMarks.ProjectColor(g.First()) ?? Color.FromRgb(0x7E, 0x8C, 0x9C)))
             .OrderByDescending(g => g.Count).ToList();
@@ -176,6 +196,26 @@ static class YearView
         else proj.Children.Add(new TextBlock { Text = L.T("Brak zrobionych zadań w tym roku."), FontSize = 11, Foreground = Ui.Res("FgFaint") });
         root.Children.Add(proj);
         return root;
+    }
+
+    /// <summary>A ring like a gauge: the coloured arc is the share left (from the top, clockwise), the number in the middle.</summary>
+    static FrameworkElement Ring(double fraction, Color c, string center)
+    {
+        const double size = 42, thick = 4.5;
+        var g = new Grid { Width = size, Height = size };
+        g.Children.Add(new System.Windows.Shapes.Ellipse { Stroke = new SolidColorBrush(Th.Ink(0x1C)), StrokeThickness = thick });
+        fraction = Math.Clamp(fraction, 0, 1);
+        if (fraction >= 0.999) g.Children.Add(new System.Windows.Shapes.Ellipse { Stroke = new SolidColorBrush(c), StrokeThickness = thick });
+        else if (fraction > 0)
+        {
+            double r = (size - thick) / 2, cx = size / 2, cy = size / 2, a = fraction * 2 * Math.PI;
+            var end = new Point(cx + r * Math.Sin(a), cy - r * Math.Cos(a));
+            var fig = new PathFigure { StartPoint = new Point(cx, cy - r) };
+            fig.Segments.Add(new ArcSegment(end, new Size(r, r), 0, fraction > 0.5, SweepDirection.Clockwise, true));
+            g.Children.Add(new System.Windows.Shapes.Path { Data = new PathGeometry(new[] { fig }), Stroke = new SolidColorBrush(c), StrokeThickness = thick, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round });
+        }
+        g.Children.Add(new TextBlock { Text = center, FontSize = 13, FontWeight = FontWeights.Bold, Foreground = Ui.Res("Fg"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
+        return g;
     }
 
     /// <summary>A filled day mark (BŚU, leave): hatched at 45° in its colour, like on the timeline.</summary>
@@ -226,7 +266,7 @@ static class YearView
         foreach (var (code, label, color) in types.Select(m => (m.Code, m.Label, m.Color)))
             totals.Children.Add(new TextBlock
             {
-                Text = $"{code} {MarkCount(code)}", FontSize = 12, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 14, 0),
+                Text = $"{MarkType.Show(code)} {MarkCount(code)}", FontSize = 12, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 14, 0),
                 Foreground = new SolidColorBrush(BoardWindow.ParseColor(color)), ToolTip = L.F("{0}: dni w {1}", label, year),
             });
         header.Children.Add(totals);
@@ -245,7 +285,7 @@ static class YearView
             var c = BoardWindow.ParseColor(m.Color);
             if (m.Ring) Swatch(new Border { BorderBrush = new SolidColorBrush(c), BorderThickness = new Thickness(1.5) });
             else Swatch(new Border { Background = Hatch(c) });
-            Text(m.Code);
+            Text(MarkType.Show(m.Code));
         }
         header.Children.Add(legend);
         dock.Children.Add(header);
@@ -294,7 +334,7 @@ static class YearView
             {
                 var line = new TextBlock { VerticalAlignment = VerticalAlignment.Top, RenderTransform = new ScaleTransform(0.82, 0.82) };
                 foreach (var (code, color, n) in counts)
-                    line.Inlines.Add(new Run($"{code} {n}  ") { Foreground = new SolidColorBrush(BoardWindow.ParseColor(color)), FontWeight = FontWeights.SemiBold });
+                    line.Inlines.Add(new Run($"{MarkType.Show(code)} {n}  ") { Foreground = new SolidColorBrush(BoardWindow.ParseColor(color)), FontWeight = FontWeights.SemiBold });
                 UnitPanel.SetBox(line, new Rect(x + startCol + 0.1, 0.95, 5, 1));
                 panel.Children.Add(line);
             }
@@ -347,7 +387,7 @@ static class YearView
                 var tip = date.ToString("dddd, d MMMM yyyy", BoardWindow.Pl) + "  ·  " + L.F("tydz. {0}", BoardWindow.WeekNo(date));
                 if (dayOff != null) tip += "\n" + L.F("{0} (dzień wolny)", dayOff);
                 if (total > 0) tip += "\n" + L.F("zadania: {0}, zrobione: {1}", total, done);
-                if (mark != null) tip += $"\n{mark}";
+                if (mark != null) tip += "\n" + MarkType.Show(mark);
                 cell.ToolTip = tip;
                 cell.MouseEnter += (_, _) => cell.Opacity = 0.7;
                 cell.MouseLeave += (_, _) => cell.Opacity = 1;
@@ -374,7 +414,7 @@ static class YearView
         panel.HorizontalAlignment = HorizontalAlignment.Center;
         panel.VerticalAlignment = VerticalAlignment.Top;
         // the year in numbers under the grid: done tasks per month, a few totals, the share of each project
-        var summary = Summary(year, byDay, animate);
+        var summary = Summary(year, byDay, animate, types, code => MarkCount(code));
         DockPanel.SetDock(summary, Dock.Bottom);
         dock.Children.Add(summary);
         dock.Children.Add(panel);

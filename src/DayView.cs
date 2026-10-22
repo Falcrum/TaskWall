@@ -47,7 +47,8 @@ public sealed class DayView : Grid
     string? _noteKey;
     int _enterIndex;
     bool _scrolled;
-    readonly DockPanel _left = new(), _right = new() { Margin = new Thickness(4, 0, 4, 0) };
+    readonly DockPanel _left = new(), _right = new() { Margin = new Thickness(0) };
+    readonly Border _notesCard = new() { CornerRadius = new CornerRadius(8), Padding = new Thickness(12, 8, 10, 8), Margin = new Thickness(2, 0, 2, 4) };
     /// <summary>One hour: the whole day fits the height there is (no scrolling), but never so small it can't be grabbed.</summary>
     double HourH => _scroll.ActualHeight > 0
         ? Math.Clamp(Math.Floor((_scroll.ActualHeight - 18) / 24 * 4) / 4, Math.Round(App.Settings.FontSize * 2.2), Math.Round(App.Settings.FontSize * 6))
@@ -91,7 +92,9 @@ public sealed class DayView : Grid
         DockPanel.SetDock(_notesTitle, Dock.Top);
         right.Children.Add(_notesTitle);
         right.Children.Add(_notes);
-        Children.Add(At2(right, 2));
+        // the notebook on a card a shade apart from the board, so it reads as a page to write on
+        _notesCard.Child = right;
+        Children.Add(At2(_notesCard, 2));
         // a note is saved where it was loaded from (that account, that day) – never into the account switched to since
         _notes.Changed += md => (_noteStore ?? _host.Store()).SetNote(_noteKey ?? Key(_date), md);
         _notes.ExportClicked += ExportMenu;
@@ -119,7 +122,10 @@ public sealed class DayView : Grid
         // the notebook on the left or the right (Settings → Tablica)
         bool notesLeft = App.Settings.DayNotesLeft;
         SetColumn(_left, notesLeft ? 2 : 0);
-        SetColumn(_right, notesLeft ? 0 : 2);
+        SetColumn(_notesCard, notesLeft ? 0 : 2);
+        _notesCard.Background = B(Th.Ink(Th.Light ? (byte)0x0D : (byte)0x09));
+        _notesCard.BorderBrush = B(Th.Ink(Th.Light ? (byte)0x14 : (byte)0x0F));
+        _notesCard.BorderThickness = new Thickness(1);
         ColumnDefinitions[0].Width = new GridLength(notesLeft ? 2 : 3, GridUnitType.Star);
         ColumnDefinitions[2].Width = new GridLength(notesLeft ? 3 : 2, GridUnitType.Star);
         ColumnDefinitions[0].MinWidth = notesLeft ? 260 : 0;

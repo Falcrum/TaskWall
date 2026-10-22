@@ -362,6 +362,18 @@ static partial class L
         ("zmierzonego czasu pracy (łącznie na tych zadaniach)", "of tracked working time (in total on these tasks)"),
         ("Źródło Markdown (czysty tekst ze znakami)", "Markdown source (plain text with the marks)"),
 
+        // 0.29 – days off allowance, pattern sliders
+        ("Dni w roku (np. 27) – widok 365 pokazuje wykorzystane i pozostałe; puste = nie liczyć", "Days a year (e.g. 27) – the 365-day view shows used and left; empty = not counted"),
+        ("Dni wolne", "Days off"),
+        ("Skala wzoru", "Pattern scale"),
+        ("Ustaw liczbę dni w roku przy oznaczeniach (Ustawienia → Konta).", "Set the days a year next to the day marks (Settings → Accounts)."),
+        ("Widoczność wzoru", "Pattern visibility"),
+        ("dni/rok", "days/yr"),
+        ("wykorzystane {0}", "used {0}"),
+        ("z {0} dni", "of {0} days"),
+        ("{0}: dostępne ", "{0}: available "),
+        ("{0}: {1} dni", "{0}: {1} days"),
+
         // 0.28 – tests state, chosen weekdays, year summary, fabric pattern
         ("Brak zrobionych zadań w tym roku.", "No tasks done this year."),
         ("Dodaj spotkanie…", "Add a meeting…"),

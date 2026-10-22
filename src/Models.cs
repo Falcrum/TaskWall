@@ -515,6 +515,8 @@ public sealed class BoardData
     /// <summary>Kinds of day marks of this account; null = defaults not created yet.</summary>
     public List<MarkType>? Marks { get; set; }
     public DateTime MarksModified { get; set; }
+    /// <summary>Which one-time update of the day marks this board has had (1 = 0.29: BŚU blue with 27 days, sick leave ZL).</summary>
+    public int MarkSet { get; set; }
     /// <summary>Repeating day marks ("HO every Friday", "Urlop 3–14 Aug"); Text = mark code.</summary>
     public List<RecurringRule> MarkRules { get; set; } = new();
     public List<TrashEntry>? Trash { get; set; }
@@ -552,10 +554,25 @@ public sealed class MarkType
     /// <summary>"ring" = only a coloured frame (the day keeps showing its tasks), "fill" = coloured day; null = HO ring, others fill.</summary>
     public string? Style { get; set; }
     [JsonIgnore] public bool Ring => Style == null ? Code == "HO" : Style == "ring";
+    /// <summary>Days of this kind available in a year (BŚU 27, sick leave 33 …); null = not counted.</summary>
+    public int? Allowance { get; set; }
+
+    /// <summary>The colours of the default marks: apart from the board's own (green done, orange accent, violet review / meetings, teal HO and tests).</summary>
+    public const string LeaveBlue = "#4F7DE3", SickPink = "#D46BB0";
 
     public static List<MarkType> DefaultsFor(string layer) => layer == "private"
         ? new()
-        : new() { new() { Code = "HO", Label = "Home Office", Color = "#3BB8C9" }, new() { Code = "BŚU", Label = "Brak Świadczenia Usług", Color = "#A47CF0" } };
+        : new()
+        {
+            new() { Code = "HO", Label = "Home Office", Color = "#3BB8C9" },
+            new() { Code = "BŚU", Label = "Brak Świadczenia Usług", Color = LeaveBlue, Allowance = 27 },
+            new() { Code = "ZL", Label = "Zwolnienie lekarskie", Color = SickPink, Allowance = 33 },
+        };
+
+    /// <summary>The mark's short name as shown: in English BŚU = PTO (paid time off), ZL = SL (sick leave).</summary>
+    public static string Show(string? code) => code == null ? "" : !L.En ? code : code switch { "BŚU" => "PTO", "ZL" => "SL", _ => code };
+
+    public static string ShowLabel(string code, string label) => !L.En ? label : code switch { "BŚU" => "Paid time off", "ZL" => "Sick leave", _ => label };
 }
 
 /// <summary>An iCal (.ics) feed, e.g. Google Calendar's "secret address in iCal format".</summary>
@@ -684,6 +701,9 @@ public sealed class AppSettings
     public bool Opaque { get; set; }
     /// <summary>A fine pattern over the board's background: "none", "fabric", "dots" or "grid".</summary>
     public string Pattern { get; set; } = "none";
+    /// <summary>How visible the pattern is (1 = as designed, 0..3) and how big (1 = as designed, 0.25..4).</summary>
+    public double PatternVisibility { get; set; } = 1;
+    public double PatternScale { get; set; } = 1;
     public WeatherSettings Weather { get; set; } = new();
     public TimelineSettings Timeline { get; set; } = new();
     /// <summary>Update the user said "no" to (not offered again; Settings → Info can still install it).</summary>

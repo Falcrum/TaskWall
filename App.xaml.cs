@@ -423,34 +423,36 @@ public partial class App : Application
     /// The fine background pattern over the glass: "dots" (a dot every 16 px), "grid" (thin lines every 16 px, a little
     /// stronger every 80 px – like drawing paper), or none. Very faint, so the tasks stay what you look at.
     /// </summary>
-    static Brush Pattern(string? kind)
+    static Brush Pattern(string? kind, double visibility = 1, double scale = 1)
     {
         if (kind is not ("dots" or "grid" or "fabric")) return Brushes.Transparent;
         var g = new DrawingGroup();
+        byte V(byte a) => (byte)Math.Clamp(a * visibility, 0, 255); // the visibility slider: 0–300 %
+        scale = Math.Clamp(scale, 0.25, 4);
         if (kind == "fabric")
         {
             // a barely visible checkerboard turned by 45° – reads like woven fabric, not like a pattern
             const double cell = 5;
-            var ink = new SolidColorBrush(Th.Ink(Th.Light ? (byte)0x0B : (byte)0x07));
+            var ink = new SolidColorBrush(Th.Ink(V(Th.Light ? (byte)0x0B : (byte)0x07)));
             g.Children.Add(new GeometryDrawing(Brushes.Transparent, null, new RectangleGeometry(new Rect(0, 0, cell * 2, cell * 2))));
             g.Children.Add(new GeometryDrawing(ink, null, new RectangleGeometry(new Rect(0, 0, cell, cell))));
             g.Children.Add(new GeometryDrawing(ink, null, new RectangleGeometry(new Rect(cell, cell, cell, cell))));
             return new DrawingBrush(g)
             {
-                TileMode = TileMode.Tile, Viewport = new Rect(0, 0, cell * 2, cell * 2), ViewportUnits = BrushMappingMode.Absolute,
-                Viewbox = new Rect(0, 0, cell * 2, cell * 2), ViewboxUnits = BrushMappingMode.Absolute, Stretch = Stretch.None,
+                TileMode = TileMode.Tile, Viewport = new Rect(0, 0, (cell * 2) * scale, (cell * 2) * scale), ViewportUnits = BrushMappingMode.Absolute,
+                Viewbox = new Rect(0, 0, cell * 2, cell * 2), ViewboxUnits = BrushMappingMode.Absolute, Stretch = Stretch.Fill,
                 Transform = new RotateTransform(45),
             };
         }
         if (kind == "dots")
         {
-            var dot = new SolidColorBrush(Th.Ink(Th.Light ? (byte)0x30 : (byte)0x26));
+            var dot = new SolidColorBrush(Th.Ink(V(Th.Light ? (byte)0x30 : (byte)0x26)));
             g.Children.Add(new GeometryDrawing(Brushes.Transparent, null, new RectangleGeometry(new Rect(0, 0, 16, 16))));
             g.Children.Add(new GeometryDrawing(dot, null, new EllipseGeometry(new Point(8, 8), 0.9, 0.9)));
-            return new DrawingBrush(g) { TileMode = TileMode.Tile, Viewport = new Rect(0, 0, 16, 16), ViewportUnits = BrushMappingMode.Absolute, Viewbox = new Rect(0, 0, 16, 16), ViewboxUnits = BrushMappingMode.Absolute, Stretch = Stretch.None };
+            return new DrawingBrush(g) { TileMode = TileMode.Tile, Viewport = new Rect(0, 0, (16) * scale, (16) * scale), ViewportUnits = BrushMappingMode.Absolute, Viewbox = new Rect(0, 0, 16, 16), ViewboxUnits = BrushMappingMode.Absolute, Stretch = Stretch.Fill };
         }
-        var minor = new Pen(new SolidColorBrush(Th.Ink(Th.Light ? (byte)0x14 : (byte)0x0E)), 0.6);
-        var major = new Pen(new SolidColorBrush(Th.Ink(Th.Light ? (byte)0x24 : (byte)0x1A)), 0.8);
+        var minor = new Pen(new SolidColorBrush(Th.Ink(V(Th.Light ? (byte)0x14 : (byte)0x0E))), 0.6);
+        var major = new Pen(new SolidColorBrush(Th.Ink(V(Th.Light ? (byte)0x24 : (byte)0x1A))), 0.8);
         g.Children.Add(new GeometryDrawing(Brushes.Transparent, null, new RectangleGeometry(new Rect(0, 0, 80, 80))));
         for (int i = 1; i < 5; i++)
         {
@@ -459,7 +461,7 @@ public partial class App : Application
         }
         g.Children.Add(new GeometryDrawing(null, major, new LineGeometry(new Point(0.5, 0), new Point(0.5, 80))));
         g.Children.Add(new GeometryDrawing(null, major, new LineGeometry(new Point(0, 0.5), new Point(80, 0.5))));
-        return new DrawingBrush(g) { TileMode = TileMode.Tile, Viewport = new Rect(0, 0, 80, 80), ViewportUnits = BrushMappingMode.Absolute, Viewbox = new Rect(0, 0, 80, 80), ViewboxUnits = BrushMappingMode.Absolute, Stretch = Stretch.None };
+        return new DrawingBrush(g) { TileMode = TileMode.Tile, Viewport = new Rect(0, 0, (80) * scale, (80) * scale), ViewportUnits = BrushMappingMode.Absolute, Viewbox = new Rect(0, 0, 80, 80), ViewboxUnits = BrushMappingMode.Absolute, Stretch = Stretch.Fill };
     }
 
     void ApplyTheme()
@@ -477,7 +479,7 @@ public partial class App : Application
         // no transparency at all: a solid surface in the wallpaper's hue (like the dialogs), nothing shows through
         Resources["GlassTint"] = new SolidColorBrush(!Settings.Opaque ? Th.Glass(a)
             : _surfaceTint is { } st ? (Th.Light ? Wallpaper.Surface(st, 0.95, 0.05) : Wallpaper.Surface(st, 0.095, 0.28)) : Th.Glass(255));
-        Resources["GlassPattern"] = Pattern(Settings.Pattern);
+        Resources["GlassPattern"] = Pattern(Settings.Pattern, Settings.PatternVisibility, Settings.PatternScale);
         // menus, tool tips and dialogs: the hue of the wallpaper behind the board, so they sit with the glass
         if (_surfaceTint is { } tint)
         {

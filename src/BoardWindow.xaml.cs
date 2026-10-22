@@ -694,7 +694,7 @@ public partial class BoardWindow : GlassWindow
                 Margin = new Thickness(7, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 ToolTip = (markInfo?.Label ?? mark) + (Store.SeriesMark(key) == mark ? L.T("  ·  powtarzane") : ""),
-                Child = new TextBlock { Text = mark, FontSize = 9.5, FontWeight = FontWeights.Bold, Foreground = Brushes.White },
+                Child = new TextBlock { Text = MarkType.Show(mark), FontSize = 9.5, FontWeight = FontWeights.Bold, Foreground = Brushes.White },
             });
         left.Children.Add(nameRow);
         if (!compact)
@@ -1212,7 +1212,7 @@ public partial class BoardWindow : GlassWindow
         foreach (var m in Store.MarkTypes)
         {
             var code = m.Code;
-            var mi = new MenuItem { Header = (mark == code ? "✓  " : "     ") + (m.Label.Length > 0 && m.Label != code ? $"{m.Label} ({code})" : code) };
+            var mi = new MenuItem { Header = (mark == code ? "✓  " : "     ") + (m.Label.Length > 0 && m.Label != code ? $"{MarkType.ShowLabel(code, m.Label)} ({MarkType.Show(code)})" : MarkType.Show(code)) };
             mi.Click += (_, _) => Do(() => Store.SetDayMark(key, mark == code ? null : code));
             menu.Items.Add(mi);
         }

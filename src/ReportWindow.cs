@@ -139,7 +139,7 @@ public sealed class Report
         if (Overtime > 0) Tile(H(Math.Round(Overtime, 2)), L.T("nadgodzin"));
         if (Tracked > 0) Tile(H(Math.Round(Tracked, 1)), L.T("zmierzonego czasu pracy (łącznie na tych zadaniach)"));
         Tile((Open.Count() + Carried.Count).ToString(), L.T("przeszło dalej / otwarte"));
-        foreach (var (code, m) in Marks) Tile(m.Days.ToString(), $"{code} · {m.Label}");
+        foreach (var (code, m) in Marks) Tile(m.Days.ToString(), $"{MarkType.Show(code)} · {MarkType.ShowLabel(code, m.Label)}");
         sb.Append("</div>");
 
         // done per day
@@ -330,7 +330,7 @@ public sealed class ReportWindow : DarkWindow
         if (r.Overtime > 0) Stat(BoardWindow.Hours(Math.Round(r.Overtime, 2)), L.T("nadgodzin"));
         if (r.Tracked > 0) Stat(BoardWindow.Hours(Math.Round(r.Tracked, 1)), L.T("zmierzonego czasu pracy (łącznie na tych zadaniach)"));
         Stat((r.Open.Count() + r.Carried.Count).ToString(), L.T("przeszło dalej / otwarte"));
-        foreach (var (code, m) in r.Marks) Stat(m.Days.ToString(), $"{code} · {m.Label}");
+        foreach (var (code, m) in r.Marks) Stat(m.Days.ToString(), $"{MarkType.Show(code)} · {MarkType.ShowLabel(code, m.Label)}");
         _body.Children.Add(stats);
 
         // done per day: accent = done, faint = still open

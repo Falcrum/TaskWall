@@ -440,8 +440,8 @@ public sealed class TimelineView : Grid
             {
                 Width = Math.Max(4, len * w - 4), Height = 14, CornerRadius = new CornerRadius(4),
                 Background = mt?.Ring == true ? Brushes.Transparent : B(A(mc, 0x70)), BorderBrush = B(mc), BorderThickness = new Thickness(mt?.Ring == true ? 1.2 : 0),
-                ToolTip = (mt?.Label is { Length: > 0 } lab && lab != code ? $"{code} · {lab}" : code) + "\n" + (len == 1 ? d.ToString("dddd d MMM", pl) : $"{d.ToString("d MMM", pl)} – {d.AddDays(len - 1).ToString("d MMM", pl)}"),
-                Child = w * len >= 26 ? new TextBlock { Text = code, FontSize = 9, FontWeight = FontWeights.Bold, Foreground = mt?.Ring == true ? Tx(mc) : Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } : null,
+                ToolTip = (mt?.Label is { Length: > 0 } lab && lab != code ? $"{MarkType.Show(code)} · {MarkType.ShowLabel(code, lab)}" : MarkType.Show(code)) + "\n" + (len == 1 ? d.ToString("dddd d MMM", pl) : $"{d.ToString("d MMM", pl)} – {d.AddDays(len - 1).ToString("d MMM", pl)}"),
+                Child = w * len >= 26 ? new TextBlock { Text = MarkType.Show(code), FontSize = 9, FontWeight = FontWeights.Bold, Foreground = mt?.Ring == true ? Tx(mc) : Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } : null,
             };
             _header.Children.Add(At(run, X(d) + 2, DateRows + 3));
         }

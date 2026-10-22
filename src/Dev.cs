@@ -555,6 +555,13 @@ static class Dev
             Check("repeat on chosen weekdays: Mon–Wed every week, not Thursday, label 'Pn, Wt, Śr'",
                 mtw.Occurs(new DateTime(2026, 10, 19)) && mtw.Occurs(new DateTime(2026, 10, 21)) && !mtw.Occurs(new DateTime(2026, 10, 22)) && mtw.Occurs(new DateTime(2026, 10, 27))
                 && (L.En || mtw.RepeatLabel == "Pn, Wt, Śr"));
+            var mkStore = new BoardStore("work");
+            mkStore.Data.Marks = new() { new MarkType { Code = "HO", Label = "Home Office", Color = "#3BB8C9" }, new MarkType { Code = "BŚU", Label = "Brak Świadczenia Usług", Color = "#A47CF0" } };
+            mkStore.FillMissing(null);
+            var bsu = mkStore.MarkTypes.First(m => m.Code == "BŚU");
+            bsu.Color = "#123456"; mkStore.FillMissing(null); // a second time changes nothing (a colour set by hand stays)
+            Check("day marks: BŚU gets its new colour and 27 days, sick leave (ZL, 33 days) is added – once",
+                bsu.Color == "#123456" && bsu.Allowance == 27 && mkStore.MarkTypes.Count(m => m.Code == "ZL") == 1 && mkStore.MarkTypes.First(m => m.Code == "ZL").Allowance == 33);
             var otDir = Path.Combine(Path.GetTempPath(), "tw-ot-" + Guid.NewGuid().ToString("N")[..6]);
             var otStore = new BoardStore("work");
             otStore.Open(otDir);
