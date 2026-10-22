@@ -60,6 +60,124 @@ static class YearView
     /// <summary>Accent strength for 1, 2, 3, 4, 5+ done tasks on a day.</summary>
     static readonly byte[] Levels = { 0x48, 0x70, 0x98, 0xC4, 0xFF };
 
+    /// <summary>
+    /// Under the year's grid: done tasks per month as small columns (this month in the accent), the year in numbers
+    /// (done, hours, the longest streak of working days with something done, the best month) and the share of each project.
+    /// </summary>
+    static FrameworkElement Summary(int year, System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<TaskItem>> byDay, bool animate)
+    {
+        var today = DateTime.Today;
+        var green = TaskMarks.DoneGreen;
+        var accent = ((SolidColorBrush)Ui.Res("AccentBrush")).Color;
+        var done = byDay.Values.SelectMany(l => l).Where(t => t.Done && t.Day != null).ToList();
+        TextBlock Caption(string s) => new() { Text = L.Up(s), FontSize = 10, FontWeight = FontWeights.Bold, Foreground = Ui.Res("FgFaint"), Margin = new Thickness(0, 0, 0, 6) };
+
+        var root = new Grid { Margin = new Thickness(6, 16, 6, 4), MaxHeight = 150 };
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5, GridUnitType.Star) });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3, GridUnitType.Star) });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3, GridUnitType.Star) });
+
+        // ----- done per month -----
+        var perMonth = Enumerable.Range(1, 12).Select(m => done.Count(t => t.Day!.Length >= 7 && t.Day.Substring(5, 2) == m.ToString("00"))).ToArray();
+        int max = Math.Max(1, perMonth.Max());
+        var monthsBox = new DockPanel();
+        var mc = Caption(L.T("Zrobione w miesiącach"));
+        DockPanel.SetDock(mc, Dock.Top);
+        monthsBox.Children.Add(mc);
+        var months = new System.Windows.Controls.Primitives.UniformGrid { Rows = 1, Columns = 12 };
+        for (int m = 1; m <= 12; m++)
+        {
+            bool now = year == today.Year && m == today.Month;
+            var col = new DockPanel { Margin = new Thickness(3, 0, 3, 0) };
+            var name = new TextBlock { Text = BoardWindow.Pl.TextInfo.ToTitleCase(BoardWindow.Pl.DateTimeFormat.GetAbbreviatedMonthName(m).TrimEnd('.')), FontSize = 10, HorizontalAlignment = HorizontalAlignment.Center, Foreground = now ? Ui.Res("AccentBrush") : Ui.Res("FgFaint"), Margin = new Thickness(0, 4, 0, 0) };
+            DockPanel.SetDock(name, Dock.Bottom);
+            col.Children.Add(name);
+            var count = new TextBlock { Text = perMonth[m - 1] > 0 ? perMonth[m - 1].ToString() : "", FontSize = 10, FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center, Foreground = Ui.Res("FgDim") };
+            DockPanel.SetDock(count, Dock.Top);
+            var holder = new Grid();
+            var bar = new Border
+            {
+                VerticalAlignment = VerticalAlignment.Bottom, CornerRadius = new CornerRadius(3), Height = 4 + 56.0 * perMonth[m - 1] / max,
+                Background = new SolidColorBrush(Color.FromArgb(perMonth[m - 1] == 0 ? (byte)0x18 : (byte)(0x60 + 0x9F * perMonth[m - 1] / max), green.R, green.G, green.B)),
+                BorderBrush = now ? new SolidColorBrush(accent) : null, BorderThickness = new Thickness(now ? 1.5 : 0),
+                ToolTip = L.F("{0}: zrobione {1}", BoardWindow.Pl.DateTimeFormat.GetMonthName(m), perMonth[m - 1]),
+            };
+            holder.Children.Add(bar);
+            var stack = new DockPanel();
+            stack.Children.Add(count);
+            stack.Children.Add(holder);
+            col.Children.Add(stack);
+            months.Children.Add(col);
+            if (animate && Anim.On)
+            {
+                bar.RenderTransformOrigin = new Point(0.5, 1);
+                var s = new ScaleTransform(1, 0);
+                bar.RenderTransform = s;
+                s.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(420)) { BeginTime = TimeSpan.FromMilliseconds(500 + m * 45), EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
+            }
+        }
+        monthsBox.Children.Add(months);
+        root.Children.Add(monthsBox);
+
+        // ----- the year in numbers -----
+        var stats = new StackPanel();
+        Grid.SetColumn(stats, 2);
+        stats.Children.Add(Caption(L.T("Rok w liczbach")));
+        bool Workday(DateTime d) => d.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday) && !DaysOff.Is(d);
+        int streak = 0, best = 0;
+        for (var d = new DateTime(year, 1, 1); d.Year == year && d <= today; d = d.AddDays(1))
+        {
+            bool any = byDay.TryGetValue(BoardWindow.DayKey(d), out var l) && l.Any(t => t.Done);
+            if (any) best = Math.Max(best, ++streak);
+            else if (Workday(d) && d < today) streak = 0; // a weekend or a day off doesn't break it, nor today still going
+        }
+        int bestMonth = Array.IndexOf(perMonth, perMonth.Max()) + 1;
+        double hours = done.Sum(t => t.Estimate ?? 0);
+        void Stat(string value, string label)
+        {
+            var tb = new TextBlock { Margin = new Thickness(0, 0, 0, 3), FontSize = 12 };
+            tb.Inlines.Add(new Run(value + "  ") { FontWeight = FontWeights.Bold, FontSize = 15, Foreground = Ui.Res("Fg") });
+            tb.Inlines.Add(new Run(label) { Foreground = Ui.Res("FgDim") });
+            stats.Children.Add(tb);
+        }
+        Stat(done.Count.ToString(), L.T("zadań zrobionych"));
+        if (hours > 0) Stat(BoardWindow.Hours(Math.Round(hours, 1)), L.T("zrobionej estymacji"));
+        Stat(best.ToString(), L.T("dni z rzędu – najdłuższa seria"));
+        if (perMonth.Max() > 0) Stat(BoardWindow.Pl.TextInfo.ToTitleCase(BoardWindow.Pl.DateTimeFormat.GetMonthName(bestMonth)), L.F("najlepszy miesiąc ({0})", perMonth.Max()));
+        root.Children.Add(stats);
+
+        // ----- projects -----
+        var proj = new StackPanel();
+        Grid.SetColumn(proj, 4);
+        proj.Children.Add(Caption(L.T("Projekty")));
+        var groups = done.GroupBy(t => t.NotionSource ?? "").Select(g => (Name: g.Key, Count: g.Count(), Color: TaskMarks.ProjectColor(g.First()) ?? Color.FromRgb(0x7E, 0x8C, 0x9C)))
+            .OrderByDescending(g => g.Count).ToList();
+        if (groups.Count > 0)
+        {
+            var barRow = new Grid { Height = 10, Margin = new Thickness(0, 2, 0, 8), ClipToBounds = true };
+            foreach (var g in groups) barRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(g.Count, GridUnitType.Star) });
+            for (int i = 0; i < groups.Count; i++)
+            {
+                var seg = new Border { Background = new SolidColorBrush(groups[i].Color), Margin = new Thickness(i == 0 ? 0 : 1.5, 0, 0, 0), CornerRadius = new CornerRadius(i == 0 ? 3 : 0, i == groups.Count - 1 ? 3 : 0, i == groups.Count - 1 ? 3 : 0, i == 0 ? 3 : 0), ToolTip = $"{(groups[i].Name.Length > 0 ? groups[i].Name : L.T("bez projektu"))}: {groups[i].Count}" };
+                Grid.SetColumn(seg, i);
+                barRow.Children.Add(seg);
+            }
+            proj.Children.Add(barRow);
+            foreach (var g in groups.Take(4))
+            {
+                var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 2) };
+                row.Children.Add(new Border { Width = 8, Height = 8, CornerRadius = new CornerRadius(2), Background = new SolidColorBrush(g.Color), Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center });
+                row.Children.Add(new TextBlock { Text = $"{(g.Name.Length > 0 ? g.Name : L.T("bez projektu"))}  {g.Count}  ·  {Math.Round(100.0 * g.Count / done.Count)}%", FontSize = 11, Foreground = Ui.Res("FgDim") });
+                proj.Children.Add(row);
+            }
+        }
+        else proj.Children.Add(new TextBlock { Text = L.T("Brak zrobionych zadań w tym roku."), FontSize = 11, Foreground = Ui.Res("FgFaint") });
+        root.Children.Add(proj);
+        return root;
+    }
+
     /// <summary>A filled day mark (BŚU, leave): hatched at 45° in its colour, like on the timeline.</summary>
     static Brush Hatch(Color c)
     {
@@ -238,12 +356,27 @@ static class YearView
                 panel.Children.Add(cell);
 
                 if (animate) Anim.Enter(cell, 0, 0, 220, (int)(index++ * 1.5)); // "fills itself in"
+                if (date == today && Anim.On && cell.BorderBrush is SolidColorBrush pulseBrush)
+                {
+                    // today's frame breathes gently (stopped when the view goes away)
+                    var pulse = new DoubleAnimation(1, 0.45, TimeSpan.FromMilliseconds(1100))
+                    {
+                        AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut },
+                        BeginTime = TimeSpan.FromMilliseconds(animate ? days * 1.5 + 300 : 0),
+                    };
+                    pulseBrush.BeginAnimation(SolidColorBrush.OpacityProperty, pulse);
+                    cell.Unloaded += (_, _) => pulseBrush.BeginAnimation(SolidColorBrush.OpacityProperty, null);
+                }
             }
         }
         panel.UnitsWide = x + totalCols;
         panel.UnitsHigh = MonthH + 7;
         panel.HorizontalAlignment = HorizontalAlignment.Center;
         panel.VerticalAlignment = VerticalAlignment.Top;
+        // the year in numbers under the grid: done tasks per month, a few totals, the share of each project
+        var summary = Summary(year, byDay, animate);
+        DockPanel.SetDock(summary, Dock.Bottom);
+        dock.Children.Add(summary);
         dock.Children.Add(panel);
         return dock;
     }

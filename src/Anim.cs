@@ -27,9 +27,13 @@ static class Anim
     {
         if (!On) return;
         var t = Translate(el);
-        var fade = A(0, 1, ms);
+        // to the element's own opacity (a dimmed done task stays dimmed); afterwards the animation lets go, so later
+        // changes (hover, dimming) work again
+        double target = el.Opacity;
+        var fade = A(0, target, ms);
         fade.BeginTime = TimeSpan.FromMilliseconds(delayMs);
-        el.Opacity = 0;
+        fade.Completed += (_, _) => { el.BeginAnimation(UIElement.OpacityProperty, null); el.Opacity = target; };
+        el.Opacity = 0; // hidden until its turn (a delayed start)
         el.BeginAnimation(UIElement.OpacityProperty, fade);
         if (dx != 0) t.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(dx, 0, TimeSpan.FromMilliseconds(ms)) { EasingFunction = Out, BeginTime = fade.BeginTime });
         if (dy != 0) t.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(dy, 0, TimeSpan.FromMilliseconds(ms)) { EasingFunction = Out, BeginTime = fade.BeginTime });

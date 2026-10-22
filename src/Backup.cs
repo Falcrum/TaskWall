@@ -27,7 +27,7 @@ static class Backup
                 void Add(string file, string name) => AddShared(zip, file, name);
                 Add(Path.Combine(folder, BoardStore.FileName), $"accounts/{layer}/{BoardStore.FileName}");
                 Add(Path.Combine(folder, SharedSettings.FileName), $"accounts/{layer}/{SharedSettings.FileName}");
-                foreach (var sub in new[] { "backup", "raporty" })
+                foreach (var sub in new[] { "backup", "raporty", "devices" })
                 {
                     var dir = Path.Combine(folder, sub);
                     if (!Directory.Exists(dir)) continue;

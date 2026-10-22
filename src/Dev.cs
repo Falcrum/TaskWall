@@ -416,7 +416,7 @@ static class Dev
             var hand = new TaskItem { Day = "2026-10-13", Estimate = 4, PlanEnd = "2026-10-20" };
             hand.Estimate = 16; BoardWindow.ApplyAutoPlan(hand, hand.Day, 4);
             Check("auto plan follows the estimate, a hand-picked end stays", autoA == "2026-10-15" && auto.PlanEnd == null && hand.PlanEnd == "2026-10-20");
-            Check("progress: in progress = a third", Math.Abs(new TaskItem { Started = true }.Progress - 1.0 / 3) < 1e-9 && new TaskItem().Progress == 0);
+            Check("progress: in progress = a quarter", new TaskItem { Started = true }.Progress == 0.25 && new TaskItem().Progress == 0);
             var binDir = Path.Combine(Path.GetTempPath(), "taskwall-bin-" + Guid.NewGuid().ToString("N"));
             var binStore = new BoardStore("work");
             binStore.Open(binDir);
@@ -528,17 +528,19 @@ static class Dev
                 && !doneT.Stretch(new DateTime(2026, 10, 22), Wd) && doneT.Day == "2026-10-19");
             var cyc = new TaskItem { Text = "c" };
             var seen = new System.Collections.Generic.List<BoardWindow.TaskState>();
-            for (int i = 0; i < 4; i++)
+            for (int i = 0; i < 5; i++)
             {
                 var next = BoardWindow.NextState(cyc);
                 seen.Add(next);
                 cyc.Done = next == BoardWindow.TaskState.Done;
-                cyc.Started = next is BoardWindow.TaskState.Started or BoardWindow.TaskState.Review ? true : cyc.Done ? cyc.Started : null;
+                cyc.Started = next is BoardWindow.TaskState.Started or BoardWindow.TaskState.Review or BoardWindow.TaskState.Tests ? true : cyc.Done ? cyc.Started : null;
                 cyc.Review = next == BoardWindow.TaskState.Review ? true : null;
+                cyc.Testing = next == BoardWindow.TaskState.Tests ? true : null;
             }
-            Check("states: a click goes to do → in progress → review → done → to do; review fills ⅔, in progress ⅓",
-                seen.SequenceEqual(new[] { BoardWindow.TaskState.Started, BoardWindow.TaskState.Review, BoardWindow.TaskState.Done, BoardWindow.TaskState.Todo })
-                && Math.Abs(new TaskItem { Started = true, Review = true }.Progress - 2.0 / 3) < 1e-9 && Math.Abs(TaskMarks.Fill("started") - 1.0 / 3) < 1e-9);
+            Check("states: a click goes to do → in progress → review → tests → done → to do; the bar fills ¼ / ½ / ¾ / full",
+                seen.SequenceEqual(new[] { BoardWindow.TaskState.Started, BoardWindow.TaskState.Review, BoardWindow.TaskState.Tests, BoardWindow.TaskState.Done, BoardWindow.TaskState.Todo })
+                && new TaskItem { Started = true, Review = true }.Progress == 0.5 && new TaskItem { Started = true, Testing = true }.Progress == 0.75
+                && TaskMarks.Fill("started") == 0.25 && TaskMarks.Fill("tests") == 0.75 && new TaskItem { Started = true, Review = true, Testing = true }.State == "tests");
             var hist = new TaskItem { Text = "h", Day = "2026-10-19", Started = true };
             hist.NoteState("2026-10-19");
             hist.Stretch(new DateTime(2026, 10, 20), Wd);
@@ -549,6 +551,10 @@ static class Dev
             var night = new Alarm { Kind = "meeting", Day = "2026-10-21", Time = "23:00", End = "02:00" };
             Check("meetings over midnight end the next day (23:00–02:00 = 3 h)", night.Hours == 3 && night.EndAt(new DateTime(2026, 10, 21)) == new DateTime(2026, 10, 22, 2, 0, 0));
 
+            var mtw = new Alarm { Kind = "meeting", Text = "Stand-up", Day = "2026-10-19", Time = "09:30", End = "09:45", Repeat = "days:1,2,3" };
+            Check("repeat on chosen weekdays: Mon–Wed every week, not Thursday, label 'Pn, Wt, Śr'",
+                mtw.Occurs(new DateTime(2026, 10, 19)) && mtw.Occurs(new DateTime(2026, 10, 21)) && !mtw.Occurs(new DateTime(2026, 10, 22)) && mtw.Occurs(new DateTime(2026, 10, 27))
+                && (L.En || mtw.RepeatLabel == "Pn, Wt, Śr"));
             var otDir = Path.Combine(Path.GetTempPath(), "tw-ot-" + Guid.NewGuid().ToString("N")[..6]);
             var otStore = new BoardStore("work");
             otStore.Open(otDir);

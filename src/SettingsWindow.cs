@@ -1006,7 +1006,7 @@ public sealed class SettingsWindow : DarkWindow
         p.Children.Add(Pair(L.T("Motyw"), themeRow));
         p.Children.Add(Check(L.T("Bez przezroczystości (pełne, matowe tło)"), S.Opaque, v => S.Opaque = v));
         var pattern = new ComboBox { Width = 220, HorizontalAlignment = HorizontalAlignment.Left };
-        foreach (var (key, label) in new[] { ("none", L.T("brak")), ("dots", L.T("drobne kropki")), ("grid", L.T("drobna kratka")) })
+        foreach (var (key, label) in new[] { ("none", L.T("brak")), ("fabric", L.T("materiał (szachownica pod kątem 45°)")), ("dots", L.T("drobne kropki")), ("grid", L.T("drobna kratka")) })
             pattern.Items.Add(new ComboBoxItem { Content = label, Tag = key });
         pattern.SelectedItem = pattern.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == S.Pattern) ?? pattern.Items[0];
         pattern.SelectionChanged += (_, _) => { if (pattern.SelectedItem is ComboBoxItem it) { S.Pattern = (string)it.Tag; App.Instance.ApplySettings(); } };

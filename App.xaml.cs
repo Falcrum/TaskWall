@@ -315,6 +315,7 @@ public partial class App : Application
         s.SyncStateChanged += () => Board?.UpdateSyncIcon();
         Stores[layer] = s;
         if (Settings.StretchActive) s.StretchActive(DateTime.Today); // in progress / in review: on to today (after it is in Stores: its BŚU days count)
+        s.FillMissing(Settings.AccountFor(layer).Notion.Name); // older tasks get what newer ones have (a project, an "added" date)
         return s;
     }
 
@@ -424,8 +425,23 @@ public partial class App : Application
     /// </summary>
     static Brush Pattern(string? kind)
     {
-        if (kind is not ("dots" or "grid")) return Brushes.Transparent;
+        if (kind is not ("dots" or "grid" or "fabric")) return Brushes.Transparent;
         var g = new DrawingGroup();
+        if (kind == "fabric")
+        {
+            // a barely visible checkerboard turned by 45° – reads like woven fabric, not like a pattern
+            const double cell = 5;
+            var ink = new SolidColorBrush(Th.Ink(Th.Light ? (byte)0x0B : (byte)0x07));
+            g.Children.Add(new GeometryDrawing(Brushes.Transparent, null, new RectangleGeometry(new Rect(0, 0, cell * 2, cell * 2))));
+            g.Children.Add(new GeometryDrawing(ink, null, new RectangleGeometry(new Rect(0, 0, cell, cell))));
+            g.Children.Add(new GeometryDrawing(ink, null, new RectangleGeometry(new Rect(cell, cell, cell, cell))));
+            return new DrawingBrush(g)
+            {
+                TileMode = TileMode.Tile, Viewport = new Rect(0, 0, cell * 2, cell * 2), ViewportUnits = BrushMappingMode.Absolute,
+                Viewbox = new Rect(0, 0, cell * 2, cell * 2), ViewboxUnits = BrushMappingMode.Absolute, Stretch = Stretch.None,
+                Transform = new RotateTransform(45),
+            };
+        }
         if (kind == "dots")
         {
             var dot = new SolidColorBrush(Th.Ink(Th.Light ? (byte)0x30 : (byte)0x26));

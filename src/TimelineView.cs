@@ -233,8 +233,9 @@ public sealed class TimelineView : Grid
         list = S.State switch
         {
             "open" => list.Where(x => !x.T.Done),
-            "started" => list.Where(x => x.T.IsStarted && !x.T.IsReview),
+            "started" => list.Where(x => x.T.State == "started"),
             "review" => list.Where(x => x.T.IsReview),
+            "tests" => list.Where(x => x.T.IsTesting),
             "done" => list.Where(x => x.T.Done),
             _ => list,
         };
@@ -294,13 +295,13 @@ public sealed class TimelineView : Grid
         "project" => t.NotionSource ?? "",
         "category" => TaskItem.Tags(t.Text, out _).FirstOrDefault() is { } tag ? (_store().CategoryFor(tag)?.Name ?? tag) : "",
         "priority" => string.IsNullOrEmpty(t.Priority) ? "" : BoardWindow.PriorityLevel(t.Priority) switch { 3 => SmartAdd.PriorityName(3), 2 => SmartAdd.PriorityName(2), 1 => SmartAdd.PriorityName(1), _ => t.Priority! },
-        "state" => t.Done ? L.T("Zrobione") : t.IsReview ? L.T("Review") : t.IsStarted ? L.T("W trakcie") : L.T("Do zrobienia"),
+        "state" => t.Done ? L.T("Zrobione") : t.IsTesting ? L.T("Testy") : t.IsReview ? L.T("Review") : t.IsStarted ? L.T("W trakcie") : L.T("Do zrobienia"),
         _ => "",
     };
 
     int GroupRank(string g) => S.Group switch
     {
-        "state" => g == L.T("Review") ? 0 : g == L.T("W trakcie") ? 1 : g == L.T("Do zrobienia") ? 2 : 3,
+        "state" => g == L.T("Testy") ? 0 : g == L.T("Review") ? 1 : g == L.T("W trakcie") ? 2 : g == L.T("Do zrobienia") ? 3 : 4,
         "priority" => Rank(g),
         _ => g.Length == 0 ? 1 : 0, // "no project / category" last
     };
@@ -476,7 +477,7 @@ public sealed class TimelineView : Grid
                 int wanted = w < MeetingListWidth ? Math.Min(day.Count, 1) : Math.Min(day.Count, 3);
                 if (wanted > _meetingRows && _barDrag == null && _dragFrom == null) _growMeetings = true;
                 if (day.Count == 0) continue;
-                string Line1(Meeting m) => $"{m.From:hh\\:mm}–{m.To:hh\\:mm}  {m.Title}" + (m.Own ? "" : "  (" + L.T("z kalendarza") + ")");
+                string Line1(Meeting m) => $"{m.From:hh\\:mm}–{(m.To >= TimeSpan.FromHours(24) ? "24:00" : m.To.ToString(@"hh\:mm"))}  {m.Title}" + (m.Own ? "" : "  (" + L.T("z kalendarza") + ")");
                 var tipAll = d.ToString("dddd d MMM", pl) + "\n" + string.Join("\n", day.Select(Line1));
                 if (w < MeetingListWidth)
                 {
@@ -626,7 +627,7 @@ public sealed class TimelineView : Grid
             });
         // the state bar at its start (priority colour, green when done; empty / half / full) and the project's on the right
         var mark = TaskMarks.Status(t, TaskMarks.BarWidth, gap: 0);
-        mark.Margin = new Thickness(3, 2, 0, 2);
+        mark.Margin = new Thickness(3 + Math.Max(0, -x0), 2, 0, 2); // sticky like the title: visible when the bar starts left of the screen
         mark.IsHitTestVisible = false;
         bar.Children.Add(mark);
         if (TaskMarks.Right(t) is { } proj) { proj.Margin = new Thickness(0, 3, 3, 3); proj.IsHitTestVisible = false; bar.Children.Add(proj); }
@@ -719,7 +720,7 @@ public sealed class TimelineView : Grid
         Combo(L.T("Kategoria"), S.Category, new (string?, string)[] { (null, L.T("Kategoria: wszystkie")) }.Concat(cats.Select(c => ((string?)c, store.CategoryFor(c)?.Name ?? c))), v => S.Category = v);
         var prios = tasks.Select(t => t.Priority).Where(p => !string.IsNullOrEmpty(p)).Select(p => p!).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(Rank).ToList();
         Combo(L.T("Priorytet"), S.Priority, new (string?, string)[] { (null, L.T("Priorytet: wszystkie")) }.Concat(prios.Select(p => ((string?)p, p))).Append(("", L.T("bez priorytetu"))), v => S.Priority = v);
-        Combo(L.T("Stan"), S.State, new (string?, string)[] { ("all", L.T("Stan: wszystkie")), ("open", L.T("niezrobione")), ("started", L.T("w trakcie")), ("review", L.T("review")), ("done", L.T("zrobione")) }, v => S.State = v ?? "all", 120);
+        Combo(L.T("Stan"), S.State, new (string?, string)[] { ("all", L.T("Stan: wszystkie")), ("open", L.T("niezrobione")), ("started", L.T("w trakcie")), ("review", L.T("review")), ("tests", L.T("testy")), ("done", L.T("zrobione")) }, v => S.State = v ?? "all", 120);
         _toolbar.Children.Add(new Border { Width = 1, Height = 18, Margin = new Thickness(6, 0, 12, 0), Background = Res("Line"), VerticalAlignment = VerticalAlignment.Center });
         Combo(L.T("Sortuj"), S.Sort, new (string?, string)[] { ("start", L.T("Sortuj: data rozpoczęcia")), ("priority", L.T("Sortuj: priorytet")), ("name", L.T("Sortuj: nazwa")), ("added", L.T("Sortuj: kolejność dodania")), ("length", L.T("Sortuj: długość")) }, v => S.Sort = v ?? "start", 170);
         Combo(L.T("Grupuj"), S.Group, new (string?, string)[] { ("project", L.T("Grupuj: projekt")), ("category", L.T("Grupuj: kategoria")), ("priority", L.T("Grupuj: priorytet")), ("state", L.T("Grupuj: stan")), ("none", L.T("Bez grup")) }, v => S.Group = v ?? "none", 150);

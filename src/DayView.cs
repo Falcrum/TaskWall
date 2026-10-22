@@ -43,6 +43,8 @@ public sealed class DayView : Grid
     DateTime _date = DateTime.Today;
     bool _menuOpen; // a task's menu is open: no redraw under it
     bool _enter; // the next render shows a new day
+    BoardStore? _noteStore; // where the note shown was loaded from
+    string? _noteKey;
     int _enterIndex;
     bool _scrolled;
     readonly DockPanel _left = new(), _right = new() { Margin = new Thickness(4, 0, 4, 0) };
@@ -90,7 +92,8 @@ public sealed class DayView : Grid
         right.Children.Add(_notesTitle);
         right.Children.Add(_notes);
         Children.Add(At2(right, 2));
-        _notes.Changed += md => _host.Store().SetNote(Key(_date), md);
+        // a note is saved where it was loaded from (that account, that day) – never into the account switched to since
+        _notes.Changed += md => (_noteStore ?? _host.Store()).SetNote(_noteKey ?? Key(_date), md);
         _notes.ExportClicked += ExportMenu;
         _scroll.SizeChanged += (_, e) => { if (Math.Abs(e.NewSize.Height - e.PreviousSize.Height) > 0.5) Render(); };
 
@@ -111,7 +114,8 @@ public sealed class DayView : Grid
     public void Show(DateTime date)
     {
         bool newDay = date.Date != _date;
-        if (newDay) _notes.Flush(); // the last words typed belong to the day they were typed on
+        bool newStore = !ReferenceEquals(_host.Store(), _noteStore);
+        if (newDay || newStore) _notes.Flush(); // the last words typed belong to the day (and account) they were typed on
         // the notebook on the left or the right (Settings → Tablica)
         bool notesLeft = App.Settings.DayNotesLeft;
         SetColumn(_left, notesLeft ? 2 : 0);
@@ -123,7 +127,9 @@ public sealed class DayView : Grid
         _date = date.Date;
         _notesTitle.Text = L.Up(L.T("Notatki")) + "  ·  " + _date.ToString("dddd d MMMM", BoardWindow.Pl);
         _notesTitle.Foreground = Res("FgDim");
-        _notes.Load(_host.Store().Note(Key(_date)), force: newDay);
+        _noteStore = _host.Store();
+        _noteKey = Key(_date);
+        _notes.Load(_noteStore.Note(_noteKey), force: newDay || newStore);
         _addHost.Children.Clear();
         _addHost.Children.Add(_host.AddRow(Key(_date), _date));
         if (newDay) { _scrolled = false; _enter = true; _enterIndex = 0; }
@@ -401,6 +407,7 @@ public sealed class DayView : Grid
             _drag = new Drag(kind, null, pill, e.GetPosition(_canvas).Y, at, at);
             _canvas.CaptureMouse();
         };
+        Panel.SetZIndex(pill, 10); // above the task blocks: always grabbable
         _canvas.Children.Add(At(pill, Gutter + area - 70, Y(at) - (start ? 0 : 16)));
     }
 

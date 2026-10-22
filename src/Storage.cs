@@ -341,7 +341,7 @@ public sealed class BoardStore
         try
         {
             if (Directory.Exists(DeviceFolder))
-                foreach (var f in Directory.GetFiles(DeviceFolder, "board-*.json"))
+                foreach (var f in Directory.GetFiles(DeviceFolder, "board-*.json").Where(f => !Path.GetFileName(f).Contains(" (")))
                     list.Add((Path.GetFileNameWithoutExtension(f)[6..], File.GetLastWriteTime(f)));
         }
         catch { }
@@ -356,7 +356,9 @@ public sealed class BoardStore
         bool read = false;
         foreach (var f in Directory.GetFiles(DeviceFolder, "board-*.json"))
         {
-            var d = TryRead(f);
+            DiskState d;
+            try { d = TryRead(f); }
+            catch (Exception ex) { Log.Error("device file " + Path.GetFileName(f), ex); continue; } // held by the sync client: next time
             if (d.Data == null || d.Hash == null) continue;
             if (_seenDevices.TryGetValue(f, out var seen) && seen == d.Hash) continue;
             _seenDevices[f] = d.Hash;
@@ -571,7 +573,7 @@ public sealed class BoardStore
             if (!string.IsNullOrEmpty(before)) StartWatching();
             throw;
         }
-        Data = Merge(Data, current);
+        Data = Merge(current, Data); // the instances the UI holds (an open editor, a running timer) stay live
         SaveNow();
         ExternalChange?.Invoke();
     }
@@ -595,6 +597,27 @@ public sealed class BoardStore
         MarkDirty();
     }
 
+    // ---------- older tasks get what newer ones have ----------
+
+    /// <summary>
+    /// Fills what tasks from older versions lack, so every task can be edited like a new one: a Notion task imported
+    /// before projects existed gets the account's first database's project (the only database there was then), every
+    /// task its "added" date. Run at open; harmless to run again. Returns how many were filled.
+    /// </summary>
+    public int FillMissing(string? firstProject)
+    {
+        int n = 0;
+        foreach (var t in Data.Tasks)
+        {
+            bool changed = false;
+            if (t.NotionId != null && t.NotionSource == null && !string.IsNullOrEmpty(firstProject)) { t.NotionSource = firstProject; changed = true; }
+            if (t.Created == null) { t.Created = t.Modified; changed = true; }
+            if (changed) n++; // Modified stays: a fill-in must never win over a real edit made on another computer
+        }
+        if (n > 0) MarkDirty();
+        return n;
+    }
+
     // ---------- tasks in progress / in review carry on, day by day ----------
 
     /// <summary>
@@ -603,6 +626,7 @@ public sealed class BoardStore
     /// </summary>
     public int StretchActive(DateTime today)
     {
+        if (Offline != null) return 0; // a stale copy (the folder isn't there yet): again once it is
         static bool Workday(DateTime d) => d.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday) && !DaysOff.Is(d);
         var tk = today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
         double order = Data.Tasks.Where(t => t.Day == tk).Select(t => t.Order).DefaultIfEmpty(-1).Max();
@@ -611,9 +635,12 @@ public sealed class BoardStore
         {
             if (!t.Stretch(today, Workday)) continue;
             t.Order = ++order;
-            Changed(t);
+            // an automatic change: one tick newer only, so an edit made on another computer meanwhile (done, deleted,
+            // edited) still wins over it when its file arrives
+            t.Modified = t.Modified.AddTicks(1);
             n++;
         }
+        if (n > 0) { _undo.Clear(); MarkDirty(); } // Ctrl+Z never puts carried tasks back on yesterday
         return n;
     }
 
@@ -899,7 +926,7 @@ public sealed class BoardStore
 
     public string? SeriesMark(string day)
     {
-        if (Data.MarkRules.Count == 0 || !DateTime.TryParseExact(day, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var date)) return null;
+        if (Data.MarkRules.Count == 0 || !DateTime.TryParseExact(day, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var date)) return null;
         return MarkRuleOn(date)?.Text;
     }
 
@@ -969,7 +996,20 @@ public sealed class BoardStore
     }
 
     /// <summary>Hours of overtime on a day.</summary>
-    public double OvertimeHours(string day) => Overtime(day).Sum(p => (p.End - p.Start).TotalHours);
+    public double OvertimeHours(string day)
+    {
+        // only what lies outside the day's regular hours (an extra period dragged into them doesn't count twice)
+        var (s, e) = WorkHours(day, App.Settings?.WorkStart ?? "09:00", App.Settings?.WorkEnd ?? "17:00");
+        TimeSpan? T(string x) => x == "23:59" ? TimeSpan.FromHours(24) : TimeSpan.TryParseExact(x, @"h\:mm", System.Globalization.CultureInfo.InvariantCulture, out var t) ? t : null;
+        var ws = T(s) ?? TimeSpan.FromHours(9);
+        var we = T(e) ?? TimeSpan.FromHours(17);
+        if (we <= ws) we = ws + TimeSpan.FromHours(8);
+        return Overtime(day).Sum(p =>
+        {
+            var overlap = (p.End < we ? p.End : we) - (p.Start > ws ? p.Start : ws);
+            return (p.End - p.Start - (overlap > TimeSpan.Zero ? overlap : TimeSpan.Zero)).TotalHours;
+        });
+    }
 
     public string Note(string day) => Data.Notes != null && Data.Notes.TryGetValue(day, out var n) ? n.Text : "";
 
@@ -1086,6 +1126,7 @@ public sealed class BoardStore
                 // Possibly a half-synced file; give the sync client about a minute before giving up on it.
                 if (++_unreadableCount < 20)
                 {
+                    try { WriteDevice(JsonSerializer.Serialize(Data, Json.Options)); } catch (Exception wex) { Log.Error("device file", wex); } // ours is never held up by board.json
                     _saveTimer.Interval = TimeSpan.FromSeconds(3);
                     _saveTimer.Start();
                     return;
@@ -1250,9 +1291,11 @@ public sealed class BoardStore
         if (node is not System.Text.Json.Nodes.JsonObject o) return "";
         foreach (var (key, value) in o.ToList())
         {
-            if (value is System.Text.Json.Nodes.JsonArray arr && arr.All(x => x is System.Text.Json.Nodes.JsonObject j && j["Id"] != null))
+            // lists of things with an id (tasks, alarms, series) or of bin entries (their task's id)
+            static string? IdOf(System.Text.Json.Nodes.JsonNode? x) => x is System.Text.Json.Nodes.JsonObject j ? (j["Id"] ?? (j["Task"] as System.Text.Json.Nodes.JsonObject)?["Id"])?.ToString() : null;
+            if (value is System.Text.Json.Nodes.JsonArray arr && arr.All(x => IdOf(x) != null))
             {
-                var items = arr.Select(x => x!.DeepClone()).OrderBy(x => x!["Id"]!.ToString(), StringComparer.Ordinal).ToList();
+                var items = arr.Select(x => x!.DeepClone()).OrderBy(x => IdOf(x), StringComparer.Ordinal).ToList();
                 arr.Clear();
                 foreach (var i in items) arr.Add(i);
             }
@@ -1330,7 +1373,7 @@ public sealed class BoardStore
             if (!alarms.TryGetValue(x.Id, out var cur)) { alarms[x.Id] = x; continue; }
             // "already rang" travels independently of edits, so a second PC doesn't ring again later
             var rang = string.CompareOrdinal(x.Rang, cur.Rang) > 0 ? x.Rang : cur.Rang;
-            var skips = cur.Skips == null && x.Skips == null ? null : (cur.Skips ?? new()).Union(x.Skips ?? new()).ToList();
+            var skips = cur.Skips == null && x.Skips == null ? null : (cur.Skips ?? new()).Union(x.Skips ?? new()).OrderBy(s => s, StringComparer.Ordinal).ToList();
             if (x.Modified > cur.Modified) cur.CopyFrom(x);
             cur.Rang = rang;
             cur.Skips = skips;
@@ -1344,7 +1387,7 @@ public sealed class BoardStore
             foreach (var e in (a.Bin ?? new()).Concat(b.Bin ?? new()))
                 if (!bin.TryGetValue(e.Task.Id, out var cur) || e.Task.Modified > cur.Task.Modified) bin[e.Task.Id] = e;
             var live = result.Tasks.ToDictionary(t => t.Id, t => t.Modified);
-            result.Bin = bin.Values.Where(e => !(live.TryGetValue(e.Task.Id, out var m) && m >= e.Task.Modified)).ToList();
+            result.Bin = bin.Values.Where(e => !(live.TryGetValue(e.Task.Id, out var m) && m >= e.Task.Modified)).OrderBy(e => e.Task.Id, StringComparer.Ordinal).ToList(); // a fixed order: no rewriting back and forth
         }
         return result;
     }
@@ -1356,7 +1399,7 @@ public sealed class BoardStore
         foreach (var r in b)
         {
             if (!rules.TryGetValue(r.Id, out var cur)) { rules[r.Id] = r; continue; }
-            var skips = cur.Skips.Union(r.Skips).ToList(); // a skip made on either PC survives a rename on the other
+            var skips = cur.Skips.Union(r.Skips).OrderBy(s => s, StringComparer.Ordinal).ToList(); // a skip made on either PC survives a rename on the other
             if (r.Modified > cur.Modified) cur.CopyFrom(r);
             cur.Skips = skips;
         }
@@ -1373,7 +1416,7 @@ public sealed class BoardStore
         foreach (var id in Data.Deleted.Where(kv => kv.Value < cutoff).Select(kv => kv.Key).ToList())
             Data.Deleted.Remove(id);
         Data.Trash = null;
-        foreach (var key in Data.Days.Where(kv => kv.Value.Mark == null && kv.Value.Modified < cutoff).Select(kv => kv.Key).ToList())
+        foreach (var key in Data.Days.Where(kv => kv.Value.Mark == null && kv.Value.WorkStart == null && kv.Value.WorkEnd == null && kv.Value.Overtime == null && kv.Value.Modified < cutoff).Select(kv => kv.Key).ToList())
             Data.Days.Remove(key);
         Data.Alarms.RemoveAll(x => x.Deleted && x.Modified < cutoff);
         Data.Bin?.RemoveAll(e => e.Deleted < DateTime.UtcNow.AddDays(-BinDays));

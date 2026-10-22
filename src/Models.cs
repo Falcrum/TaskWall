@@ -41,16 +41,19 @@ public sealed class TaskItem
     public bool? Started { get; set; }
     /// <summary>"Review": after in progress, before done (a started task waiting for its review / acceptance).</summary>
     public bool? Review { get; set; }
-    /// <summary>In progress or in review (both carry on to the next days until done).</summary>
-    [JsonIgnore] public bool IsStarted => !Done && (Started == true || Review == true);
-    [JsonIgnore] public bool IsReview => !Done && Review == true;
-    /// <summary>"todo", "started", "review" or "done".</summary>
-    [JsonIgnore] public string State => Done ? "done" : IsReview ? "review" : IsStarted ? "started" : "todo";
+    /// <summary>"Tests": after review, before done.</summary>
+    public bool? Testing { get; set; }
+    /// <summary>In progress, in review or in tests (all carry on to the next days until done).</summary>
+    [JsonIgnore] public bool IsStarted => !Done && (Started == true || Review == true || Testing == true);
+    [JsonIgnore] public bool IsTesting => !Done && Testing == true;
+    [JsonIgnore] public bool IsReview => !Done && Review == true && Testing != true;
+    /// <summary>"todo", "started", "review", "tests" or "done".</summary>
+    [JsonIgnore] public string State => Done ? "done" : IsTesting ? "tests" : IsReview ? "review" : IsStarted ? "started" : "todo";
     /// <summary>The state the task had on each of its earlier days ("started" / "review"), for its history and the reports.</summary>
     public Dictionary<string, string>? DayStates { get; set; }
 
-    /// <summary>Progress 0..1: done = 1, a checklist by its ticked items, otherwise review = ⅔, in progress = ⅓.</summary>
-    [JsonIgnore] public double Progress => Done ? 1 : Checklist is { Count: > 0 } c ? (double)c.Count(x => x.Done) / c.Count : IsReview ? 2.0 / 3 : IsStarted ? 1.0 / 3 : 0;
+    /// <summary>Progress 0..1: done = 1, a checklist by its ticked items, otherwise tests ¾, review ½, in progress ¼.</summary>
+    [JsonIgnore] public double Progress => Done ? 1 : Checklist is { Count: > 0 } c ? (double)c.Count(x => x.Done) / c.Count : IsTesting ? 0.75 : IsReview ? 0.5 : IsStarted ? 0.25 : 0;
 
     /// <summary>Moving an unfinished task forward from a past day leaves that day in its history; moving it back takes it out.</summary>
     public void NoteMove(string? from, string? to, string today)
@@ -155,7 +158,7 @@ public sealed class TaskItem
         NotionId = o.NotionId; Url = o.Url; Status = o.Status; Priority = o.Priority; NotionTitle = o.NotionTitle; ParentNotionId = o.ParentNotionId; NotionSource = o.NotionSource; Created = o.Created; TrackedMinutes = o.TrackedMinutes; TrackStart = o.TrackStart;
         Checklist = CopyList(o.Checklist);
         Time = o.Time; End = o.End; WorkedDays = o.WorkedDays == null ? null : new List<string>(o.WorkedDays); PlanEnd = o.PlanEnd;
-        Started = o.Started; Review = o.Review;
+        Started = o.Started; Review = o.Review; Testing = o.Testing;
         DayStates = o.DayStates == null ? null : new Dictionary<string, string>(o.DayStates);
         Extra = o.Extra;
     }
@@ -231,7 +234,7 @@ public sealed class RecurringRule
     bool Parse()
     {
         if (_parsedFrom == Start) return true;
-        if (!DateTime.TryParseExact(Start, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out _start)) return false;
+        if (!DateTime.TryParseExact(Start, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _start)) return false;
         _parsedFrom = Start;
         return true;
     }
@@ -353,14 +356,32 @@ public sealed class Alarm
         ("weekly", L.T("Co tydzień")),
         ("biweekly", L.T("Co 2 tygodnie")),
         ("monthly", L.T("Co miesiąc")),
+        ("days", L.T("W wybrane dni tygodnia")),
     };
+
+    /// <summary>"days:1,2,3" → the ISO weekdays (1 = Monday … 7 = Sunday) of a repeat on chosen days.</summary>
+    public static int[] RepeatDays(string? repeat) =>
+        repeat != null && repeat.StartsWith("days:") ? repeat[5..].Split(',').Select(s => int.TryParse(s, out var x) ? x : 0).Where(x => x is >= 1 and <= 7).Distinct().OrderBy(x => x).ToArray() : Array.Empty<int>();
+
+    static int Iso(DateTime d) => d.DayOfWeek == DayOfWeek.Sunday ? 7 : (int)d.DayOfWeek;
+
+    /// <summary>The repeat in words: "Co tydzień", or the chosen days "Pn, Śr, Pt".</summary>
+    public static string LabelFor(string? repeat)
+    {
+        if (RepeatDays(repeat) is { Length: > 0 } days)
+        {
+            string[] names = L.En ? new[] { "Mo", "Tu", "We", "Th", "Fr", "Sa", "Su" } : new[] { "Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd" };
+            return string.Join(", ", days.Select(x => names[x - 1]));
+        }
+        return Repeats.FirstOrDefault(r => r.Code == (repeat ?? "")).Label ?? "";
+    }
 
     [JsonIgnore] public bool Once => string.IsNullOrEmpty(Repeat);
     [JsonIgnore] public bool IsMeeting => Kind == "meeting";
 
     public bool Occurs(DateTime d)
     {
-        if (Deleted || !DateTime.TryParseExact(Day, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var start)) return false;
+        if (Deleted || !DateTime.TryParseExact(Day, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var start)) return false;
         d = d.Date;
         if (d < start) return false;
         if (Skips != null && Skips.Contains(d.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture))) return false;
@@ -373,6 +394,7 @@ public sealed class Alarm
             "weekly" => d.DayOfWeek == start.DayOfWeek,
             "biweekly" => d.DayOfWeek == start.DayOfWeek && ((d - start).Days / 7) % 2 == 0,
             "monthly" => d.Day == Math.Min(start.Day, DateTime.DaysInMonth(d.Year, d.Month)),
+            { } r when r.StartsWith("days:") => RepeatDays(r).Contains(Iso(d)),
             _ => false,
         };
     }
@@ -400,7 +422,7 @@ public sealed class Alarm
     /// <summary>Next ring strictly after <paramref name="after"/>, or null.</summary>
     public DateTime? Next(DateTime after)
     {
-        if (Deleted || !DateTime.TryParseExact(Day, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var start)) return null;
+        if (Deleted || !DateTime.TryParseExact(Day, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var start)) return null;
         if (Once) return RingAt(start) is { } r && r > after ? r : null;
         for (int i = -1; i <= 62; i++) // a reminder may fall on the evening before
         {
@@ -421,7 +443,7 @@ public sealed class Alarm
         return null;
     }
 
-    [JsonIgnore] public string RepeatLabel => Repeats.FirstOrDefault(r => r.Code == (Repeat ?? "")).Label ?? "";
+    [JsonIgnore] public string RepeatLabel => LabelFor(Repeat);
 
     public void Touch() => Modified = Stamp.After(Modified);
 
@@ -448,6 +470,8 @@ static class Stamp
 /// <summary>Per-day info shown in the day header (HO / BŚU …).</summary>
 public sealed class DayInfo
 {
+    /// <summary>Fields of a newer version, kept as they are.</summary>
+    [JsonExtensionData] public Dictionary<string, System.Text.Json.JsonElement>? Extra { get; set; }
     public string? Mark { get; set; }
     /// <summary>This day's working hours ("HH:mm"), set on the day view's timeline; null = the default from the settings.</summary>
     public string? WorkStart { get; set; }
@@ -460,6 +484,7 @@ public sealed class DayInfo
 /// <summary>The day's notes (the notebook next to the day view's timeline), as light Markdown.</summary>
 public sealed class DayNote
 {
+    [JsonExtensionData] public Dictionary<string, System.Text.Json.JsonElement>? Extra { get; set; }
     public string Text { get; set; } = "";
     public DateTime Modified { get; set; } = DateTime.UtcNow;
 }
@@ -657,7 +682,7 @@ public sealed class AppSettings
     public bool NotesSource { get; set; }
     /// <summary>No glass at all: the board, the clock and the panels on a solid background.</summary>
     public bool Opaque { get; set; }
-    /// <summary>A fine pattern over the board's background: "none", "dots" or "grid".</summary>
+    /// <summary>A fine pattern over the board's background: "none", "fabric", "dots" or "grid".</summary>
     public string Pattern { get; set; } = "none";
     public WeatherSettings Weather { get; set; } = new();
     public TimelineSettings Timeline { get; set; } = new();

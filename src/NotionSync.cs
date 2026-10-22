@@ -414,8 +414,9 @@ static class NotionSync
                     Id = "notion-" + page.Id.Replace("-", ""), // the same id on every computer: two PCs importing the same page merge into one task
                     Text = title, NotionTitle = title, NotionId = page.Id, Url = page.Url,
                     Status = page.Status, Priority = page.Priority, Estimate = page.Estimate, Order = order++, ParentNotionId = page.ParentId,
-                    Started = LooksInProgress(page.Status) || LooksInReview(page.Status) ? true : null,
+                    Started = LooksInProgress(page.Status) || LooksInReview(page.Status) || LooksInTests(page.Status) ? true : null,
                     Review = LooksInReview(page.Status) ? true : null,
+                    Testing = LooksInTests(page.Status) ? true : null,
                     NotionSource = link.Name.Length > 0 ? link.Name : null,
                 });
                 added++;
@@ -434,7 +435,19 @@ static class NotionSync
                 t.NotionTitle = title;
                 changed = true;
             }
-            if (page.Status != t.Status) { t.Status = page.Status; changed = true; if (t.Started == null && !t.Done && LooksInProgress(page.Status)) t.Started = true; if (t.Review == null && !t.Done && LooksInReview(page.Status)) { t.Started = true; t.Review = true; } }
+            if (page.Status != t.Status)
+            {
+                t.Status = page.Status;
+                changed = true;
+                // the status moved in Notion: the bar follows it (forward and back); a status that means none of these
+                // leaves what was set on the board
+                if (!t.Done)
+                {
+                    if (LooksInTests(page.Status)) { t.Started = true; t.Review = null; t.Testing = true; }
+                    else if (LooksInReview(page.Status)) { t.Started = true; t.Review = true; t.Testing = null; }
+                    else if (LooksInProgress(page.Status)) { t.Started = true; t.Review = null; t.Testing = null; }
+                }
+            }
             if (page.Priority != t.Priority) { t.Priority = page.Priority; changed = true; }
             if (page.Estimate != null && page.Estimate != t.Estimate) { t.Estimate = page.Estimate; changed = true; }
             if (link.SyncDone && !t.Done && NotionImport.LooksDone(page.Status)) { t.Done = true; changed = true; }
@@ -468,7 +481,11 @@ static class NotionSync
     /// <summary>A Notion status meaning the work has begun ("W trakcie", "In progress", "Doing").</summary>
     /// <summary>A Notion status that means "waiting for review / acceptance" (Review, Merge Request, Do odebrania, QA …).</summary>
     public static bool LooksInReview(string? status) => status != null &&
-        System.Text.RegularExpressions.Regex.IsMatch(status, @"review|merge request|do odebrania|do sprawdzenia|weryfikacj|\bqa\b|akceptacj", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        !LooksInTests(status) && System.Text.RegularExpressions.Regex.IsMatch(status, @"review|merge request|do odebrania|do sprawdzenia|weryfikacj|akceptacj", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    /// <summary>A Notion status that means "being tested" (Test, Testy, QA, Testing …).</summary>
+    public static bool LooksInTests(string? status) => status != null &&
+        System.Text.RegularExpressions.Regex.IsMatch(status, @"\btest|\bqa\b|testowan", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     public static bool LooksInProgress(string? status) => status != null &&
         System.Text.RegularExpressions.Regex.IsMatch(status, @"w trakcie|in progress|doing|started|rozpocz|realizacj|wip", System.Text.RegularExpressions.RegexOptions.IgnoreCase);

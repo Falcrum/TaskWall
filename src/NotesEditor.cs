@@ -371,6 +371,7 @@ public sealed class NotesEditor : DockPanel
         var caret = _box.CaretPosition;
         if (caret.Paragraph is { Tag: "code" }) return;
         var before = LineBeforeCaret(out _);
+        before = before[(before.LastIndexOfAny(new[] { '\r', '\n' }) + 1)..]; // never across a Shift+Enter line break
         foreach (var (re, kind) in InlineRules)
         {
             var m = re.Match(before);
@@ -501,6 +502,12 @@ public sealed class NotesEditor : DockPanel
     /// <summary>The caret never sits before or inside the box (typing there would go in front of it).</summary>
     void KeepCaretAfterCheck()
     {
+        if (_box.Selection.IsEmpty && Current is { Tag: "hr" } line && line.Parent is FlowDocument)
+        {
+            if (line.NextBlock is Paragraph next) _box.CaretPosition = next.ContentStart;
+            else { var below = new Paragraph(); StyleBlock(below, null); ((FlowDocument)line.Parent).Blocks.InsertAfter(line, below); _box.CaretPosition = below.ContentStart; }
+            return;
+        }
         if (!_box.Selection.IsEmpty || Current is not { } p || !IsTodo(p)) return;
         var caret = _box.CaretPosition;
         if (new TextRange(p.ContentStart, caret).Text.Length >= 2) return;
@@ -557,6 +564,7 @@ public sealed class NotesEditor : DockPanel
         int at = new TextRange(p.ContentStart, _box.CaretPosition).Text.Length;
         if (IsTodo(p) && at <= 2) { _box.BeginChange(); RemoveCheck(p); StyleBlock(p, null); _box.EndChange(); _box.CaretPosition = p.ContentStart; return true; }
         if (at == 0 && p.Tag is string) { _box.BeginChange(); StyleBlock(p, null); _box.EndChange(); return true; }
+        if (at == 0 && p.PreviousBlock is Paragraph { Tag: "hr" } hr && p.Parent is FlowDocument doc) { _box.BeginChange(); doc.Blocks.Remove(hr); _box.EndChange(); return true; }
         return false;
     }
 
@@ -613,7 +621,11 @@ public sealed class NotesEditor : DockPanel
     {
         if (!e.DataObject.GetDataPresent(DataFormats.UnicodeText)) return;
         var text = (e.DataObject.GetData(DataFormats.UnicodeText) as string ?? "").Replace("\r", "");
-        if (!LooksLikeMd.IsMatch(text)) return;
+        if (!LooksLikeMd.IsMatch(text))
+        {
+            if (e.DataObject.GetFormats().Any(f => f != DataFormats.UnicodeText && f != DataFormats.Text && f != DataFormats.OemText)) e.DataObject = new DataObject(DataFormats.UnicodeText, text);
+            return;
+        }
         e.CancelCommand();
         InsertMarkdown(text);
     }
@@ -774,7 +786,7 @@ public sealed class NotesEditor : DockPanel
                 sb.Append(kind switch
                 {
                     "h1" => "# " + text, "h2" => "## " + text, "h3" => "### " + text, "h4" => "#### " + text, "h5" => "##### " + text, "h6" => "###### " + text,
-                    "quote" => "> " + text, "hr" => "---",
+                    "quote" => "> " + text, "hr" => text.Trim().Length > 0 ? "---\n" + text : "---",
                     _ => text,
                 }).Append('\n');
                 break;
@@ -810,7 +822,7 @@ public sealed class NotesEditor : DockPanel
                 case Hyperlink h: sb.Append('[').Append(Inlines(h.Inlines)).Append("](").Append(h.Tag as string ?? h.NavigateUri?.OriginalString ?? "").Append(')'); break;
                 case Span s: sb.Append(Inlines(s.Inlines)); break;
                 case Run r: sb.Append(Format(r)); break;
-                case LineBreak: sb.Append(' '); break;
+                case LineBreak: sb.Append("  \n"); break; // Markdown's hard break
             }
         }
         return sb.ToString().Replace("****", "").Replace("~~~~", "").Replace("``", "");
@@ -932,7 +944,7 @@ public sealed class NotesEditor : DockPanel
 
     static ListItem Add(List list) { var li = new ListItem(); list.ListItems.Add(li); return li; }
 
-    static readonly Regex InlineFormat = new(@"\[([^\]]+)\]\(([^)\s]+)\)|`([^`]+)`|\*\*(.+?)\*\*|__(.+?)__|~~(.+?)~~|(?<![*\w])\*([^*]+?)\*(?!\*)|(?<![_\w])_([^_]+?)_(?!\w)");
+    static readonly Regex InlineFormat = new(@"\[([^\]]+)\]\(([^)\s]+)\)|`([^`]+)`|\*\*(.+?)\*\*|__(.+?)__|~~(.+?)~~|(?<![*\w])\*([^*\s](?:[^*]*?[^*\s])?)\*(?!\*)|(?<![_\w])_([^_\s](?:[^_]*?[^_\s])?)_(?!\w)"); // "2 * 3 * 4" stays as it is
 
     static void AddInlines(Paragraph p, string text)
     {

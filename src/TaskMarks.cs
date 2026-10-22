@@ -18,12 +18,14 @@ static class TaskMarks
     public static readonly Color DoneGreen = Color.FromRgb(0x4C, 0xB8, 0x6C);
     /// <summary>Review: a soft violet (its own colour, whatever the priority).</summary>
     public static readonly Color ReviewViolet = Color.FromRgb(0x8C, 0x8C, 0xF7);
+    /// <summary>Tests: a calm teal between review's violet and done's green.</summary>
+    public static readonly Color TestsTeal = Color.FromRgb(0x3F, 0xB6, 0xC4);
     public static readonly Color InProgressOrange = Color.FromRgb(0xF0, 0x8C, 0x3A);
     static readonly Color Low = Color.FromRgb(0x7E, 0x8C, 0x9C);
 
     /// <summary>Done green, review violet, else the priority colour (no priority = low, grey).</summary>
     public static Color StateColor(TaskItem t, string? state = null) =>
-        (state ?? t.State) switch { "done" => DoneGreen, "review" => ReviewViolet, "started" => InProgressOrange, _ => Low };
+        (state ?? t.State) switch { "done" => DoneGreen, "review" => ReviewViolet, "tests" => TestsTeal, "started" => InProgressOrange, _ => Low };
 
     /// <summary>The project's colour, or null for a task without a project.</summary>
     public static Color? ProjectColor(TaskItem t) =>
@@ -33,11 +35,11 @@ static class TaskMarks
 
     public static string StateName(TaskItem t, string? state = null) => (state ?? t.State) switch
     {
-        "done" => L.T("zrobione"), "review" => L.T("review"), "started" => L.T("w trakcie"), _ => L.T("do zrobienia"),
+        "done" => L.T("zrobione"), "review" => L.T("review"), "tests" => L.T("testy"), "started" => L.T("w trakcie"), _ => L.T("do zrobienia"),
     };
 
-    /// <summary>How full the bar is: to do 0, in progress ⅓, review ⅔, done 1.</summary>
-    public static double Fill(string state) => state switch { "done" => 1, "review" => 2.0 / 3, "started" => 1.0 / 3, _ => 0 };
+    /// <summary>How full the bar is: to do 0, in progress ¼, review ½, tests ¾, done 1.</summary>
+    public static double Fill(string state) => state switch { "done" => 1, "tests" => 0.75, "review" => 0.5, "started" => 0.25, _ => 0 };
 
     /// <summary>
     /// The state bar. <paramref name="width"/> is the bar; the element is a little wider so it is easy to hit.
@@ -68,7 +70,7 @@ static class TaskMarks
         {
             hit.Cursor = Cursors.Hand;
             hit.ToolTip = StateName(t) + (t.Priority is { Length: > 0 } pr ? "  ·  " + L.F("Priorytet: {0}", pr) : "") + "\n"
-                + (t.Done ? L.T("Kliknij, aby przywrócić") : t.IsReview ? L.T("Kliknij: zrobione") : t.IsStarted ? L.T("Kliknij: review  ·  Shift+klik: zrobione") : L.T("Kliknij: w trakcie  ·  Shift+klik: od razu zrobione"));
+                + (t.Done ? L.T("Kliknij, aby przywrócić") : t.IsTesting ? L.T("Kliknij: zrobione") : t.IsReview ? L.T("Kliknij: testy  ·  Shift+klik: zrobione") : t.IsStarted ? L.T("Kliknij: review  ·  Shift+klik: zrobione") : L.T("Kliknij: w trakcie  ·  Shift+klik: od razu zrobione"));
             ToolTipService.SetInitialShowDelay(hit, 300);
             hit.MouseEnter += (_, _) => outline.StrokeThickness = 2;
             hit.MouseLeave += (_, _) => outline.StrokeThickness = 1.2;

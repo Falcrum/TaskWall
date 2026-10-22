@@ -351,6 +351,8 @@ public sealed class AlarmWindow : DarkWindow
     readonly ComboBox _remind = new() { Width = 200, HorizontalAlignment = HorizontalAlignment.Left };
     readonly ComboBox _repeat = new() { Width = 200, HorizontalAlignment = HorizontalAlignment.Left };
     readonly CheckBox _skipDaysOff = new() { Content = L.T("Pomijaj święta i dni BŚU / urlopu"), Margin = new Thickness(0, 8, 0, 0) };
+    /// <summary>The chosen weekdays (repeat "W wybrane dni tygodnia").</summary>
+    readonly WrapPanel _days = new() { Margin = new Thickness(0, 6, 0, 0), Visibility = Visibility.Collapsed };
     readonly TextBlock _dayText = Label("", 15, "Fg", FontWeights.Bold);
     readonly TextBlock _preview = Label("", 12, "FgDim");
     readonly Button _save;
@@ -412,6 +414,15 @@ public sealed class AlarmWindow : DarkWindow
         p.Children.Add(Caption(L.T("POWTARZAJ")));
         foreach (var (code, label) in Alarm.Repeats) _repeat.Items.Add(new ComboBoxItem { Content = label, Tag = code });
         p.Children.Add(_repeat);
+        string[] dayNames = L.En ? new[] { "Mo", "Tu", "We", "Th", "Fr", "Sa", "Su" } : new[] { "Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd" };
+        for (int i = 0; i < 7; i++)
+        {
+            var cb = new CheckBox { Content = dayNames[i], Tag = i + 1, Margin = new Thickness(0, 0, 12, 0) };
+            cb.Checked += (_, _) => Update();
+            cb.Unchecked += (_, _) => Update();
+            _days.Children.Add(cb);
+        }
+        p.Children.Add(_days);
         p.Children.Add(_skipDaysOff);
 
         _preview.Margin = new Thickness(0, 14, 0, 0);
@@ -452,7 +463,9 @@ public sealed class AlarmWindow : DarkWindow
             _text.Text = existing.Text;
             _time.Text = existing.Time;
             _end.Text = existing.End ?? "";
-            _repeat.SelectedIndex = Math.Max(0, Array.FindIndex(Alarm.Repeats, r => r.Code == (existing.Repeat ?? "")));
+            var code = existing.Repeat?.StartsWith("days:") == true ? "days" : existing.Repeat ?? "";
+            _repeat.SelectedIndex = Math.Max(0, Array.FindIndex(Alarm.Repeats, r => r.Code == code));
+            foreach (CheckBox cb in _days.Children) cb.IsChecked = Alarm.RepeatDays(existing.Repeat).Contains((int)cb.Tag);
             _remind.SelectedIndex = Math.Max(0, Array.FindIndex(Reminders, r => r.Minutes == existing.Remind));
             _skipDaysOff.IsChecked = existing.SkipDaysOff;
         }
@@ -480,8 +493,17 @@ public sealed class AlarmWindow : DarkWindow
             Update();
         };
         _end.TextChanged += (_, _) => Update();
-        _repeat.SelectionChanged += (_, _) => { _skipDaysOff.Visibility = RepeatCode.Length > 0 ? Visibility.Visible : Visibility.Collapsed; Update(); };
-        _skipDaysOff.Visibility = RepeatCode.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        void ShowRepeatOptions()
+        {
+            _skipDaysOff.Visibility = RepeatCode.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+            bool days = (_repeat.SelectedItem as ComboBoxItem)?.Tag as string == "days";
+            _days.Visibility = days ? Visibility.Visible : Visibility.Collapsed;
+            // first time on: the start day's weekday is ticked
+            if (days && !_days.Children.OfType<CheckBox>().Any(c => c.IsChecked == true) && Resolve() is { } rs)
+                foreach (CheckBox cb in _days.Children) cb.IsChecked = (int)cb.Tag == (rs.Start.DayOfWeek == DayOfWeek.Sunday ? 7 : (int)rs.Start.DayOfWeek);
+        }
+        _repeat.SelectionChanged += (_, _) => { ShowRepeatOptions(); Update(); };
+        ShowRepeatOptions();
         _remind.SelectionChanged += (_, _) => Update();
         PreviewKeyDown += (_, e) =>
         {
@@ -516,7 +538,9 @@ public sealed class AlarmWindow : DarkWindow
         return rel != null ? $"{rel}  ·  {text}" : text;
     }
 
-    string RepeatCode => (_repeat.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
+    string RepeatCode => (_repeat.SelectedItem as ComboBoxItem)?.Tag as string is "days"
+        ? "days:" + string.Join(",", _days.Children.OfType<CheckBox>().Where(c => c.IsChecked == true).Select(c => (int)c.Tag)) is var s && s.Length > 5 ? s : "days:" + ((int)DateTime.Today.DayOfWeek == 0 ? 7 : (int)DateTime.Today.DayOfWeek)
+        : (_repeat.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
     int? RemindMinutes => (_remind.SelectedItem as ComboBoxItem)?.Tag as int?;
 
     /// <summary>Start (and meeting end) of the first occurrence; null = can't read the time.</summary>
@@ -564,7 +588,7 @@ public sealed class AlarmWindow : DarkWindow
         var when = _meeting ? $"{v.Start:HH:mm}–{v.End:HH:mm}  ({BoardWindow.Hours((v.End!.Value - v.Start).TotalHours)})" : $"{v.Start:HH:mm}";
         string text = repeat.Length == 0
             ? (v.Start <= DateTime.Now ? $"→ {when}  ·  {L.T("już minęło")}" : $"→ {when}  ·  {AlarmService.Until(v.Start)}")
-            : $"→ {Alarm.Repeats.First(x => x.Code == repeat).Label.ToLower(BoardWindow.Pl)}, {when}";
+            : $"→ {Alarm.LabelFor(repeat).ToLower(BoardWindow.Pl)}, {when}";
         if (_meeting && RemindMinutes is { } m) text += "  ·  " + (m == 0 ? L.T("przypomnienie o czasie") : L.F("przypomnienie {0} min wcześniej", m));
         _preview.Text = text;
     }

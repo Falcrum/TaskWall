@@ -362,6 +362,24 @@ static partial class L
         ("zmierzonego czasu pracy (łącznie na tych zadaniach)", "of tracked working time (in total on these tasks)"),
         ("Źródło Markdown (czysty tekst ze znakami)", "Markdown source (plain text with the marks)"),
 
+        // 0.28 – tests state, chosen weekdays, year summary, fabric pattern
+        ("Brak zrobionych zadań w tym roku.", "No tasks done this year."),
+        ("Dodaj spotkanie…", "Add a meeting…"),
+        ("Kliknij: testy  ·  Shift+klik: zrobione", "Click: tests  ·  Shift+click: done"),
+        ("Projekty", "Projects"),
+        ("Rok w liczbach", "The year in numbers"),
+        ("Testy", "Tests"),
+        ("testy", "tests"),
+        ("testy: {0}", "tests: {0}"),
+        ("W wybrane dni tygodnia", "On chosen weekdays"),
+        ("Zadanie z Notion: synchronizacja ustawia projekt jego bazy (dopóki zadanie jest w jej wynikach)", "A Notion task: the sync sets its database's project (while the task is in its results)"),
+        ("Zrobione w miesiącach", "Done per month"),
+        ("dni z rzędu – najdłuższa seria", "days in a row – the longest streak"),
+        ("materiał (szachownica pod kątem 45°)", "fabric (a checkerboard at 45°)"),
+        ("najlepszy miesiąc ({0})", "best month ({0})"),
+        ("zrobionej estymacji", "of done estimates"),
+        ("{0}: zrobione {1}", "{0}: {1} done"),
+
         // 0.27 – overtime, background pattern, sync dot
         ("Dodaj nadgodziny {0}–{1}", "Add overtime {0}–{1}"),
         ("Komendy i skróty…  (F1, Ctrl+/)", "Commands and shortcuts…  (F1, Ctrl+/)"),

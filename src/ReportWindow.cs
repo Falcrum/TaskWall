@@ -46,14 +46,17 @@ public sealed class Report
     static string Key(DateTime d) => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     /// <summary>Days of the period the task was worked on (its earlier days and its current one) and how many of them in review.</summary>
-    public (int Days, int Review) WorkDays(TaskItem t)
+    internal static DateTime? TryDay(string? k) => DateTime.TryParseExact(k, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : null;
+
+    public (int Days, int Review, int Tests) WorkDays(TaskItem t)
     {
         string from = Key(From), to = Key(To);
         bool In(string k) => string.CompareOrdinal(k, from) >= 0 && string.CompareOrdinal(k, to) <= 0;
         var days = (t.WorkedDays ?? new()).Where(In).ToList();
         if (t.Day != null && In(t.Day) && !days.Contains(t.Day)) days.Add(t.Day);
         int review = days.Count(k => k == t.Day ? t.IsReview : t.DayStates?.GetValueOrDefault(k) == "review");
-        return (days.Count, review);
+        int tests = days.Count(k => k == t.Day ? t.IsTesting : t.DayStates?.GetValueOrDefault(k) == "tests");
+        return (days.Count, review, tests);
     }
 
     public static Report Build(BoardStore store, string layer, DateTime from, DateTime to, bool month)
@@ -177,13 +180,13 @@ public sealed class Report
                 sb.Append(t.Url is { Length: > 0 } url ? $"<a href=\"{E(url)}\" style=\"color:inherit\">{E(rest)}</a>" : E(rest));
                 if (t.Checklist is { Count: > 0 } cl) sb.Append($" <span class=\"day\">☑ {cl.Count(x => x.Done)}/{cl.Count}</span>");
                 if (WorkDays(t) is { Days: > 1 } wd) // worked on over several days (in progress / review carried on)
-                    sb.Append($" <span class=\"day\">↷ {E(L.F("{0} dni pracy", wd.Days))}{(wd.Review > 0 ? E(" · " + L.F("review: {0}", wd.Review)) : "")}</span>");
+                    sb.Append($" <span class=\"day\">↷ {E(L.F("{0} dni pracy", wd.Days))}{(wd.Review > 0 ? E(" · " + L.F("review: {0}", wd.Review)) : "")}{(wd.Tests > 0 ? E(" · " + L.F("testy: {0}", wd.Tests)) : "")}</span>");
                 sb.Append($"</td><td class=\"n\">{(t.Estimate is > 0 ? E(BoardWindow.Est(t.Estimate.Value)) : "")}{(t.TrackedNow > 0 ? " · ⏱ " + E(BoardWindow.Duration(t.TrackedNow)) : "")}</td></tr>");
             }
             sb.Append("</table>");
         }
         TaskTable(L.T("Zrobione"), All.Where(x => x.Task.Done).OrderBy(x => x.Day));
-        TaskTable(L.T("Niezrobione / przeszły dalej"), Open.Concat(Carried.Select(t => (DateTime.ParseExact(t.Day!, "yyyy-MM-dd", CultureInfo.InvariantCulture), t))).OrderBy(x => x.Item1));
+        TaskTable(L.T("Niezrobione / przeszły dalej"), Open.Concat(Carried.Where(t => TryDay(t.Day) != null).Select(t => (TryDay(t.Day)!.Value, t))).OrderBy(x => x.Item1));
 
         sb.Append($"<footer>TaskWall {E(Installer.Version)} · {E(DateTime.Now.ToString("d MMM yyyy, HH:mm", pl))}</footer></main></body></html>");
         return sb.ToString();
@@ -402,7 +405,7 @@ public sealed class ReportWindow : DarkWindow
                 DockPanel.SetDock(when, Dock.Left);
                 d.Children.Add(when);
                 var wd = r.WorkDays(t);
-                var est = Label((wd.Days > 1 ? "↷ " + L.F("{0} dni pracy", wd.Days) + (wd.Review > 0 ? " · " + L.F("review: {0}", wd.Review) : "") + "   " : "")
+                var est = Label((wd.Days > 1 ? "↷ " + L.F("{0} dni pracy", wd.Days) + (wd.Review > 0 ? " · " + L.F("review: {0}", wd.Review) : "") + (wd.Tests > 0 ? " · " + L.F("testy: {0}", wd.Tests) : "") + "   " : "")
                     + (t.Estimate is > 0 ? BoardWindow.Est(t.Estimate.Value) : ""), 11.5, "FgFaint");
                 est.Margin = new Thickness(10, 0, 0, 0);
                 DockPanel.SetDock(est, Dock.Right);
@@ -417,7 +420,7 @@ public sealed class ReportWindow : DarkWindow
             if (list.Count > limit) _body.Children.Add(Label(L.F("… i {0} więcej (pełna lista w zapisanym raporcie)", list.Count - limit), 11, "FgFaint"));
         }
         List(L.T("ZROBIONE"), r.All.Where(x => x.Task.Done).OrderBy(x => x.Day), r.Month ? 25 : 15);
-        List(L.T("NIEZROBIONE / PRZESZŁY DALEJ"), r.Open.Concat(r.Carried.Select(t => (DateTime.ParseExact(t.Day!, "yyyy-MM-dd", CultureInfo.InvariantCulture), t))).OrderBy(x => x.Item1), 12);
+        List(L.T("NIEZROBIONE / PRZESZŁY DALEJ"), r.Open.Concat(r.Carried.Where(t => Report.TryDay(t.Day) != null).Select(t => (Report.TryDay(t.Day)!.Value, t))).OrderBy(x => x.Item1), 12);
         if (r.Tasks == 0) _body.Children.Add(Label(L.T("W tym okresie nie ma zadań."), 12, "FgFaint"));
     }
 

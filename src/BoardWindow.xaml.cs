@@ -95,19 +95,20 @@ public partial class BoardWindow : GlassWindow
     static string DayName(DateTime d) => Pl.DateTimeFormat.GetAbbreviatedDayName(d.DayOfWeek).TrimEnd('.').ToUpper(Pl);
     static bool IsWeekend(DateTime d) => d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
     public static int WeekNo(DateTime d) => ISOWeek.GetWeekOfYear(d);
-    public enum TaskState { Todo, Started, Review, Done }
+    public enum TaskState { Todo, Started, Review, Tests, Done }
 
-    /// <summary>The next state on a click: to do → in progress → review → done → to do (Shift: straight to done).</summary>
+    /// <summary>The next state on a click: to do → in progress → review → tests → done → to do (Shift: straight to done).</summary>
     public static TaskState NextState(TaskItem t, bool shift = false) =>
-        t.Done ? TaskState.Todo : shift ? TaskState.Done : t.IsReview ? TaskState.Done : t.IsStarted ? TaskState.Review : TaskState.Started;
+        t.Done ? TaskState.Todo : shift ? TaskState.Done : t.IsTesting ? TaskState.Done : t.IsReview ? TaskState.Tests : t.IsStarted ? TaskState.Review : TaskState.Started;
 
     public void SetState(TaskItem t, TaskState state) => Do(() =>
     {
         var real = Store.Materialize(t);
         real.Done = state == TaskState.Done;
         if (real.Done && real.IsTracking) Store.StopTracking(real);
-        if (state != TaskState.Done) real.Started = state is TaskState.Started or TaskState.Review;
+        if (state != TaskState.Done) real.Started = state is TaskState.Started or TaskState.Review or TaskState.Tests;
         real.Review = state == TaskState.Review ? true : null;
+        real.Testing = state == TaskState.Tests ? true : null;
         real.NoteState(DayKey(DateTime.Today)); // this day keeps the state it ends with (its history)
         // finished before the planned end: the plan ends today (no future days left hanging)
         var todayKey = DayKey(DateTime.Today);
@@ -1243,6 +1244,9 @@ public partial class BoardWindow : GlassWindow
         var alarm = new MenuItem { Header = L.T("Dodaj alarm…") };
         alarm.Click += (_, _) => AlarmWindow.Edit(Store, null, date);
         menu.Items.Add(alarm);
+        var meeting = new MenuItem { Header = L.T("Dodaj spotkanie…") };
+        meeting.Click += (_, _) => AlarmWindow.Edit(Store, null, date, meeting: true);
+        menu.Items.Add(meeting);
         if (_view == ViewMode.Month)
         {
             var open = new MenuItem { Header = L.T("Pokaż ten tydzień") };

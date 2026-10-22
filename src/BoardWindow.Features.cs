@@ -93,7 +93,7 @@ public partial class BoardWindow
         else if (rot.HasAnimatedProperties)
         {
             // stop on a full turn, after at least one
-            var left = TimeSpan.FromMilliseconds(900) - (DateTime.Now - _spinSince);
+            var left = TimeSpan.FromMilliseconds(900 - (DateTime.Now - _spinSince).TotalMilliseconds % 900); // stop on a full turn
             _spinStop.Stop();
             _spinStop.Interval = left > TimeSpan.Zero ? left : TimeSpan.FromMilliseconds(1);
             _spinStop.Tick -= StopSpin;
@@ -108,6 +108,7 @@ public partial class BoardWindow
             + "\n\n" + L.F("Zapisano: {0}", T(st.LastSaved))
             + "\n" + L.F("Sprawdzono folder: {0}", T(st.LastCheck))
             + "\n" + L.F("Zmiany z innego komputera: {0}", T(st.LastExternalChange))
+            + DevicesLine(st)
             + (notion.Configured ? "\n" + L.F("Notion: {0}", notion.LastResult ?? "—") : "")
             + (st.Offline != null ? "\n\n⚠ " + L.F("Czekam na folder {0} – do tego czasu tablica pracuje na kopii z tego komputera; zmiany trafią do folderu, gdy się pojawi.", st.Offline) : "")
             + (st.LastError != null ? "\n\n⚠ " + st.LastError : "")
@@ -117,7 +118,7 @@ public partial class BoardWindow
         SyncButton.Foreground = st.Syncing || App.Instance.NotionRunning || rot.HasAnimatedProperties ? Res("AccentBrush") // in the accent while it works
             : error ? B(Color.FromRgb(0xF2, 0x6D, 0x6D)) : Res("FgDim");
         if (_syncDot != null)
-            _syncDot.Fill = B(st.LastError != null ? Color.FromRgb(0xF2, 0x6D, 0x6D) : st.Offline != null ? Color.FromRgb(0xE8, 0xA2, 0x3A) : TaskMarks.DoneGreen);
+            _syncDot.Fill = B(error && st.Offline == null ? Color.FromRgb(0xF2, 0x6D, 0x6D) : st.Offline != null ? Color.FromRgb(0xE8, 0xA2, 0x3A) : TaskMarks.DoneGreen);
     }
 
     System.Windows.Shapes.Ellipse? _syncDot;
@@ -721,13 +722,14 @@ public partial class BoardWindow
             return mi;
         }
 
-        // ----- status: three states of the circle -----
+        // ----- status: the five states of the bar -----
         menu.Items.Add(ChipRow(menu, L.T("Status"), new[]
         {
-            new MenuChip("○  " + L.T("Do zrobienia"), !t.Done && !t.IsStarted, null, () => SetState(t, TaskState.Todo)),
-            new MenuChip("◐  " + L.T("W trakcie"), t.IsStarted && !t.IsReview, null, () => SetState(t, TaskState.Started)),
-            new MenuChip("◕  " + L.T("Review"), t.IsReview, null, () => SetState(t, TaskState.Review)),
-            new MenuChip("✓  " + L.T("Zrobione"), t.Done, null, () => SetState(t, TaskState.Done)),
+            new MenuChip(L.T("Do zrobienia"), !t.Done && !t.IsStarted, TaskMarks.StateColor(t, "todo"), () => SetState(t, TaskState.Todo)),
+            new MenuChip(L.T("W trakcie"), t.IsStarted && !t.IsReview && !t.IsTesting, TaskMarks.InProgressOrange, () => SetState(t, TaskState.Started)),
+            new MenuChip(L.T("Review"), t.IsReview, TaskMarks.ReviewViolet, () => SetState(t, TaskState.Review)),
+            new MenuChip(L.T("Testy"), t.IsTesting, TaskMarks.TestsTeal, () => SetState(t, TaskState.Tests)),
+            new MenuChip(L.T("Zrobione"), t.Done, TaskMarks.DoneGreen, () => SetState(t, TaskState.Done)),
         }));
         // ----- priority (own tasks too; Notion tasks get theirs back from Notion on the next sync) -----
         var prios = new List<MenuChip> { new("—", string.IsNullOrEmpty(t.Priority), null, () => SetPriority(t, null)) };
@@ -837,8 +839,10 @@ public partial class BoardWindow
         var projects = S.AccountFor(S.Layer).Projects.ToList();
         if (projects.Count > 0)
         {
-            var proj = new MenuItem { Header = L.T("Projekt"), InputGestureText = t.NotionSource ?? "", IsEnabled = t.NotionId == null };
-            if (t.NotionId != null) { proj.ToolTip = L.T("Zadanie z Notion: projekt wynika z bazy, z której pochodzi"); ToolTipService.SetShowOnDisabled(proj, true); }
+            // always editable (also older tasks imported before projects existed); a Notion task still in its database's
+            // results gets that database's project back on the next sync
+            var proj = new MenuItem { Header = L.T("Projekt"), InputGestureText = t.NotionSource ?? "" };
+            if (t.NotionId != null) proj.ToolTip = L.T("Zadanie z Notion: synchronizacja ustawia projekt jego bazy (dopóki zadanie jest w jej wynikach)");
             foreach (var pr in projects.Append(null))
             {
                 var name = pr?.Name;
@@ -1123,7 +1127,7 @@ public partial class BoardWindow
             return;
         }
         if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control) { e.Handled = true; OpenSearch(); return; }
-        if (Keyboard.Modifiers == ModifierKeys.Control && e.Key is Key.D1 or Key.D2)
+        if (Keyboard.Modifiers == ModifierKeys.Control && e.Key is Key.D1 or Key.D2 && Keyboard.FocusedElement is not TextBox) // not while typing (the notebook uses Ctrl+1/2 for headings)
         {
             e.Handled = true;
             App.Instance.SwitchLayer(e.Key == Key.D1 ? "work" : "private");
