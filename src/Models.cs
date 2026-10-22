@@ -524,6 +524,16 @@ public sealed class BoardData
     public List<TrashEntry>? Bin { get; set; }
     /// <summary>yyyy-MM-dd → the day's notes.</summary>
     public Dictionary<string, DayNote>? Notes { get; set; }
+    /// <summary>yyyy-MM-dd → a day off set by the company ("Wolne za 15 sierpnia"); an empty label = removed.</summary>
+    public Dictionary<string, CompanyDay>? CompanyDays { get; set; }
+}
+
+/// <summary>A day off the company gives (an event, a holiday that fell on a Saturday …), named by the user.</summary>
+public sealed class CompanyDay
+{
+    public string Label { get; set; } = "";
+    public DateTime Modified { get; set; } = DateTime.UtcNow;
+    [JsonExtensionData] public Dictionary<string, System.Text.Json.JsonElement>? Extra { get; set; }
 }
 
 /// <summary>A category = a "[Name]" prefix with a colour.</summary>
@@ -554,6 +564,10 @@ public sealed class MarkType
     /// <summary>"ring" = only a coloured frame (the day keeps showing its tasks), "fill" = coloured day; null = HO ring, others fill.</summary>
     public string? Style { get; set; }
     [JsonIgnore] public bool Ring => Style == null ? Code == "HO" : Style == "ring";
+    /// <summary>Fields of a newer version, kept as they are.</summary>
+    [JsonExtensionData] public Dictionary<string, System.Text.Json.JsonElement>? Extra { get; set; }
+    /// <summary>A copy for editing (every field: the days a year, a newer version's fields).</summary>
+    public MarkType Clone() => (MarkType)MemberwiseClone();
     /// <summary>Days of this kind available in a year (BŚU 27, sick leave 33 …); null = not counted.</summary>
     public int? Allowance { get; set; }
 
@@ -755,11 +769,16 @@ public sealed class AppSettings
 static class DaysOff
 {
     public static Func<DateTime, bool>? Leave;
+    /// <summary>A day off the company gives, with its name (from the open accounts; set by App).</summary>
+    public static Func<DateTime, string?>? Company;
+
+    /// <summary>The name of a day off – a public holiday or one the company gives ("Wolne za …"); null on a working day.</summary>
+    public static string? Name(DateTime d) => PolishHolidays.DayOff(d) ?? Company?.Invoke(d.Date);
     [ThreadStatic] static bool _inside; // a repeating mark rule asks too – no endless loop through the marks
 
     public static bool Is(DateTime d)
     {
-        if (PolishHolidays.DayOff(d) != null) return true;
+        if (Name(d) != null) return true;
         if (_inside || Leave == null) return false;
         _inside = true;
         try { return Leave(d); }

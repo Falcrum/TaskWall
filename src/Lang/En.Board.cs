@@ -362,6 +362,15 @@ static partial class L
         ("zmierzonego czasu pracy (łącznie na tych zadaniach)", "of tracked working time (in total on these tasks)"),
         ("Źródło Markdown (czysty tekst ze znakami)", "Markdown source (plain text with the marks)"),
 
+        // 0.30 – company days off
+        ("Dzień wolny od firmy", "Company day off"),
+        ("Dzień wolny od firmy…", "Company day off…"),
+        ("Dzień wolny: {0} – zmień opis…", "Day off: {0} – change the name…"),
+        ("Opis przy dacie (np. Wolne za 15 sierpnia):", "Shown next to the date (e.g. Off for 15 August):"),
+        ("Usuń dzień wolny", "Remove the day off"),
+        ("Wolne za ", "Off for "),
+        ("zaplanowane {0}", "planned {0}"),
+
         // 0.29 – days off allowance, pattern sliders
         ("Dni w roku (np. 27) – widok 365 pokazuje wykorzystane i pozostałe; puste = nie liczyć", "Days a year (e.g. 27) – the 365-day view shows used and left; empty = not counted"),
         ("Dni wolne", "Days off"),
@@ -386,9 +395,7 @@ static partial class L
         ("W wybrane dni tygodnia", "On chosen weekdays"),
         ("Zadanie z Notion: synchronizacja ustawia projekt jego bazy (dopóki zadanie jest w jej wynikach)", "A Notion task: the sync sets its database's project (while the task is in its results)"),
         ("Zrobione w miesiącach", "Done per month"),
-        ("dni z rzędu – najdłuższa seria", "days in a row – the longest streak"),
         ("materiał (szachownica pod kątem 45°)", "fabric (a checkerboard at 45°)"),
-        ("najlepszy miesiąc ({0})", "best month ({0})"),
         ("zrobionej estymacji", "of done estimates"),
         ("{0}: zrobione {1}", "{0}: {1} done"),
 

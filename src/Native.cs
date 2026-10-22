@@ -34,9 +34,7 @@ static class Native
     [DllImport("user32.dll")] public static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool redraw);
     [DllImport("gdi32.dll")] public static extern IntPtr CreateRoundRectRgn(int x1, int y1, int x2, int y2, int w, int h);
     [DllImport("gdi32.dll")] public static extern IntPtr CreateRectRgn(int x1, int y1, int x2, int y2);
-    [DllImport("gdi32.dll")] public static extern int CombineRgn(IntPtr dest, IntPtr src1, IntPtr src2, int mode);
     [DllImport("gdi32.dll")] public static extern bool DeleteObject(IntPtr h);
-    public const int RGN_OR = 2;
 
     [DllImport("user32.dll")] public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint mods, uint vk);
     [DllImport("user32.dll")] public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
@@ -48,31 +46,6 @@ static class Native
         var sb = new StringBuilder(256);
         GetClassName(hwnd, sb, sb.Capacity);
         return sb.ToString();
-    }
-
-    // ----- blur behind (undocumented but stable since Win10 1803) -----
-    public enum AccentState { Disabled = 0, BlurBehind = 3, AcrylicBlurBehind = 4 }
-
-    [StructLayout(LayoutKind.Sequential)]
-    struct AccentPolicy { public int AccentState, AccentFlags; public uint GradientColor; public int AnimationId; }
-
-    [StructLayout(LayoutKind.Sequential)]
-    struct WindowCompositionAttributeData { public int Attribute; public IntPtr Data; public int SizeOfData; }
-
-    [DllImport("user32.dll")] static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
-
-    public static void SetAccent(IntPtr hwnd, AccentState state, uint abgr)
-    {
-        var accent = new AccentPolicy { AccentState = (int)state, AccentFlags = 2, GradientColor = abgr };
-        int size = Marshal.SizeOf(accent);
-        var ptr = Marshal.AllocHGlobal(size);
-        try
-        {
-            Marshal.StructureToPtr(accent, ptr, false);
-            var data = new WindowCompositionAttributeData { Attribute = 19 /* WCA_ACCENT_POLICY */, Data = ptr, SizeOfData = size };
-            SetWindowCompositionAttribute(hwnd, ref data);
-        }
-        finally { Marshal.FreeHGlobal(ptr); }
     }
 
     // ----- dark title bar for normal windows -----

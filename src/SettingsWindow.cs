@@ -259,7 +259,7 @@ public sealed class SettingsWindow : DarkWindow
         FillMarks(store, marks);
         var addMark = Btn(L.T("+ Dodaj oznaczenie"), "SecondaryButton", (_, _) =>
         {
-            var list = store.MarkTypes.Select(x => new MarkType { Code = x.Code, Label = x.Label, Color = x.Color, Style = x.Style }).ToList();
+            var list = store.MarkTypes.Select(x => x.Clone()).ToList();
             var used = list.Select(x => x.Color).ToHashSet(StringComparer.OrdinalIgnoreCase);
             list.Add(new MarkType { Code = L.T("NOWE"), Label = "", Color = Category.Palette.FirstOrDefault(x => !used.Contains(x)) ?? Category.Palette[0] });
             store.SetMarkTypes(list);
@@ -803,7 +803,7 @@ public sealed class SettingsWindow : DarkWindow
     void FillMarks(BoardStore store, StackPanel host, bool focusLast = false)
     {
         host.Children.Clear();
-        var list = store.MarkTypes.Select(x => new MarkType { Code = x.Code, Label = x.Label, Color = x.Color, Style = x.Style }).ToList();
+        var list = store.MarkTypes.Select(x => x.Clone()).ToList();
         void Save() { store.SetMarkTypes(list); App.Board?.Rebuild(); }
         TextBox? last = null;
         if (list.Count == 0) host.Children.Add(Label(L.T("Brak oznaczeń dni na tym koncie."), 11.5, "FgFaint"));

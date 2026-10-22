@@ -555,6 +555,17 @@ static class Dev
             Check("repeat on chosen weekdays: Mon–Wed every week, not Thursday, label 'Pn, Wt, Śr'",
                 mtw.Occurs(new DateTime(2026, 10, 19)) && mtw.Occurs(new DateTime(2026, 10, 21)) && !mtw.Occurs(new DateTime(2026, 10, 22)) && mtw.Occurs(new DateTime(2026, 10, 27))
                 && (L.En || mtw.RepeatLabel == "Pn, Wt, Śr"));
+            var cdStore = new BoardStore("work");
+            cdStore.SetCompanyDay("2026-11-10", "Wolne za 15 sierpnia");
+            var companyBefore = DaysOff.Company;
+            DaysOff.Company = d => cdStore.CompanyDay(d.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+            bool cdOff = DaysOff.Is(new DateTime(2026, 11, 10)) && DaysOff.Name(new DateTime(2026, 11, 10)) == "Wolne za 15 sierpnia" && !DaysOff.Is(new DateTime(2026, 11, 9));
+            var other = new BoardData();
+            cdStore.SetCompanyDay("2026-11-10", null); // removed here …
+            var merged2 = BoardStore.Merge(other, cdStore.Data); // … and the removal wins over an older copy
+            Check("company days off: a named day off like a holiday, removable, merged between computers",
+                cdOff && cdStore.CompanyDay("2026-11-10") == null && merged2.CompanyDays!["2026-11-10"].Label == "");
+            DaysOff.Company = companyBefore;
             var mkStore = new BoardStore("work");
             mkStore.Data.Marks = new() { new MarkType { Code = "HO", Label = "Home Office", Color = "#3BB8C9" }, new MarkType { Code = "BŚU", Label = "Brak Świadczenia Usług", Color = "#A47CF0" } };
             mkStore.FillMissing(null);

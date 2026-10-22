@@ -55,8 +55,6 @@ static class YearView
 {
     const double LabelW = 1.8, MonthH = 2.0; // month name + HO/BŚU counts
 
-    static Color C(string hex) => (Color)ColorConverter.ConvertFromString(hex);
-
     /// <summary>Accent strength for 1, 2, 3, 4, 5+ done tasks on a day.</summary>
     static readonly byte[] Levels = { 0x48, 0x70, 0x98, 0xC4, 0xFF };
 
@@ -64,7 +62,7 @@ static class YearView
     /// Under the year's grid: done tasks per month as small columns (this month in the accent), the year in numbers
     /// (done, hours, the longest streak of working days with something done, the best month) and the share of each project.
     /// </summary>
-    static FrameworkElement Summary(int year, System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<TaskItem>> byDay, bool animate, System.Collections.Generic.List<MarkType> types, Func<string, int> markCount)
+    static FrameworkElement Summary(int year, System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<TaskItem>> byDay, bool animate, System.Collections.Generic.List<MarkType> types, Func<string, (int Used, int Planned)> markCount)
     {
         var today = DateTime.Today;
         var green = TaskMarks.DoneGreen;
@@ -143,12 +141,14 @@ static class YearView
         var leave = new StackPanel();
         Grid.SetColumn(leave, 4);
         leave.Children.Add(Caption(L.T("Dni wolne")));
-        foreach (var m in types.Where(m => m.Allowance is > 0 || (!m.Ring && markCount(m.Code) > 0)))
+        foreach (var m in types.Where(m => m.Allowance is > 0 || (!m.Ring && markCount(m.Code).Used + markCount(m.Code).Planned > 0)))
         {
-            int used = markCount(m.Code), all = m.Allowance ?? 0, left = Math.Max(0, all - used);
+            // working days only (a BŚU series over a weekend doesn't use Saturday); taken = up to today, planned = after
+            var (used, planned) = markCount(m.Code);
+            int all = m.Allowance ?? 0, left = Math.Max(0, all - used - planned);
             var c = BoardWindow.ParseColor(m.Color);
             var row = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
-            var ring = Ring(all > 0 ? (double)left / all : 0, c, all > 0 ? left.ToString() : used.ToString());
+            var ring = Ring(all > 0 ? (double)left / all : 0, c, all > 0 ? left.ToString() : (used + planned).ToString());
             DockPanel.SetDock(ring, Dock.Left);
             row.Children.Add(ring);
             var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) };
@@ -158,9 +158,9 @@ static class YearView
             {
                 line.Inlines.Add(new Run(L.F("{0}: dostępne ", year)));
                 line.Inlines.Add(new Run(left.ToString()) { FontWeight = FontWeights.Bold, Foreground = Ui.Res("Fg") });
-                line.Inlines.Add(new Run(" " + L.F("z {0} dni", all) + "  ·  " + L.F("wykorzystane {0}", used)));
+                line.Inlines.Add(new Run(" " + L.F("z {0} dni", all) + "  ·  " + L.F("wykorzystane {0}", used) + (planned > 0 ? "  ·  " + L.F("zaplanowane {0}", planned) : "")));
             }
-            else line.Inlines.Add(new Run(L.F("{0}: {1} dni", year, used)));
+            else line.Inlines.Add(new Run(L.F("{0}: {1} dni", year, used + planned)));
             text.Children.Add(line);
             row.Children.Add(text);
             leave.Children.Add(row);
@@ -237,10 +237,10 @@ static class YearView
         var weekendRed = Color.FromRgb(0xF2, 0x6D, 0x6D);
         var green = TaskMarks.DoneGreen; // done tasks: green, like the state bar of a done task
 
-        var byDay = data.Tasks.Where(t => t.Day != null && t.Day.StartsWith(year.ToString()))
+        var byDay = data.Tasks.Where(t => t.Day != null && t.Day.StartsWith(year.ToString(), StringComparison.Ordinal))
             .GroupBy(t => t.Day!).ToDictionary(g => g.Key, g => g.ToList());
         // unfinished tasks that moved on: the day was worked on, not finished
-        var continued = data.Tasks.Where(t => t.WorkedDays != null).SelectMany(t => t.WorkedDays!).Where(d => d.StartsWith(year.ToString()))
+        var continued = data.Tasks.Where(t => t.WorkedDays != null).SelectMany(t => t.WorkedDays!).Where(d => d.StartsWith(year.ToString(), StringComparison.Ordinal))
             .GroupBy(d => d).ToDictionary(g => g.Key, g => g.Count());
 
         var dock = new DockPanel { Margin = new Thickness(2, 0, 2, 0) };
@@ -349,7 +349,7 @@ static class YearView
                 int total = (tasks?.Count ?? 0) + (continued.TryGetValue(key, out var cont) ? cont : 0), done = tasks?.Count(t => t.Done) ?? 0; // continued = worked on, not finished that day
                 var mark = markOf.TryGetValue(key, out var mk2) ? mk2 : null;
                 bool past = date <= today;
-                var dayOff = PolishHolidays.DayOff(date);
+                var dayOff = DaysOff.Name(date);
 
                 Color fill;
                 Color? ring = null;
@@ -414,7 +414,18 @@ static class YearView
         panel.HorizontalAlignment = HorizontalAlignment.Center;
         panel.VerticalAlignment = VerticalAlignment.Top;
         // the year in numbers under the grid: done tasks per month, a few totals, the share of each project
-        var summary = Summary(year, byDay, animate, types, code => MarkCount(code));
+        (int Used, int Planned) LeaveDays(string code)
+        {
+            int used = 0, planned = 0;
+            foreach (var kv in markOf)
+            {
+                if (kv.Value != code || !DateTime.TryParseExact(kv.Key, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d)) continue;
+                if (d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday || DaysOff.Name(d) != null) continue; // not a working day
+                if (d <= today) used++; else planned++;
+            }
+            return (used, planned);
+        }
+        var summary = Summary(year, byDay, animate, types, LeaveDays);
         DockPanel.SetDock(summary, Dock.Bottom);
         dock.Children.Add(summary);
         dock.Children.Add(panel);

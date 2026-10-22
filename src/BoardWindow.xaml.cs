@@ -91,9 +91,12 @@ public partial class BoardWindow : GlassWindow
 
     public static DateTime Monday(DateTime d) => d.Date.AddDays(-(((int)d.DayOfWeek + 6) % 7));
     public static string DayKey(DateTime d) => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-    static DateTime ParseKey(string k) => DateTime.ParseExact(k, "yyyy-MM-dd", CultureInfo.InvariantCulture);
+    /// <summary>A day key; a malformed one (from another version's file) reads as today instead of breaking the whole board.</summary>
+    static DateTime ParseKey(string k) => DateTime.TryParseExact(k, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : DateTime.Today;
     static string DayName(DateTime d) => Pl.DateTimeFormat.GetAbbreviatedDayName(d.DayOfWeek).TrimEnd('.').ToUpper(Pl);
     static bool IsWeekend(DateTime d) => d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+    /// <summary>Weekends on screen: as set – and always on a Saturday or Sunday itself (from Monday the 5-day week is back).</summary>
+    static bool Weekends => S.ShowWeekends || IsWeekend(DateTime.Today);
     public static int WeekNo(DateTime d) => ISOWeek.GetWeekOfYear(d);
     public enum TaskState { Todo, Started, Review, Tests, Done }
 
@@ -477,7 +480,8 @@ public partial class BoardWindow : GlassWindow
         }
         _slideDir = 0;
         _builtView = _view;
-        BuildBacklog();
+        // the backlog only when it is on screen (a closed drawer is built when it opens)
+        if (S.BacklogMode == "drawer" ? _drawerOpen : _pinnedVisible) BuildBacklog(); else _backlogStale = true;
         _justAdded = _justToggled = null;
         _flashId = null;
         _editOnBuild = null; // not used by this build (e.g. the row is folded away): never later, by surprise
@@ -504,7 +508,6 @@ public partial class BoardWindow : GlassWindow
         if (_layerName != null) _layerName.Text = L.Up(App.AccountName(S.Layer));
         LayerButton.Background = priv ? B(Color.FromArgb(0x40, 0x5C, 0xCB, 0x92)) : B(Th.Ink(0x14));
         LayerButton.Foreground = Res("Fg");
-        ClearDoneButton.Visibility = Visibility.Collapsed; // a rare action: it lives in the ⋯ menu (fewer icons on the bar)
         UpdateBacklogButton();
 
         RangeText.Inlines.Clear();
@@ -557,7 +560,7 @@ public partial class BoardWindow : GlassWindow
         // planned days ahead: the workdays after its day up to the planned end
         if (t.PlanEnd != null && DateTime.TryParseExact(t.PlanEnd, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var end))
             for (var d = ParseKey(t.Day).AddDays(1); d <= end; d = d.AddDays(1))
-                if (!IsWeekend(d) && PolishHolidays.DayOff(d) == null) all.Add(DayKey(d));
+                if (!IsWeekend(d) && DaysOff.Name(d) == null) all.Add(DayKey(d));
         all = all.Distinct().ToList();
         all.Sort(StringComparer.Ordinal);
         return all.Count > 1 ? all : null;
@@ -590,7 +593,7 @@ public partial class BoardWindow : GlassWindow
         WeeksGrid.RowDefinitions.Clear();
         WeeksGrid.ColumnDefinitions.Clear();
         bool single = _view == ViewMode.Day;
-        int days = single ? 1 : S.ShowWeekends ? 7 : 5;
+        int days = single ? 1 : Weekends ? 7 : 5;
         bool month = _view == ViewMode.Month;
         for (int c = 0; c < days; c++) WeeksGrid.ColumnDefinitions.Add(new ColumnDefinition());
         for (int w = 0; w < WeekCount; w++) WeeksGrid.RowDefinitions.Add(new RowDefinition());
@@ -629,7 +632,7 @@ public partial class BoardWindow : GlassWindow
         var key = DayKey(date);
         bool isToday = date == DateTime.Today;
         bool isPast = date < DateTime.Today;
-        var dayOff = PolishHolidays.DayOff(date);
+        var dayOff = DaysOff.Name(date);
         var events = CalendarService.On(date);
         var holidayNames = events.Where(e => e.IsHoliday).Select(e => e.Title).ToList();
         if (dayOff != null && !holidayNames.Any(n => n.Equals(dayOff, StringComparison.OrdinalIgnoreCase))) holidayNames.Insert(0, dayOff);
@@ -1125,7 +1128,7 @@ public partial class BoardWindow : GlassWindow
         int n = 1;
         for (var d = day.AddDays(1); n < 15; d = d.AddDays(1))
         {
-            if (IsWeekend(d) || PolishHolidays.DayOff(d) != null) continue;
+            if (IsWeekend(d) || DaysOff.Name(d) != null) continue;
             n++;
             Add(L.F("do {0}  ({1} dni)", d.ToString("ddd d MMM", Pl), n), DayKey(d));
         }
@@ -1154,7 +1157,7 @@ public partial class BoardWindow : GlassWindow
         var d = day.AddDays(-1);
         for (int n = 0; n < 10; d = d.AddDays(-1))
         {
-            if (IsWeekend(d) || PolishHolidays.DayOff(d) != null) continue;
+            if (IsWeekend(d) || DaysOff.Name(d) != null) continue;
             n++;
             var from = d;
             var span = WorkdaysBetween(from, day);
@@ -1188,7 +1191,7 @@ public partial class BoardWindow : GlassWindow
         for (int n = 1; n < workdays;)
         {
             d = d.AddDays(1);
-            if (!IsWeekend(d) && PolishHolidays.DayOff(d) == null) n++;
+            if (!IsWeekend(d) && DaysOff.Name(d) == null) n++;
         }
         return DayKey(d);
     }
@@ -1198,7 +1201,7 @@ public partial class BoardWindow : GlassWindow
     {
         var list = new List<DateTime>();
         for (var d = from.Date; d < to.Date; d = d.AddDays(1))
-            if (!IsWeekend(d) && PolishHolidays.DayOff(d) == null) list.Add(d);
+            if (!IsWeekend(d) && DaysOff.Name(d) == null) list.Add(d);
         return list;
     }
 
@@ -1237,6 +1240,21 @@ public partial class BoardWindow : GlassWindow
             setup.Click += (_, _) => App.Instance.ShowSettings();
             menu.Items.Add(setup);
         }
+        // a day off the company gives (an event, a holiday that fell on a Saturday): like a public holiday, named by hand
+        var company = Store.CompanyDay(key);
+        var free = new MenuItem { Header = company != null ? "✓  " + L.F("Dzień wolny: {0} – zmień opis…", company) : "     " + L.T("Dzień wolny od firmy…") };
+        free.Click += (_, _) =>
+        {
+            var name = AskWindow.Ask(L.T("Dzień wolny od firmy"), L.T("Opis przy dacie (np. Wolne za 15 sierpnia):"), company ?? L.T("Wolne za "));
+            if (name != null && name.Trim().Length > 0) Do(() => Store.SetCompanyDay(key, name));
+        };
+        menu.Items.Add(free);
+        if (company != null)
+        {
+            var unfree = new MenuItem { Header = "     " + L.T("Usuń dzień wolny") };
+            unfree.Click += (_, _) => Do(() => Store.SetCompanyDay(key, null));
+            menu.Items.Add(unfree);
+        }
         menu.Items.Add(new Separator());
         var add = new MenuItem { Header = L.T("Dodaj zadanie") };
         add.Click += (_, _) => { _addingKey = key; Rebuild(); };
@@ -1273,10 +1291,6 @@ public partial class BoardWindow : GlassWindow
         }
         else sv.OpacityMask = null;
     }
-
-    /// <summary>Colour of a Notion database (Settings → Połączenia), by its name.</summary>
-    static Color SourceColor(string name) =>
-        S.Accounts.SelectMany(a => a.Projects).FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.OrdinalIgnoreCase)) is { } l ? ParseColor(l.Color) : Color.FromRgb(0x8A, 0x94, 0xA6);
 
     /// <summary>A category on a task's second line: its name in bold on a light fill of its colour (Meeting with its icon).</summary>
     public static Border TagChip(string tag, double mfs)
@@ -1500,7 +1514,7 @@ public partial class BoardWindow : GlassWindow
             menu.PlacementTarget = wrapper;
             menu.IsOpen = true;
         };
-        if (Dev.Arg("--open") == "menu" && t.Day == DayKey(DateTime.Today) && !t.Done && wrapper.IsLoaded == false)
+        if (DevMenu && t.Day == DayKey(DateTime.Today) && !t.Done && wrapper.IsLoaded == false)
             DevOpenMenu = () => { var m = BuildMenu(t, content, text, wrapper); m.PlacementTarget = wrapper; m.IsOpen = true; };
         if (_justAdded == t.Id) Anim.Enter(wrapper, 0, -6, 240);
         if (_flashId == t.Id) Flash(wrapper);
@@ -1508,6 +1522,7 @@ public partial class BoardWindow : GlassWindow
     }
 
     public Action? DevOpenMenu;
+    static readonly bool DevMenu = Dev.Arg("--open") == "menu"; // read once, not per task row
     string? _justExpanded;
     public void DevExpandAll() { foreach (var t in Store.Data.Tasks.Where(t => t.Checklist is { Count: > 0 })) _expanded.Add(t.Id); Rebuild(); }
     /// <summary>Task row under the mouse (keyboard shortcuts act on it).</summary>
@@ -2120,6 +2135,9 @@ public partial class BoardWindow : GlassWindow
             c.Started = null;                         // a fresh copy: not started, planned from its own day
             c.TrackStart = null;                      // … with no time measured
             c.TrackedMinutes = 0;
+            c.Done = false;
+            c.Review = c.Testing = null; // … in no state of the original
+            c.DayStates = null;
             c.PlanEnd = AutoPlanEnd(day, c.Estimate);
             Store.Add(c);
             _justAdded = c.Id;
@@ -2163,7 +2181,7 @@ public partial class BoardWindow : GlassWindow
     void WarnIfFull(string key)
     {
         var date = ParseKey(key);
-        if (IsWeekend(date) || PolishHolidays.DayOff(date) != null) return; // no workday limit on days off
+        if (IsWeekend(date) || DaysOff.Name(date) != null) return; // no workday limit on days off
         var total = DayTotal(key);
         if (total > DayHours + 0.01)
             ShowUndo(L.F("{0}: {1} z {2} – ponad dzień pracy", ParseKey(key).ToString("dddd d MMM", Pl), Hours(total), Hours(DayHours)));

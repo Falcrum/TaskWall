@@ -16,7 +16,6 @@ static class SmartAdd
 {
     public sealed record Result(string Text, DateTime? Day, double? Estimate, List<string> Categories, TimeSpan? Time = null, TimeSpan? End = null, string? Priority = null, int? Days = null, string? Project = null)
     {
-        public bool HasAny => Day != null || Estimate != null || Categories.Count > 0;
     }
 
     static readonly Dictionary<string, DayOfWeek> Weekdays = new(StringComparer.OrdinalIgnoreCase)

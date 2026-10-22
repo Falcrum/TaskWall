@@ -59,18 +59,6 @@ static class Anim
         }
     }
 
-    /// <summary>Small "pop" (used when a task gets checked).</summary>
-    public static void Pop(FrameworkElement el)
-    {
-        if (!On) return;
-        var s = new ScaleTransform(1, 1);
-        el.RenderTransformOrigin = new Point(0.5, 0.5);
-        el.RenderTransform = s;
-        var a = new DoubleAnimation(0.55, 1, TimeSpan.FromMilliseconds(320)) { EasingFunction = new BackEase { Amplitude = 0.6, EasingMode = EasingMode.EaseOut } };
-        s.BeginAnimation(ScaleTransform.ScaleXProperty, a);
-        s.BeginAnimation(ScaleTransform.ScaleYProperty, a);
-    }
-
     /// <summary>Fade + collapse height, then run <paramref name="done"/>.</summary>
     public static void Leave(FrameworkElement el, Action done)
     {

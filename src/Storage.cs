@@ -248,8 +248,6 @@ static class SettingsStore
     static IReadOnlyList<string> _mounts = Array.Empty<string>();
     static DateTime _mountChecked;
 
-    /// <summary>The first Google Drive (for the "Google Drive" quick pick in the settings).</summary>
-    public static string? GoogleDriveMount() => GoogleDriveMounts().FirstOrDefault();
 
     /// <summary>The folder's drive is a mounted Google Drive (and not, say, a local disk that got the same letter).</summary>
     public static bool IsOnGoogleDrive(string folder) =>
@@ -356,8 +354,10 @@ public sealed class BoardStore
         bool read = false;
         foreach (var f in Directory.GetFiles(DeviceFolder, "board-*.json"))
         {
+            // a computer silent for half a year: its data went into the others long ago (and its old tombstones are pruned)
+            if (!string.Equals(f, DeviceFile, StringComparison.OrdinalIgnoreCase) && File.GetLastWriteTimeUtc(f) < DateTime.UtcNow.AddDays(-180)) continue;
             DiskState d;
-            try { d = TryRead(f); }
+            try { d = TryRead(f, _seenDevices.GetValueOrDefault(f)); }
             catch (Exception ex) { Log.Error("device file " + Path.GetFileName(f), ex); continue; } // held by the sync client: next time
             if (d.Data == null || d.Hash == null) continue;
             if (_seenDevices.TryGetValue(f, out var seen) && seen == d.Hash) continue;
@@ -616,15 +616,16 @@ public sealed class BoardStore
         }
         // day marks of before 0.29: BŚU in its new blue with its yearly days, sick leave (ZL) as a mark of its own –
         // once per board (MarkSet); later changes by hand stay
-        if (Data.MarkSet < 1 && Data.Marks is { } marks && marks.Any(m => m.Code == "BŚU"))
+        if (Offline == null && Data.MarkSet < 1 && Data.Marks is { } marks && marks.Any(m => m.Code == "BŚU"))
         {
             Data.MarkSet = 1; // once per board (both computers end the same)
-            var list = marks.Select(m => new MarkType { Code = m.Code, Label = m.Label, Color = m.Color, Style = m.Style, Allowance = m.Allowance }).ToList();
+            var list = marks.Select(m => m.Clone()).ToList();
             var l2 = list.First(m => m.Code == "BŚU");
             l2.Color = MarkType.LeaveBlue;
             l2.Allowance ??= 27;
             if (list.All(m => m.Code != "ZL")) list.Add(new MarkType { Code = "ZL", Label = "Zwolnienie lekarskie", Color = MarkType.SickPink, Allowance = 33 });
-            SetMarkTypes(list);
+            Data.Marks = list;
+            Data.MarksModified = Data.MarksModified.AddTicks(1); // an automatic change: an edit made on the other computer still wins
             n++;
         }
         if (n > 0) MarkDirty();
@@ -885,7 +886,7 @@ public sealed class BoardStore
         foreach (var key in Data.Days.Where(kv => !string.IsNullOrEmpty(kv.Value.Mark)).Select(kv => kv.Key).ToList())
         {
             var day = Data.Days[key];
-            Data.Days[key] = new DayInfo { Mark = null, WorkStart = day.WorkStart, WorkEnd = day.WorkEnd, Overtime = day.Overtime, Modified = Stamp.After(day.Modified) };
+            Data.Days[key] = new DayInfo { Extra = day.Extra, Mark = null, WorkStart = day.WorkStart, WorkEnd = day.WorkEnd, Overtime = day.Overtime, Modified = Stamp.After(day.Modified) };
             n++;
         }
         foreach (var r in Data.MarkRules.Where(r => !r.Deleted).ToList()) { r.Deleted = true; Changed(r); n++; }
@@ -951,7 +952,7 @@ public sealed class BoardStore
         // same as the series → no override; removing a series mark → "" (explicit "nothing")
         var series = SeriesMark(day);
         string? stored = mark == series ? null : mark ?? "";
-        Data.Days[day] = new DayInfo { Mark = stored, WorkStart = d?.WorkStart, WorkEnd = d?.WorkEnd, Overtime = d?.Overtime, Modified = Stamp.After(before) };
+        Data.Days[day] = new DayInfo { Extra = d?.Extra, Mark = stored, WorkStart = d?.WorkStart, WorkEnd = d?.WorkEnd, Overtime = d?.Overtime, Modified = Stamp.After(before) };
         MarkDirty();
     }
 
@@ -962,7 +963,7 @@ public sealed class BoardStore
     public void SetWorkHours(string day, string? start, string? end)
     {
         Data.Days.TryGetValue(day, out var d);
-        Data.Days[day] = new DayInfo { Mark = d?.Mark, WorkStart = start, WorkEnd = end, Overtime = d?.Overtime, Modified = Stamp.After(d?.Modified ?? DateTime.MinValue) };
+        Data.Days[day] = new DayInfo { Extra = d?.Extra, Mark = d?.Mark, WorkStart = start, WorkEnd = end, Overtime = d?.Overtime, Modified = Stamp.After(d?.Modified ?? DateTime.MinValue) };
         MarkDirty();
     }
 
@@ -1001,7 +1002,7 @@ public sealed class BoardStore
         Data.Days.TryGetValue(day, out var d);
         Data.Days[day] = new DayInfo
         {
-            Mark = d?.Mark, WorkStart = d?.WorkStart, WorkEnd = d?.WorkEnd,
+            Extra = d?.Extra, Mark = d?.Mark, WorkStart = d?.WorkStart, WorkEnd = d?.WorkEnd,
             Overtime = merged.Count > 0 ? merged.Select(p => Period(p.Start, p.End)).ToList() : null,
             Modified = Stamp.After(d?.Modified ?? DateTime.MinValue),
         };
@@ -1024,6 +1025,20 @@ public sealed class BoardStore
         });
     }
 
+    // ---------- days off the company gives ----------
+
+    /// <summary>The company's day off on that day, with its name ("Wolne za 15 sierpnia"), or null.</summary>
+    public string? CompanyDay(string day) => Data.CompanyDays != null && Data.CompanyDays.TryGetValue(day, out var c) && c.Label.Length > 0 ? c.Label : null;
+
+    /// <summary>Sets (or with an empty / null name removes) a company day off; removing keeps an entry so the other computer follows.</summary>
+    public void SetCompanyDay(string day, string? label)
+    {
+        Data.CompanyDays ??= new();
+        var before = Data.CompanyDays.TryGetValue(day, out var c) ? c.Modified : DateTime.MinValue;
+        Data.CompanyDays[day] = new CompanyDay { Label = (label ?? "").Trim(), Modified = Stamp.After(before), Extra = c?.Extra };
+        MarkDirty();
+    }
+
     public string Note(string day) => Data.Notes != null && Data.Notes.TryGetValue(day, out var n) ? n.Text : "";
 
     public void SetNote(string day, string text)
@@ -1031,7 +1046,7 @@ public sealed class BoardStore
         Data.Notes ??= new();
         var before = Data.Notes.TryGetValue(day, out var n) ? n.Modified : DateTime.MinValue;
         if (n != null && n.Text == text) return;
-        Data.Notes[day] = new DayNote { Text = text, Modified = Stamp.After(before) };
+        Data.Notes[day] = new DayNote { Text = text, Modified = Stamp.After(before), Extra = n?.Extra };
         MarkDirty();
     }
 
@@ -1090,7 +1105,7 @@ public sealed class BoardStore
             var now = Data.Days.TryGetValue(key, out var b) ? b.Mark : null;
             var wasStart = a?.WorkStart; var wasEnd = a?.WorkEnd;
             if (was != now || wasStart != b?.WorkStart || wasEnd != b?.WorkEnd || string.Join(",", a?.Overtime ?? new()) != string.Join(",", b?.Overtime ?? new()))
-                Data.Days[key] = new DayInfo { Mark = was, WorkStart = wasStart, WorkEnd = wasEnd, Overtime = a?.Overtime, Modified = Stamp.After(b?.Modified ?? DateTime.MinValue) };
+                Data.Days[key] = new DayInfo { Extra = b?.Extra, Mark = was, WorkStart = wasStart, WorkEnd = wasEnd, Overtime = a?.Overtime, Modified = Stamp.After(b?.Modified ?? DateTime.MinValue) };
         }
         MarkDirty();
         return true;
@@ -1224,7 +1239,7 @@ public sealed class BoardStore
     {
         try
         {
-            var disk = TryRead(FilePath);
+            var disk = TryRead(FilePath, _lastHash); // the same file as last time: not parsed again
             if (disk.Data != null && disk.Hash != _lastHash)
             {
                 var diskCanon = Canon(disk.Data);
@@ -1312,7 +1327,7 @@ public sealed class BoardStore
                 arr.Clear();
                 foreach (var i in items) arr.Add(i);
             }
-            else if (value is System.Text.Json.Nodes.JsonObject dict && key is "Days" or "Deleted" or "Notes")
+            else if (value is System.Text.Json.Nodes.JsonObject dict && key is "Days" or "Deleted" or "Notes" or "CompanyDays")
             {
                 var props = dict.Select(p => (p.Key, p.Value?.DeepClone())).OrderBy(p => p.Key, StringComparer.Ordinal).ToList();
                 dict.Clear();
@@ -1366,6 +1381,12 @@ public sealed class BoardStore
             result.Notes = new();
             foreach (var kv in (a.Notes ?? new()).Concat(b.Notes ?? new()))
                 if (!result.Notes.TryGetValue(kv.Key, out var n) || kv.Value.Modified > n.Modified) result.Notes[kv.Key] = kv.Value;
+        }
+        if (a.CompanyDays != null || b.CompanyDays != null)
+        {
+            result.CompanyDays = new();
+            foreach (var kv in (a.CompanyDays ?? new()).Concat(b.CompanyDays ?? new()))
+                if (!result.CompanyDays.TryGetValue(kv.Key, out var c) || kv.Value.Modified > c.Modified) result.CompanyDays[kv.Key] = kv.Value;
         }
 
         bool takeB = a.Categories == null || (b.Categories != null && b.CategoriesModified > a.CategoriesModified);
@@ -1439,7 +1460,8 @@ public sealed class BoardStore
 
     readonly record struct DiskState(BoardData? Data, string? Hash, bool Unreadable);
 
-    static DiskState TryRead(string path)
+    /// <summary>Reads and parses a board file; <paramref name="unlessHash"/>: the same text as last time = not parsed again (Data null, Hash set).</summary>
+    static DiskState TryRead(string path, string? unlessHash = null)
     {
         for (int attempt = 0; ; attempt++)
         {
@@ -1451,6 +1473,7 @@ public sealed class BoardStore
                 using (var sr = new StreamReader(fs, Encoding.UTF8))
                     json = sr.ReadToEnd();
                 if (string.IsNullOrWhiteSpace(json)) return new DiskState(null, null, true);
+                if (unlessHash != null && Hash(json) == unlessHash) return new DiskState(null, unlessHash, false); // unchanged: no parsing
                 var data = JsonSerializer.Deserialize<BoardData>(json, Json.Options);
                 if (data == null) return new DiskState(null, null, true);
                 data.Tasks ??= new();

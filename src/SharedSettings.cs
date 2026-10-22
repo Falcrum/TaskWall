@@ -52,7 +52,6 @@ static class SharedSettings
     /// <summary>The folder the last sync came from (older versions kept the file's path there).</summary>
     static string? FolderOf(string? p) => p == null ? null : p.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? Path.GetDirectoryName(p) : p;
 
-    public static DateTime? LastRead { get; private set; }
     public static string? LastError { get; private set; }
     /// <summary>Raised when settings came from another computer during a save.</summary>
     public static event Action<string[]>? Pulled;
@@ -128,11 +127,17 @@ static class SharedSettings
     /// changed here since the last sync (<see cref="AppSettings.SharedBaseline"/>) are kept – e.g. edits made while the
     /// cloud drive was away – and pushed on the next save. Returns the names of the settings that changed.
     /// </summary>
+    static string? _lastSignature;
+
     public static string[] Pull(AppSettings s)
     {
         if (PathFor(s) is not { } legacy) return Array.Empty<string>();
         try
         {
+            // nothing written since the last look (every settings save asks): no reading and parsing of the files
+            var sig = string.Join("|", Candidates(legacy).Select(f => f + ":" + File.GetLastWriteTimeUtc(f).Ticks + ":" + new FileInfo(f).Length)) + "|" + s.SharedModified?.Ticks;
+            if (sig == _lastSignature) return Array.Empty<string>();
+            _lastSignature = sig;
             // the newest version among all computers' files
             JsonObject? file = null;
             DateTime newest = DateTime.MinValue;
@@ -144,7 +149,6 @@ static class SharedSettings
                 }
                 catch (Exception ex) { Log.Error("shared settings read " + f, ex); }
             }
-            LastRead = DateTime.Now;
             LastError = null;
             if (file?["Settings"] is not JsonObject theirs || file["Modified"]?.GetValue<DateTime>() is not { } modified) return Array.Empty<string>();
             var path = Path.GetDirectoryName(legacy)!;

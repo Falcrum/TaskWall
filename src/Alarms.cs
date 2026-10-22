@@ -48,7 +48,6 @@ static class AlarmService
         Changed?.Invoke();
     }
 
-    public static IEnumerable<DateTime> SnoozedFor(Alarm a) => Snoozed.Where(s => s.Alarm.Id == a.Id).Select(s => s.Due);
 
     static void Check()
     {
@@ -539,7 +538,7 @@ public sealed class AlarmWindow : DarkWindow
     }
 
     string RepeatCode => (_repeat.SelectedItem as ComboBoxItem)?.Tag as string is "days"
-        ? "days:" + string.Join(",", _days.Children.OfType<CheckBox>().Where(c => c.IsChecked == true).Select(c => (int)c.Tag)) is var s && s.Length > 5 ? s : "days:" + ((int)DateTime.Today.DayOfWeek == 0 ? 7 : (int)DateTime.Today.DayOfWeek)
+        ? "days:" + string.Join(",", _days.Children.OfType<CheckBox>().Where(c => c.IsChecked == true).Select(c => (int)c.Tag)) is var s && s.Length > 5 ? s : "days:" + (Resolve()?.Start ?? DateTime.Today) switch { var sd => sd.DayOfWeek == DayOfWeek.Sunday ? 7 : (int)sd.DayOfWeek }
         : (_repeat.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
     int? RemindMinutes => (_remind.SelectedItem as ComboBoxItem)?.Tag as int?;
 

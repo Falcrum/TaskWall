@@ -43,8 +43,6 @@
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                     <Button x:Name="SearchButton" Style="{StaticResource BarIcon}" Click="Search_Click" ToolTip="Szukaj wszędzie (Ctrl+F)"/>
-                    <Button x:Name="ClearDoneButton" Style="{StaticResource BarIcon}" Click="ClearDone_Click"
-                            ToolTip="Wyczyść: przenieś zakończone zadania z widocznego okresu i z backlogu do archiwum"/>
                     <Button x:Name="BacklogButton" Style="{StaticResource BarIcon}" Click="ToggleBacklog_Click" AllowDrop="True" ToolTip="Backlog"/>
                     <Button x:Name="ArchiveButton" Style="{StaticResource BarIcon}" Click="ToggleArchive_Click" AllowDrop="True"
                             ToolTip="Zarchiwizowane zadania (upuść tu zadanie, żeby je zarchiwizować)"/>

@@ -167,7 +167,7 @@ public sealed class ClockWindow : GlassWindow
                 var d = monday.AddDays(i);
                 bool inMonth = d.Month == _month.Month;
                 bool today = d == DateTime.Today;
-                bool red = i >= 5 || PolishHolidays.DayOff(d) != null;
+                bool red = i >= 5 || DaysOff.Name(d) != null;
                 var label = new TextBlock
                 {
                     Text = d.Day.ToString(),
@@ -185,7 +185,7 @@ public sealed class ClockWindow : GlassWindow
                     Cursor = Cursors.Hand,
                     Background = today ? Ui.Res("AccentBrush") : Brushes.Transparent,
                     Child = label,
-                    ToolTip = PolishHolidays.DayOff(d),
+                    ToolTip = DaysOff.Name(d),
                 };
                 if (!today) Anim.HoverBackground(cell, Colors.Transparent, Th.Ink(0x30));
                 cell.MouseLeftButtonUp += (_, _) => Pick(d);

@@ -84,19 +84,6 @@ static class Icons
     /// <summary>"More": three dots.</summary>
     public static FrameworkElement More(double s = 18) => Box(s, Fill("M4,10.4 a1.6,1.6 0 1 0 0.01,0 Z M12,10.4 a1.6,1.6 0 1 0 0.01,0 Z M20,10.4 a1.6,1.6 0 1 0 0.01,0 Z"));
 
-    /// <summary>Settings: a gear (eight teeth around a ring).</summary>
-    public static FrameworkElement Gear(double s = 18)
-    {
-        var sb = new System.Text.StringBuilder();
-        for (int i = 0; i < 8; i++)
-        {
-            double a = i * Math.PI / 4;
-            double x1 = 12 + Math.Cos(a) * 6.6, y1 = 12 + Math.Sin(a) * 6.6, x2 = 12 + Math.Cos(a) * 9.2, y2 = 12 + Math.Sin(a) * 9.2;
-            sb.Append(System.FormattableString.Invariant($"M{x1:0.##},{y1:0.##} L{x2:0.##},{y2:0.##} "));
-        }
-        return Box(s, Line("M12,5.4 a6.6,6.6 0 1 0 0.01,0 Z M12,9.2 a2.8,2.8 0 1 0 0.01,0 Z", 1.6), Line(sb.ToString(), 2.6));
-    }
-
     /// <summary>Hide the board: a line at the bottom (minimise).</summary>
     public static FrameworkElement Minimize(double s = 16) => Box(s, Line("M5,17 H19", 1.9));
 

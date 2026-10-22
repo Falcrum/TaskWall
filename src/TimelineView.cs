@@ -68,8 +68,7 @@ public sealed class TimelineView : Grid
     static SolidColorBrush B(Color c) => new(c);
     static Color A(Color c, byte a) => Color.FromArgb(a, c.R, c.G, c.B);
     static SolidColorBrush Tx(Color c) => new(Th.Light ? Color.FromArgb(c.A, (byte)(c.R * 0.6), (byte)(c.G * 0.6), (byte)(c.B * 0.6)) : c);
-    static bool DayOff(DateTime d) => d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday || PolishHolidays.DayOff(d) != null;
-    static DateTime Key(string k) => DateTime.ParseExact(k, "yyyy-MM-dd", CultureInfo.InvariantCulture);
+    static bool DayOff(DateTime d) => d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday || DaysOff.Name(d) != null;
     double W => Math.Clamp(S.DayWidth, 8, 160);
     double RowHeight => Math.Round(App.Settings.FontSize * 2.5 + 6);
 
@@ -517,7 +516,6 @@ public sealed class TimelineView : Grid
             }
         }
         string? lastGroup = null;
-        bool firstGroup = true;
         foreach (var it in _items.OrderBy(i => i.Row))
         {
             if (S.Group != "none" && it.Group != lastGroup)
@@ -528,7 +526,6 @@ public sealed class TimelineView : Grid
                     : S.Group == "priority" && it.Group.Length > 0 ? BoardWindow.PriorityColor(it.Group) : Th.Ink(0x90);
                 double gy = it.Row * RowHeight - 4;
                 _bars.Children.Add(At(new Line { X1 = 0, X2 = width, Stroke = B(A(gc, 0x70)), StrokeThickness = 1, StrokeDashArray = new DoubleCollection { 5, 4 } }, 0, Math.Max(1, gy)));
-                firstGroup = false;
                 var head = new Border
                 {
                     CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 0, 6, 1), Background = B(A(gc, 0x26)),
@@ -557,20 +554,6 @@ public sealed class TimelineView : Grid
             .Where(m => m.To > m.From)
             .Concat(store.Alarms.Where(a => a.IsMeeting && a.Occurs(d)).Select(a => new Meeting(a.TimeOfDay, a.EndAt(d).Date > d ? TimeSpan.FromHours(24) : a.EndAt(d).TimeOfDay, a.Text, true)))
             .OrderBy(m => m.From).ToList();
-
-    /// <summary>Row of each meeting within its day: overlapping ones go under each other.</summary>
-    static List<int> Lanes(List<Meeting> day)
-    {
-        var ends = new List<TimeSpan>();
-        var result = new List<int>();
-        foreach (var m in day)
-        {
-            int lane = ends.FindIndex(e => e <= m.From);
-            if (lane < 0) { lane = ends.Count; ends.Add(m.To); } else ends[lane] = m.To;
-            result.Add(lane);
-        }
-        return result;
-    }
 
     /// <summary>Rows the meeting group needs: the most meetings on one day around what is on screen.</summary>
     const double MeetingListWidth = 56;
@@ -728,12 +711,6 @@ public sealed class TimelineView : Grid
         Button SmallIcon(FrameworkElement icon, string tip, Action a)
         {
             var b = new Button { Style = (Style)Application.Current.Resources["BarIcon"], Content = icon, ToolTip = tip, VerticalAlignment = VerticalAlignment.Center, Foreground = Res("FgDim") };
-            b.Click += (_, _) => a();
-            return b;
-        }
-        Button Small(string text, string tip, Action a)
-        {
-            var b = new Button { Style = (Style)Application.Current.Resources["IconButton"], Content = text, FontSize = 13, Padding = new Thickness(8, 2, 8, 3), ToolTip = tip, VerticalAlignment = VerticalAlignment.Center };
             b.Click += (_, _) => a();
             return b;
         }

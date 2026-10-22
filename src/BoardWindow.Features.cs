@@ -15,6 +15,7 @@ namespace TaskWall;
 public partial class BoardWindow
 {
     bool _drawerOpen, _pinnedVisible = true;
+    bool _backlogStale; // changed while the drawer was closed
     string? _tagFilter;
     bool _archiveTab;
     string? _statusFilter;  // backlog: only this Notion status
@@ -50,7 +51,6 @@ public partial class BoardWindow
         HideButton.Content = Icons.Minimize();
         SearchButton.Content = Icons.Labeled(Icons.Search(), L.T("SZUKAJ"), cap);
         AlarmButton.Content = Icons.Labeled(Icons.Alarm(), L.T("ALARMY"), cap);
-        ClearDoneButton.Content = Icons.Labeled(Icons.Clear(), L.T("WYCZYŚĆ"), cap);
         BacklogButton.Content = Icons.Labeled(Icons.WithBadge(Icons.Backlog(), out var bc), "BACKLOG", cap);
         ArchiveButton.Content = Icons.Labeled(Icons.WithBadge(Icons.Archive(), out var ac), L.T("ARCHIWUM"), cap);
         _backlogCount = bc;
@@ -628,7 +628,7 @@ public partial class BoardWindow
     {
         double area = BoardArea.ActualWidth;
         if (area <= 0) return S.BacklogWidth;
-        int days = S.ShowWeekends ? 7 : 5;
+        int days = Weekends ? 7 : 5;
         var m = BoardArea.Margin;
         return area / days * 2 + m.Right + 4;
     }
@@ -683,6 +683,7 @@ public partial class BoardWindow
     {
         if (S.BacklogMode != "drawer" || _drawerOpen == open) return;
         _drawerOpen = open;
+        if (open && _backlogStale) { _backlogStale = false; BuildBacklog(); }
         BacklogPanel.Visibility = Visibility.Visible;
         double hidden = DrawerWidth() + 30;
         double from = DrawerShift.HasAnimatedProperties ? DrawerShift.X : open ? hidden : 0; // reversing mid-slide continues smoothly
@@ -783,6 +784,8 @@ public partial class BoardWindow
             copy.Done = false;
             copy.Started = null;
             copy.WorkedDays = null;
+            copy.Review = copy.Testing = null;
+            copy.DayStates = null;
             _justAdded = copy.Id;
             Do(() => Store.Add(copy));
         }));
@@ -801,7 +804,7 @@ public partial class BoardWindow
         for (int i = 0; i < span; i++)
         {
             var date = first.AddDays(i);
-            if (!S.ShowWeekends && IsWeekend(date)) continue;
+            if (!Weekends && IsWeekend(date)) continue;
             var key = DayKey(date);
             var label = date.ToString("dddd, d MMM", Pl);
             if (date == DateTime.Today) label += "  " + L.T("(dziś)");
@@ -1241,8 +1244,6 @@ public partial class BoardWindow
     void OneWeek_Click(object sender, RoutedEventArgs e) => SetView(ViewMode.Week1);
     void Hide_Click(object sender, RoutedEventArgs e) => App.Instance.SetBoardHidden(true);
     void WeekView_Click(object sender, RoutedEventArgs e) => SetView(ViewMode.Week2);
-    void WorkLayer_Click(object sender, RoutedEventArgs e) => App.Instance.SwitchLayer("work");
-    void PrivateLayer_Click(object sender, RoutedEventArgs e) => App.Instance.SwitchLayer("private");
     void MonthView_Click(object sender, RoutedEventArgs e) => SetView(ViewMode.Month);
     void Year_Click(object sender, RoutedEventArgs e) => SetView(ViewMode.Year);
     void Timeline_Click(object sender, RoutedEventArgs e) => SetView(ViewMode.Timeline);
@@ -1315,7 +1316,7 @@ public partial class BoardWindow
     {
         var (first, last, _) = VisiblePeriod();
         var keys = Enumerable.Range(0, (int)(last - first).TotalDays + 1).Select(i => first.AddDays(i))
-            .Where(d => _view == ViewMode.Day || S.ShowWeekends || !IsWeekend(d)).Select(DayKey).ToHashSet(); // only what's on screen
+            .Where(d => _view == ViewMode.Day || Weekends || !IsWeekend(d)).Select(DayKey).ToHashSet(); // only what's on screen
         var done = Store.Data.Tasks.Where(t => t.Done && !t.Archived && (t.IsBacklog || keys.Contains(t.Day!))).ToList();
         if (done.Count == 0) return;
         Do(() => { foreach (var t in done) Store.Archive(t); }, after: () => ShowUndo(L.F("Zarchiwizowano zrobione: {0}", done.Count)));

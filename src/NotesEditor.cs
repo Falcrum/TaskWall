@@ -160,14 +160,23 @@ public sealed class NotesEditor : DockPanel
         return bar;
     }
 
+    /// <summary>The source box gets new text without an undo step (Ctrl+Z never brings back another day's note).</summary>
+    void SetSource(string text)
+    {
+        _src.IsUndoEnabled = false;
+        _src.Text = text;
+        _src.IsUndoEnabled = true;
+    }
+
     void SetMode(bool source, bool save)
     {
+        if (save) Flush(); // what was just typed is saved before the other way of writing takes over
         if (source != _source)
         {
             if (source)
             {
                 _loading = true;
-                _src.Text = Serialize();
+                SetSource(Serialize());
                 _loading = false;
             }
             else Load(_src.Text.Replace("\r", ""), force: true);
@@ -196,7 +205,7 @@ public sealed class NotesEditor : DockPanel
         _loading = true;
         try
         {
-            if (_source) _src.Text = markdown;
+            if (_source) SetSource(markdown);
             _box.IsUndoEnabled = false; // a fresh note: Ctrl+Z never undoes it into the previous day's text
             _box.Document.Blocks.Clear();
             foreach (var b in Parse(markdown)) _box.Document.Blocks.Add(b);
@@ -504,7 +513,7 @@ public sealed class NotesEditor : DockPanel
     {
         if (_box.Selection.IsEmpty && Current is { Tag: "hr" } line && line.Parent is FlowDocument)
         {
-            if (line.NextBlock is Paragraph next) _box.CaretPosition = next.ContentStart;
+            if (line.NextBlock is { } next) _box.CaretPosition = next.ContentStart.GetInsertionPosition(LogicalDirection.Forward); // a list, a paragraph …
             else { var below = new Paragraph(); StyleBlock(below, null); ((FlowDocument)line.Parent).Blocks.InsertAfter(line, below); _box.CaretPosition = below.ContentStart; }
             return;
         }
