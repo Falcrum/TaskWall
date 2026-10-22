@@ -65,7 +65,7 @@ public sealed class TimelineView : Grid
 
     static TimelineSettings S => App.Settings.Timeline;
     static Brush Res(string key) => (Brush)Application.Current.Resources[key];
-    static SolidColorBrush B(Color c) => new(c);
+    static SolidColorBrush B(Color c) => Ui.Brush(c); // shared, frozen
     static Color A(Color c, byte a) => Color.FromArgb(a, c.R, c.G, c.B);
     static SolidColorBrush Tx(Color c) => new(Th.Light ? Color.FromArgb(c.A, (byte)(c.R * 0.6), (byte)(c.G * 0.6), (byte)(c.B * 0.6)) : c);
     static bool DayOff(DateTime d) => d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday || DaysOff.Name(d) != null;
@@ -266,7 +266,7 @@ public sealed class TimelineView : Grid
             }
             row += Math.Max(1, ends.Count) + (S.Group == "none" ? 0 : 1); // a gap row under each group (its label sits in it)
         }
-        _items = items;
+        _items = items.OrderBy(i => i.Row).ToList(); // sorted once here, not on every pan frame
         _contentHeight = (row + 1) * RowHeight;
         Render();
     }
@@ -516,7 +516,7 @@ public sealed class TimelineView : Grid
             }
         }
         string? lastGroup = null;
-        foreach (var it in _items.OrderBy(i => i.Row))
+        foreach (var it in _items)
         {
             if (S.Group != "none" && it.Group != lastGroup)
             {

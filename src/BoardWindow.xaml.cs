@@ -90,9 +90,9 @@ public partial class BoardWindow : GlassWindow
     static BoardStore Store => App.Store;
 
     public static DateTime Monday(DateTime d) => d.Date.AddDays(-(((int)d.DayOfWeek + 6) % 7));
-    public static string DayKey(DateTime d) => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    public static string DayKey(DateTime d) => Days.Key(d);
     /// <summary>A day key; a malformed one (from another version's file) reads as today instead of breaking the whole board.</summary>
-    static DateTime ParseKey(string k) => DateTime.TryParseExact(k, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : DateTime.Today;
+    static DateTime ParseKey(string k) => Days.Parse(k) ?? DateTime.Today;
     static string DayName(DateTime d) => Pl.DateTimeFormat.GetAbbreviatedDayName(d.DayOfWeek).TrimEnd('.').ToUpper(Pl);
     static bool IsWeekend(DateTime d) => d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
     /// <summary>Weekends on screen: as set – and always on a Saturday or Sunday itself (from Monday the 5-day week is back).</summary>
@@ -139,11 +139,11 @@ public partial class BoardWindow : GlassWindow
         if (m.Groups[3].Success) h += int.Parse(m.Groups[3].Value) / 60.0;
         return h is > 0 and <= 2000 ? Math.Round(h, 3) : null;
     }
-    static SolidColorBrush B(Color c) => new(c);
+    static SolidColorBrush B(Color c) => Ui.Brush(c); // shared, frozen
     /// <summary>Coloured text: as is on the dark glass, darker on the light theme (pastels are unreadable on white).</summary>
     static SolidColorBrush Tx(Color c) => new(Th.Light ? Color.FromArgb(c.A, (byte)(c.R * 0.6), (byte)(c.G * 0.6), (byte)(c.B * 0.6)) : c);
     static Color A(Color c, byte a) => Color.FromArgb(a, c.R, c.G, c.B);
-    public static Color ParseColor(string hex) { try { return (Color)ColorConverter.ConvertFromString(hex); } catch { return Color.FromRgb(0x9A, 0xA1, 0xB2); } }
+    public static Color ParseColor(string hex) => Ui.Parse(hex, Color.FromRgb(0x9A, 0xA1, 0xB2)); // parsed once per text
 
     public DateTime FirstMonday => _view == ViewMode.Month ? Monday(_monthFirst) : _view == ViewMode.Day ? Monday(_dayDate) : Monday(DateTime.Today).AddDays(7 * _weekOffset);
     public int WeekCount => _view switch { ViewMode.Month => MonthRows(), ViewMode.Week1 or ViewMode.Day => 1, _ => 2 };
@@ -405,6 +405,9 @@ public partial class BoardWindow : GlassWindow
         _editors.Clear();
         _editorBoxes.Clear();
         _trackLabels.Clear();
+        SpanCache.Clear(); // tasks that are gone don't stay referenced
+        TaskMarks.ResetCaches();
+        _meetingsCache.Clear();
         if (_trackTimer == null)
         {
             _trackTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(20) };
@@ -553,6 +556,18 @@ public partial class BoardWindow : GlassWindow
 
     /// <summary>All days of a multi-day task (earlier days it was worked on + its current day), sorted; null = a one-day task.</summary>
     static List<string>? SpanDays(TaskItem t)
+    {
+        // asked many times per build (every day cell, every row): worked out once per task and state of it
+        var sig = $"{t.Day}|{t.PlanEnd}|{t.Archived}|{t.WorkedDays?.Count}|{t.Modified.Ticks}";
+        if (SpanCache.TryGetValue(t, out var hit) && hit.Sig == sig) return hit.Days;
+        var days = ComputeSpan(t);
+        SpanCache[t] = (sig, days);
+        return days;
+    }
+
+    static readonly Dictionary<TaskItem, (string Sig, List<string>? Days)> SpanCache = new(ReferenceEqualityComparer.Instance);
+
+    static List<string>? ComputeSpan(TaskItem t)
     {
         // archived: gone from the board on all its days at once
         if (t.Day == null || t.Archived || (t.WorkedDays is not { Count: > 0 } && t.PlanEnd == null)) return null;
@@ -991,7 +1006,13 @@ public partial class BoardWindow : GlassWindow
     static readonly Color AlarmColor = Color.FromRgb(0xF2, 0xB1, 0x4C);
 
     /// <summary>The day's meetings with their hours: the board's own and the calendars'.</summary>
+    /// <summary>The day's meetings (own and from the calendars) – once per day and build, however many rows ask.</summary>
     List<(object Source, string Title, DateTime From, DateTime To)> MeetingsOf(DateTime date) =>
+        _meetingsCache.TryGetValue(date, out var cached) ? cached : _meetingsCache[date] = ComputeMeetings(date);
+
+    readonly Dictionary<DateTime, List<(object Source, string Title, DateTime From, DateTime To)>> _meetingsCache = new();
+
+    List<(object Source, string Title, DateTime From, DateTime To)> ComputeMeetings(DateTime date) =>
         Store.Alarms.Where(a => a.IsMeeting && a.Occurs(date)).Select(a => ((object)a, a.Text, a.At(date), a.EndAt(date)))
             .Concat(CalendarService.On(date).Where(e => !e.IsHoliday && !e.AllDay).Select(e => ((object)e, e.Title, e.Start, e.End)))
             .ToList();
@@ -1310,11 +1331,11 @@ public partial class BoardWindow : GlassWindow
     static Color TagColor(string tag)
     {
         if (Store.CategoryFor(tag) is { } cat)
-            try { return (Color)ColorConverter.ConvertFromString(cat.Color); } catch { }
+            return Ui.Parse(cat.Color, MeetingColor);
         if (tag == TaskItem.MeetingTag) return MeetingColor;
         int h = 0;
         foreach (var ch in tag) h = h * 31 + ch;
-        return (Color)ColorConverter.ConvertFromString(TagPalette[Math.Abs(h) % TagPalette.Length]);
+        return Ui.Parse(TagPalette[Math.Abs(h) % TagPalette.Length], MeetingColor);
     }
 
     // ---------- task row ----------
@@ -1640,7 +1661,7 @@ public partial class BoardWindow : GlassWindow
         row.Loaded += (_, _) =>
         {
             row.BringIntoView();
-            var brush = B(Colors.Transparent);
+            var brush = new SolidColorBrush(Colors.Transparent); // its own (it is animated)
             row.Background = brush;
             var accent = ((SolidColorBrush)Res("AccentBrush")).Color;
             brush.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(A(accent, 0x70), Colors.Transparent, TimeSpan.FromMilliseconds(1800)) { BeginTime = TimeSpan.FromMilliseconds(250) });

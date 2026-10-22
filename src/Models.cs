@@ -85,7 +85,7 @@ public sealed class TaskItem
     /// </summary>
     public bool Stretch(DateTime today, Func<DateTime, bool> workday)
     {
-        var tk = today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        var tk = Days.Key(today);
         if (!IsStarted || Archived || Day == null || string.CompareOrdinal(Day, tk) >= 0) return false;
         if (!DateTime.TryParseExact(Day, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var from)) return false;
         WorkedDays ??= new();
@@ -95,7 +95,7 @@ public sealed class TaskItem
         for (var d = from; d < today.Date && (today.Date - d).TotalDays <= 366; d = d.AddDays(1))
         {
             if (d != from && !workday(d)) continue; // weekends, holidays, leave: not worked
-            var k = d.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+            var k = Days.Key(d);
             if (!WorkedDays.Contains(k)) WorkedDays.Add(k);
             DayStates.TryAdd(k, State);
         }
@@ -167,6 +167,21 @@ public sealed class TaskItem
 
     /// <summary>Leading "[ART]" / "[VFX]"… tags, normalized to upper case.</summary>
     public static List<string> Tags(string text, out string rest)
+    {
+        // asked for every row, chip, menu and filter: the regex runs once per text (callers get their own list)
+        lock (TagCache)
+        {
+            if (TagCache.TryGetValue(text, out var hit)) { rest = hit.Remainder; return new List<string>(hit.Tags); }
+            var tags = ParseTags(text, out rest);
+            if (TagCache.Count > 5000) TagCache.Clear();
+            TagCache[text] = (tags.ToArray(), rest);
+            return tags;
+        }
+    }
+
+    static readonly Dictionary<string, (string[] Tags, string Remainder)> TagCache = new();
+
+    static List<string> ParseTags(string text, out string rest)
     {
         var tags = new List<string>();
         rest = text;
@@ -247,7 +262,7 @@ public sealed class RecurringRule
         var s = _start;
         d = d.Date;
         if (d < s) return false;
-        var key = d.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        var key = Days.Key(d);
         if (End != null && string.CompareOrdinal(key, End) > 0) return false;
         if (Skips.Contains(key)) return false;
         if (SkipSundaysHolidays && (d.DayOfWeek == DayOfWeek.Sunday || DaysOff.Is(d))) return false; // Sundays, holidays, BŚU / leave
@@ -384,7 +399,7 @@ public sealed class Alarm
         if (Deleted || !DateTime.TryParseExact(Day, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var start)) return false;
         d = d.Date;
         if (d < start) return false;
-        if (Skips != null && Skips.Contains(d.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture))) return false;
+        if (Skips != null && Skips.Contains(Days.Key(d))) return false;
         if (SkipDaysOff && DaysOff.Is(d)) return false;
         return Repeat switch
         {
@@ -570,6 +585,9 @@ public sealed class MarkType
     public MarkType Clone() => (MarkType)MemberwiseClone();
     /// <summary>Days of this kind available in a year (BŚU 27, sick leave 33 …); null = not counted.</summary>
     public int? Allowance { get; set; }
+    /// <summary>Days left from earlier years at the start of <see cref="CarryYear"/> (what the company says is still to take); later years carry the rest on by themselves.</summary>
+    public int? CarryOver { get; set; }
+    public int? CarryYear { get; set; }
 
     /// <summary>The colours of the default marks: apart from the board's own (green done, orange accent, violet review / meetings, teal HO and tests).</summary>
     public const string LeaveBlue = "#4F7DE3", SickPink = "#D46BB0";
@@ -784,4 +802,15 @@ static class DaysOff
         try { return Leave(d); }
         finally { _inside = false; }
     }
+}
+
+/// <summary>Day keys ("yyyy-MM-dd", the same on every computer whatever its language or calendar) in one place.</summary>
+static class Days
+{
+    public static string Key(DateTime d) => d.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+
+    public static bool TryParse(string? key, out DateTime day) =>
+        DateTime.TryParseExact(key, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out day);
+
+    public static DateTime? Parse(string? key) => TryParse(key, out var d) ? d : null;
 }

@@ -556,7 +556,7 @@ public sealed class BoardStore
     public MarkType? MarkTypeFor(string? code) => code == null ? null : MarkTypes.FirstOrDefault(m => m.Code == code);
 
     /// <summary>A day off from work in this account: a filled mark (BŚU, leave) – a frame mark (HO) is a working day.</summary>
-    public bool IsLeave(DateTime d) => DayMark(d.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)) is { } code && MarkTypeFor(code) is { Ring: false };
+    public bool IsLeave(DateTime d) => DayMark(Days.Key(d)) is { } code && MarkTypeFor(code) is { Ring: false };
 
     /// <summary>Switch to another folder, carrying the current tasks over (merged with whatever is there).</summary>
     public void SwitchFolder(string folder)
@@ -642,7 +642,7 @@ public sealed class BoardStore
     {
         if (Offline != null) return 0; // a stale copy (the folder isn't there yet): again once it is
         static bool Workday(DateTime d) => d.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday) && !DaysOff.Is(d);
-        var tk = today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        var tk = Days.Key(today);
         double order = Data.Tasks.Where(t => t.Day == tk).Select(t => t.Order).DefaultIfEmpty(-1).Max();
         int n = 0;
         foreach (var t in Data.Tasks.Where(t => t.IsStarted && !t.Archived && t.Day != null && string.CompareOrdinal(t.Day, tk) < 0).OrderBy(t => t.Day).ThenBy(t => t.Order).ToList())
@@ -780,7 +780,7 @@ public sealed class BoardStore
     public IEnumerable<TaskItem> VirtualTasks(DateTime d)
     {
         if (Data.Rules.Count == 0) yield break;
-        var key = d.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        var key = Days.Key(d);
         var stored = Occurrences();
         foreach (var r in Data.Rules)
         {
@@ -1025,6 +1025,38 @@ public sealed class BoardStore
         });
     }
 
+    // ---------- leave: used, planned and carried over ----------
+
+    /// <summary>Working days of a year marked with <paramref name="code"/>: up to today (used) and after (planned).</summary>
+    public (int Used, int Planned) LeaveDays(string code, int year)
+    {
+        int used = 0, planned = 0;
+        var today = DateTime.Today;
+        for (var d = new DateTime(year, 1, 1); d.Year == year; d = d.AddDays(1))
+        {
+            if (d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday || DaysOff.Name(d) != null) continue; // not a working day
+            if (DayMark(Days.Key(d)) != code) continue;
+            if (d <= today) used++; else planned++;
+        }
+        return (used, planned);
+    }
+
+    /// <summary>
+    /// Days of a mark carried into <paramref name="year"/> from earlier years: the base set in the settings for its year,
+    /// then each year after it adds what was left (its allowance minus the days taken) – never below zero.
+    /// </summary>
+    public int CarryInto(MarkType m, int year)
+    {
+        if (m.CarryYear is not { } from || year < from) return 0;
+        int carry = Math.Max(0, m.CarryOver ?? 0);
+        for (int y = from; y < year; y++)
+        {
+            var (u, p) = LeaveDays(m.Code, y);
+            carry = Math.Max(0, carry + (m.Allowance ?? 0) - u - p);
+        }
+        return carry;
+    }
+
     // ---------- days off the company gives ----------
 
     /// <summary>The company's day off on that day, with its name ("Wolne za 15 sierpnia"), or null.</summary>
@@ -1223,7 +1255,7 @@ public sealed class BoardStore
     {
         try
         {
-            var target = Path.Combine(BackupFolder, DateTime.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) + ".json");
+            var target = Path.Combine(BackupFolder, Days.Key(DateTime.Today) + ".json");
             if (File.Exists(target) || !File.Exists(FilePath)) return;
             Directory.CreateDirectory(BackupFolder);
             File.Copy(FilePath, target);

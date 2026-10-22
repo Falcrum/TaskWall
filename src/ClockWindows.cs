@@ -13,6 +13,34 @@ static class Ui
 {
     public static Brush Res(string key) => (Brush)Application.Current.Resources[key];
     public static FontFamily Font(string key) => (FontFamily)Application.Current.Resources[key];
+
+    /// <summary>A solid brush of a colour, frozen and shared (thousands of rows ask for the same few colours). Never animate one.</summary>
+    public static SolidColorBrush Brush(Color c)
+    {
+        lock (Brushes)
+        {
+            if (Brushes.TryGetValue(c, out var b)) return b;
+            b = new SolidColorBrush(c);
+            b.Freeze();
+            if (Brushes.Count > 4000) Brushes.Clear(); // a theme or accent change makes new colours: keep it bounded
+            return Brushes[c] = b;
+        }
+    }
+
+    static readonly System.Collections.Generic.Dictionary<Color, SolidColorBrush> Brushes = new();
+
+    /// <summary>"#RRGGBB" → a colour, parsed once per text.</summary>
+    public static Color Parse(string hex, Color fallback)
+    {
+        lock (Colours)
+        {
+            if (Colours.TryGetValue(hex, out var c)) return c;
+            try { c = (Color)ColorConverter.ConvertFromString(hex); } catch { c = fallback; }
+            return Colours[hex] = c;
+        }
+    }
+
+    static readonly System.Collections.Generic.Dictionary<string, Color> Colours = new(StringComparer.OrdinalIgnoreCase);
 }
 
 /// <summary>

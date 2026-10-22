@@ -370,6 +370,9 @@ static partial class L
         ("Usuń dzień wolny", "Remove the day off"),
         ("Wolne za ", "Off for "),
         ("zaplanowane {0}", "planned {0}"),
+        ("(w tym {0} zaległych)", "(incl. {0} carried over)"),
+        ("Zaległe dni z poprzednich lat na początek {0} roku – kolejne lata przenoszą resztę same; puste = brak", "Days left from earlier years at the start of {0} – later years carry the rest on by themselves; empty = none"),
+        ("zaległe {0}", "carried {0}"),
 
         // 0.29 – days off allowance, pattern sliders
         ("Dni w roku (np. 27) – widok 365 pokazuje wykorzystane i pozostałe; puste = nie liczyć", "Days a year (e.g. 27) – the 365-day view shows used and left; empty = not counted"),

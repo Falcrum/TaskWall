@@ -43,10 +43,10 @@ public sealed class Report
         : L.F("Tydzień {0}  ·  {1} – {2}", ISOWeek.GetWeekOfYear(From), From.ToString("d MMM", BoardWindow.Pl), To.ToString("d MMM yyyy", BoardWindow.Pl));
     public string FileName => $"TaskWall-{string.Concat(Account.Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch))}-" + (Month ? From.ToString("yyyy-MM") : $"{ISOWeek.GetYear(From)}-W{ISOWeek.GetWeekOfYear(From):00}");
 
-    static string Key(DateTime d) => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    static string Key(DateTime d) => TaskWall.Days.Key(d);
 
     /// <summary>Days of the period the task was worked on (its earlier days and its current one) and how many of them in review.</summary>
-    internal static DateTime? TryDay(string? k) => DateTime.TryParseExact(k, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : null;
+    internal static DateTime? TryDay(string? k) => TaskWall.Days.Parse(k);
 
     public (int Days, int Review, int Tests) WorkDays(TaskItem t)
     {

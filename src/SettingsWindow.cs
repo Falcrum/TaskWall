@@ -842,6 +842,26 @@ public sealed class SettingsWindow : DarkWindow
             }
             allowance.LostKeyboardFocus += (_, _) => CommitAllowance();
             allowance.KeyDown += (_, e) => { if (e.Key == Key.Enter) CommitAllowance(); };
+            // days left from earlier years (what the company says is still to take at the start of a year)
+            int carryYear = list[i].CarryYear ?? DateTime.Today.Year;
+            var carry = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = list[i].CarryOver?.ToString() ?? "", Width = 44, Margin = new Thickness(6, 0, 4, 0),
+                ToolTip = L.F("Zaległe dni z poprzednich lat na początek {0} roku – kolejne lata przenoszą resztę same; puste = brak", carryYear) };
+            void CommitCarry()
+            {
+                int? v = int.TryParse(carry.Text.Trim(), out var a) && a > 0 ? a : null;
+                if (v == list[index].CarryOver) return;
+                list[index].CarryOver = v;
+                list[index].CarryYear = v == null ? null : list[index].CarryYear ?? DateTime.Today.Year;
+                carry.Text = v?.ToString() ?? "";
+                Save();
+            }
+            carry.LostKeyboardFocus += (_, _) => CommitCarry();
+            carry.KeyDown += (_, e) => { if (e.Key == Key.Enter) CommitCarry(); };
+            var carryLabel = new TextBlock { Text = L.F("zaległe {0}", carryYear), FontSize = 11, Foreground = Ui.Res("FgFaint"), VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(carryLabel, Dock.Right);
+            DockPanel.SetDock(carry, Dock.Right);
+            row.Children.Add(carryLabel);
+            row.Children.Add(carry);
             var allowanceLabel = new TextBlock { Text = L.T("dni/rok"), FontSize = 11, Foreground = Ui.Res("FgFaint"), VerticalAlignment = VerticalAlignment.Center };
             DockPanel.SetDock(allowanceLabel, Dock.Right);
             DockPanel.SetDock(allowance, Dock.Right);

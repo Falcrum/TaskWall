@@ -69,7 +69,7 @@ static class AlarmService
         // tasks with planned hours today ("14-16"): a reminder some minutes before the start
         if (App.Settings.TaskReminder >= 0)
             foreach (var (layer, store) in App.OpenStores())
-                foreach (var t in store.Data.Tasks.Where(t => t.Time != null && !t.Done && !t.Archived && t.Day == now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)).ToList())
+                foreach (var t in store.Data.Tasks.Where(t => t.Time != null && !t.Done && !t.Archived && t.Day == Days.Key(now)).ToList())
                 {
                     if (!TimeSpan.TryParseExact(t.Time, @"hh\:mm", null, out var tod)) continue;
                     var ringAt = now.Date + tod - TimeSpan.FromMinutes(App.Settings.TaskReminder);
@@ -598,7 +598,7 @@ public sealed class AlarmWindow : DarkWindow
         var x = _existing ?? new Alarm { Kind = _meeting ? "meeting" : "alarm" };
         x.Text = _text.Text.Trim();
         // a repeating series keeps its first day when edited from a later occurrence
-        if (_existing == null || _existing.Once || RepeatCode.Length == 0) x.Day = r.Start.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        if (_existing == null || _existing.Once || RepeatCode.Length == 0) x.Day = Days.Key(r.Start);
         x.Time = r.Start.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
         x.End = r.End?.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
         x.Remind = _meeting ? RemindMinutes : null;

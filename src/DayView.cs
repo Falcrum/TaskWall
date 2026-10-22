@@ -56,10 +56,10 @@ public sealed class DayView : Grid
     const double Gutter = 56;
 
     static Brush Res(string key) => (Brush)Application.Current.Resources[key];
-    static SolidColorBrush B(Color c) => new(c);
+    static SolidColorBrush B(Color c) => Ui.Brush(c); // shared, frozen
     static Color A(Color c, byte a) => Color.FromArgb(a, c.R, c.G, c.B);
     static SolidColorBrush Tx(Color c) => new(Th.Light ? Color.FromArgb(c.A, (byte)(c.R * 0.6), (byte)(c.G * 0.6), (byte)(c.B * 0.6)) : c);
-    static string Key(DateTime d) => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    static string Key(DateTime d) => Days.Key(d);
     static TimeSpan? Hm(string? s) => TimeSpan.TryParseExact(s ?? "", @"h\:mm", CultureInfo.InvariantCulture, out var t) ? t : null;
     static readonly Color Violet = Color.FromRgb(0x8C, 0x9B, 0xFF), Amber = Color.FromRgb(0xF2, 0xB1, 0x4C);
 
@@ -106,7 +106,8 @@ public sealed class DayView : Grid
         _canvas.PreviewMouseMove += OnMove;
         _canvas.PreviewMouseLeftButtonUp += OnUp;
         _canvas.LostMouseCapture += (_, _) => CancelDrag();
-        _clock.Tick += (_, _) => { if (IsVisible && _drag == null && !_menuOpen) Render(); };
+        // every minute only the "now" line moves (the rest is drawn again when something changes)
+        _clock.Tick += (_, _) => { if (IsVisible && _drag == null && !_menuOpen) MoveNow(); };
         _clock.Start();
     }
 
@@ -280,8 +281,7 @@ public sealed class DayView : Grid
         double area = w - Gutter - 8;
 
         // outside the working hours: hatched like the days off elsewhere; the hours themselves clean
-        var hatch = new DrawingBrush(new GeometryDrawing(null, new Pen(B(Th.Ink(Th.Light ? (byte)0x22 : (byte)0x12)), 1.1), Geometry.Parse("M0,10 L10,0 M-3,3 L3,-3 M7,13 L13,7")))
-            { TileMode = TileMode.Tile, Viewport = new Rect(0, 0, 10, 10), ViewportUnits = BrushMappingMode.Absolute, Viewbox = new Rect(0, 0, 10, 10), ViewboxUnits = BrushMappingMode.Absolute, Stretch = Stretch.None };
+        var hatch = DayHatch();
         // extra working periods (overtime, e.g. 20:00–22:00): clean like the regular hours, with their own slot for tasks
         var store = _host.Store();
         var overtime = store.Overtime(Key(_date));
@@ -367,13 +367,13 @@ public sealed class DayView : Grid
             var now = DateTime.Now.TimeOfDay;
             double y = Y(now);
             var accent = ((SolidColorBrush)Res("AccentBrush")).Color;
-            _canvas.Children.Add(At(new Rectangle { Width = area + 10, Height = 1.6, Fill = B(accent), IsHitTestVisible = false }, Gutter - 6, y - 0.8));
-            _canvas.Children.Add(At(new Border
-            {
-                CornerRadius = new CornerRadius(4), Background = B(accent), Padding = new Thickness(4, 0, 4, 1), IsHitTestVisible = false,
-                Child = new TextBlock { Text = DateTime.Now.ToString("HH:mm"), FontSize = 10, FontWeight = FontWeights.Bold, Foreground = Brushes.White },
-            }, 4, y - 8));
+            _nowLine = At(new Rectangle { Width = area + 10, Height = 1.6, Fill = B(accent), IsHitTestVisible = false }, Gutter - 6, y - 0.8);
+            _canvas.Children.Add(_nowLine);
+            _nowText = new TextBlock { Text = DateTime.Now.ToString("HH:mm"), FontSize = 10, FontWeight = FontWeights.Bold, Foreground = Brushes.White };
+            _nowLabel = At(new Border { CornerRadius = new CornerRadius(4), Background = B(accent), Padding = new Thickness(4, 0, 4, 1), IsHitTestVisible = false, Child = _nowText }, 4, y - 8);
+            _canvas.Children.Add(_nowLabel);
         }
+        else { _nowLine = null; _nowLabel = null; }
 
         if (!_scrolled && _scroll.ActualHeight > 0)
         {
@@ -388,6 +388,33 @@ public sealed class DayView : Grid
     static string Hhmm(TimeSpan t) => t >= TimeSpan.FromHours(24) ? "24:00" : t.ToString(@"hh\:mm");
 
     /// <summary>A working period's edge: the regular hours (<paramref name="overtime"/> null) or an overtime period's.</summary>
+    /// <summary>The hatch outside the working hours: one frozen brush (per theme), not one per render.</summary>
+    static Brush DayHatch()
+    {
+        if (_hatch != null && _hatchLight == Th.Light) return _hatch;
+        var b = new DrawingBrush(new GeometryDrawing(null, new Pen(Ui.Brush(Th.Ink(Th.Light ? (byte)0x22 : (byte)0x12)), 1.1), Geometry.Parse("M0,10 L10,0 M-3,3 L3,-3 M7,13 L13,7")))
+            { TileMode = TileMode.Tile, Viewport = new Rect(0, 0, 10, 10), ViewportUnits = BrushMappingMode.Absolute, Viewbox = new Rect(0, 0, 10, 10), ViewboxUnits = BrushMappingMode.Absolute, Stretch = Stretch.None };
+        b.Freeze();
+        _hatchLight = Th.Light;
+        return _hatch = b;
+    }
+
+    Rectangle? _nowLine;
+    Border? _nowLabel;
+    TextBlock? _nowText;
+
+    void MoveNow()
+    {
+        if (_date != DateTime.Today || _nowLine == null || _nowLabel == null || _nowText == null) { Render(); return; }
+        double y = Y(DateTime.Now.TimeOfDay);
+        Canvas.SetTop(_nowLine, y - 0.8);
+        Canvas.SetTop(_nowLabel, y - 8);
+        _nowText.Text = DateTime.Now.ToString("HH:mm");
+    }
+
+    static Brush? _hatch;
+    static bool _hatchLight;
+
     void WorkHandle(TimeSpan at, bool start, double area, int? overtime = null)
     {
         var pill = new Border

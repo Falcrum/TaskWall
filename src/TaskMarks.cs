@@ -28,10 +28,19 @@ static class TaskMarks
         (state ?? t.State) switch { "done" => DoneGreen, "review" => ReviewViolet, "tests" => TestsTeal, "started" => InProgressOrange, _ => Low };
 
     /// <summary>The project's colour, or null for a task without a project.</summary>
-    public static Color? ProjectColor(TaskItem t) =>
-        t.NotionSource == null ? null
-        : App.Settings.Accounts.SelectMany(a => a.Projects).FirstOrDefault(p => string.Equals(p.Name, t.NotionSource, StringComparison.OrdinalIgnoreCase)) is { } p
-            ? BoardWindow.ParseColor(p.Color) : Color.FromRgb(0x8A, 0x94, 0xA6);
+    public static Color? ProjectColor(TaskItem t)
+    {
+        if (t.NotionSource == null) return null;
+        // every row asks: the projects of all accounts as a map, made again on each board rebuild (settings may change)
+        _projects ??= App.Settings.Accounts.SelectMany(a => a.Projects).GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => BoardWindow.ParseColor(g.First().Color), StringComparer.OrdinalIgnoreCase);
+        return _projects.TryGetValue(t.NotionSource, out var c) ? c : Color.FromRgb(0x8A, 0x94, 0xA6);
+    }
+
+    static System.Collections.Generic.Dictionary<string, Color>? _projects;
+
+    /// <summary>Forget the project colours (the board calls it on every rebuild).</summary>
+    public static void ResetCaches() => _projects = null;
 
     public static string StateName(TaskItem t, string? state = null) => (state ?? t.State) switch
     {

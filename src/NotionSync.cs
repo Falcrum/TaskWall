@@ -446,7 +446,7 @@ static class NotionSync
                     if (LooksInTests(page.Status)) { t.Started = true; t.Review = null; t.Testing = true; }
                     else if (LooksInReview(page.Status)) { t.Started = true; t.Review = true; t.Testing = null; }
                     else if (LooksInProgress(page.Status)) { t.Started = true; t.Review = null; t.Testing = null; }
-                    t.NoteState(DateTime.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)); // the day keeps the state Notion gave it
+                    t.NoteState(Days.Key(DateTime.Today)); // the day keeps the state Notion gave it
                 }
             }
             if (page.Priority != t.Priority) { t.Priority = page.Priority; changed = true; }

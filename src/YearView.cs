@@ -62,7 +62,7 @@ static class YearView
     /// Under the year's grid: done tasks per month as small columns (this month in the accent), the year in numbers
     /// (done, hours, the longest streak of working days with something done, the best month) and the share of each project.
     /// </summary>
-    static FrameworkElement Summary(int year, System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<TaskItem>> byDay, bool animate, System.Collections.Generic.List<MarkType> types, Func<string, (int Used, int Planned)> markCount)
+    static FrameworkElement Summary(int year, System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<TaskItem>> byDay, bool animate, System.Collections.Generic.List<MarkType> types, Func<string, (int Used, int Planned)> markCount, Func<MarkType, int> carry)
     {
         var today = DateTime.Today;
         var green = TaskMarks.DoneGreen;
@@ -145,7 +145,8 @@ static class YearView
         {
             // working days only (a BŚU series over a weekend doesn't use Saturday); taken = up to today, planned = after
             var (used, planned) = markCount(m.Code);
-            int all = m.Allowance ?? 0, left = Math.Max(0, all - used - planned);
+            int carried = carry(m); // left from earlier years
+            int all = (m.Allowance ?? 0) + carried, left = Math.Max(0, all - used - planned);
             var c = BoardWindow.ParseColor(m.Color);
             var row = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
             var ring = Ring(all > 0 ? (double)left / all : 0, c, all > 0 ? left.ToString() : (used + planned).ToString());
@@ -158,7 +159,7 @@ static class YearView
             {
                 line.Inlines.Add(new Run(L.F("{0}: dostępne ", year)));
                 line.Inlines.Add(new Run(left.ToString()) { FontWeight = FontWeights.Bold, Foreground = Ui.Res("Fg") });
-                line.Inlines.Add(new Run(" " + L.F("z {0} dni", all) + "  ·  " + L.F("wykorzystane {0}", used) + (planned > 0 ? "  ·  " + L.F("zaplanowane {0}", planned) : "")));
+                line.Inlines.Add(new Run(" " + L.F("z {0} dni", all) + (carried > 0 ? " " + L.F("(w tym {0} zaległych)", carried) : "") + "  ·  " + L.F("wykorzystane {0}", used) + (planned > 0 ? "  ·  " + L.F("zaplanowane {0}", planned) : "")));
             }
             else line.Inlines.Add(new Run(L.F("{0}: {1} dni", year, used + planned)));
             text.Children.Add(line);
@@ -221,11 +222,16 @@ static class YearView
     /// <summary>A filled day mark (BŚU, leave): hatched at 45° in its colour, like on the timeline.</summary>
     static Brush Hatch(Color c)
     {
+        if (Hatches.TryGetValue(c, out var cached)) return cached; // one frozen brush per colour (not one per marked day)
         var g = new DrawingGroup();
         g.Children.Add(new GeometryDrawing(new SolidColorBrush(Color.FromArgb(0x40, c.R, c.G, c.B)), null, new RectangleGeometry(new Rect(0, 0, 6, 6))));
         g.Children.Add(new GeometryDrawing(null, new Pen(new SolidColorBrush(Color.FromArgb(0xD0, c.R, c.G, c.B)), 1.4), Geometry.Parse("M0,6 L6,0 M-1.5,1.5 L1.5,-1.5 M4.5,7.5 L7.5,4.5")));
-        return new DrawingBrush(g) { TileMode = TileMode.Tile, Viewport = new Rect(0, 0, 6, 6), ViewportUnits = BrushMappingMode.Absolute, Viewbox = new Rect(0, 0, 6, 6), ViewboxUnits = BrushMappingMode.Absolute, Stretch = Stretch.None };
+        var brush = new DrawingBrush(g) { TileMode = TileMode.Tile, Viewport = new Rect(0, 0, 6, 6), ViewportUnits = BrushMappingMode.Absolute, Viewbox = new Rect(0, 0, 6, 6), ViewboxUnits = BrushMappingMode.Absolute, Stretch = Stretch.None };
+        brush.Freeze();
+        return Hatches[c] = brush;
     }
+
+    static readonly System.Collections.Generic.Dictionary<Color, Brush> Hatches = new();
 
     public static FrameworkElement Build(int year, BoardStore store, Action<DateTime> pick, bool animate = true)
     {
@@ -414,18 +420,7 @@ static class YearView
         panel.HorizontalAlignment = HorizontalAlignment.Center;
         panel.VerticalAlignment = VerticalAlignment.Top;
         // the year in numbers under the grid: done tasks per month, a few totals, the share of each project
-        (int Used, int Planned) LeaveDays(string code)
-        {
-            int used = 0, planned = 0;
-            foreach (var kv in markOf)
-            {
-                if (kv.Value != code || !DateTime.TryParseExact(kv.Key, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d)) continue;
-                if (d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday || DaysOff.Name(d) != null) continue; // not a working day
-                if (d <= today) used++; else planned++;
-            }
-            return (used, planned);
-        }
-        var summary = Summary(year, byDay, animate, types, LeaveDays);
+        var summary = Summary(year, byDay, animate, types, code => store.LeaveDays(code, year), m => store.CarryInto(m, year));
         DockPanel.SetDock(summary, Dock.Bottom);
         dock.Children.Add(summary);
         dock.Children.Add(panel);

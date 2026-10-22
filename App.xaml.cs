@@ -94,7 +94,7 @@ public partial class App : Application
 
         Settings = SettingsStore.Load();
         DaysOff.Leave = d => Stores.Values.Any(s => s.IsLeave(d)); // BŚU / leave in any open account
-        DaysOff.Company = d => Stores.Values.Select(s => s.CompanyDay(d.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture))).FirstOrDefault(x => x != null); // the company's days off
+        DaysOff.Company = d => Stores.Values.Select(s => s.CompanyDay(Days.Key(d))).FirstOrDefault(x => x != null); // the company's days off
         SharedSettings.Pull(Settings); // settings saved on another computer (language, theme, weather, Notion…)
         SharedSettings.Pulled += _ => Dispatcher.BeginInvoke(ApplySharedSettings);
         Th.Apply(Resources, Settings.Theme); // before any window is built

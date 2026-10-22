@@ -555,6 +555,11 @@ static class Dev
             Check("repeat on chosen weekdays: Mon–Wed every week, not Thursday, label 'Pn, Wt, Śr'",
                 mtw.Occurs(new DateTime(2026, 10, 19)) && mtw.Occurs(new DateTime(2026, 10, 21)) && !mtw.Occurs(new DateTime(2026, 10, 22)) && mtw.Occurs(new DateTime(2026, 10, 27))
                 && (L.En || mtw.RepeatLabel == "Pn, Wt, Śr"));
+            var lvStore = new BoardStore("work");
+            foreach (var day in new[] { "2025-03-03", "2025-03-04", "2025-03-08" }) lvStore.SetDayMark(day, "BŚU"); // 8 Mar 2025 is a Saturday
+            var lvType = new MarkType { Code = "BŚU", Allowance = 21, CarryOver = 3, CarryYear = 2025 };
+            Check("leave: working days only; days left from earlier years carry on (3 + 21 − 2 = 22 into 2026)",
+                lvStore.LeaveDays("BŚU", 2025).Used == 2 && lvStore.CarryInto(lvType, 2025) == 3 && lvStore.CarryInto(lvType, 2026) == 22 && lvStore.CarryInto(lvType, 2024) == 0);
             var cdStore = new BoardStore("work");
             cdStore.SetCompanyDay("2026-11-10", "Wolne za 15 sierpnia");
             var companyBefore = DaysOff.Company;
