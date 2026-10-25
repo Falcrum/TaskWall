@@ -94,7 +94,7 @@ public sealed class TaskItem
         // day carry its state on – in progress until the day it became review, review from then on
         for (var d = from; d < today.Date && (today.Date - d).TotalDays <= 366; d = d.AddDays(1))
         {
-            if (d != from && !workday(d)) continue; // weekends, holidays, leave: not worked
+            if (!workday(d)) continue; // weekends, holidays, leave: not worked (unless overtime was set for them)
             var k = Days.Key(d);
             if (!WorkedDays.Contains(k)) WorkedDays.Add(k);
             DayStates.TryAdd(k, State);

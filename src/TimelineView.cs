@@ -586,6 +586,28 @@ public sealed class TimelineView : Grid
 
     (TaskItem Task, Grid Bar, bool Resize, double StartX, double Width)? _barDrag;
 
+    /// <summary>The state of each day worked on the task, from its first day to its current one ("started", "review", "tests", "done").</summary>
+    static List<(DateTime Day, string State)> StateHistory(TaskItem t, DateTime from, DateTime current)
+    {
+        var list = new List<(DateTime, string)>();
+        var worked = new HashSet<string>(t.WorkedDays ?? new());
+        for (var d = from; d <= current; d = d.AddDays(1))
+        {
+            var k = Days.Key(d);
+            if (k == t.Day) { if (t.State != "todo") list.Add((d, t.State)); }
+            else if (worked.Contains(k)) list.Add((d, t.DayStates?.GetValueOrDefault(k) ?? "started"));
+        }
+        return list;
+    }
+
+    /// <summary>"w trakcie 5 dni · review 3 dni · testy 1 dzień" for the bar's tool tip.</summary>
+    static string HistoryLine(List<(DateTime Day, string State)> history)
+    {
+        var parts = history.Where(h => h.State != "done").GroupBy(h => h.State).OrderBy(g => g.Key switch { "started" => 0, "review" => 1, "tests" => 2, _ => 3 })
+            .Select(g => $"{TaskMarks.StateName(null!, g.Key)} {(g.Count() == 1 ? L.T("1 dzień") : L.F("{0} dni", g.Count()))}").ToList();
+        return parts.Count > 1 || history.Count > 1 ? "\n" + string.Join("  ·  ", parts) : "";
+    }
+
     void BuildBar(Item it, Func<DateTime, double> X, double w)
     {
         var t = it.Task;
@@ -615,6 +637,21 @@ public sealed class TimelineView : Grid
         bar.Children.Add(mark);
         if (TaskMarks.Right(t) is { } proj) { proj.Margin = new Thickness(0, 3, 3, 3); proj.IsHitTestVisible = false; bar.Children.Add(proj); }
 
+        // the way through the states, day by day: a thin strip under each day worked in the colour of that day's
+        // state (in progress, review, tests, done) – a task stuck in review shows a long violet stretch
+        var history = StateHistory(t, it.Start, it.Current);
+        foreach (var (day, state) in history)
+        {
+            double sx = X(day) - x0 + 2, sw = Math.Max(2, w - 4);
+            if (sx + sw < 0 || sx > fullWidth) continue;
+            bar.Children.Add(new Border
+            {
+                Width = sw, Height = 3, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(sx, 0, 0, 1.5), CornerRadius = new CornerRadius(1.5), IsHitTestVisible = false,
+                Background = B(TaskMarks.StateColor(t, state)),
+            });
+        }
+
         // just the name, inside; it stays readable when the bar starts left of the screen (sticky)
         double shift = Math.Max(0, -x0);
         double fs = Math.Max(10, App.Settings.FontSize - 1);
@@ -639,6 +676,7 @@ public sealed class TimelineView : Grid
             + "\n" + (it.Start == it.End ? it.Start.ToString("dddd d MMM", pl) : $"{it.Start.ToString("d MMM", pl)} – {it.End.ToString("d MMM", pl)}")
             + "  ·  " + (it.Workdays == 1 ? L.T("1 dzień") : L.F("{0} dni", it.Workdays))
             + (it.End > it.Current ? "\n" + L.F("zaplanowane do {0}", it.End.ToString("ddd d MMM", pl)) : "")
+            + HistoryLine(history)
             + (t.Estimate is > 0 ? "\n" + L.F("Estymacja: {0}", BoardWindow.Est(t.Estimate.Value, true)) : "")
             + (t.Priority != null ? "\n" + L.F("Priorytet: {0}", t.Priority) : "")
             + (t.Status != null ? "\nStatus: " + t.Status : "")

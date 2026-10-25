@@ -205,6 +205,9 @@ public sealed class DayView : Grid
 
     sealed record Block(TimeSpan From, TimeSpan To, string Kind, object Source, bool Proposed, int Lane = 0, int Lanes = 1);
 
+    /// <summary>A working day has its regular hours; a weekend, holiday, company day off or leave only what was added by hand.</summary>
+    bool HasRegularHours() => _host.Store().HasOwnHours(Key(_date)) || !(_date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday || DaysOff.Is(_date));
+
     (TimeSpan Start, TimeSpan End) WorkHours()
     {
         var (s, e) = _host.Store().WorkHours(Key(_date), App.Settings.WorkStart, App.Settings.WorkEnd);
@@ -278,6 +281,7 @@ public sealed class DayView : Grid
         _canvas.Children.Clear();
         _canvas.Height = 24 * HourH + 16;
         var (ws, we) = WorkHours();
+        bool regular = HasRegularHours(); // weekends, holidays, leave: none – only overtime added by hand
         double area = w - Gutter - 8;
 
         // outside the working hours: hatched like the days off elsewhere; the hours themselves clean
@@ -287,13 +291,13 @@ public sealed class DayView : Grid
         var overtime = store.Overtime(Key(_date));
         var accentC = ((SolidColorBrush)Res("AccentBrush")).Color;
         var cursor = TimeSpan.Zero;
-        foreach (var (a, b) in overtime.Append((ws, we)).OrderBy(p => p.Item1))
+        foreach (var (a, b) in (regular ? overtime.Append((ws, we)) : overtime).OrderBy(p => p.Item1))
         {
             if (a > cursor) HatchRect(cursor, a);
             if (b > cursor) cursor = b;
         }
         if (cursor < TimeSpan.FromHours(24)) HatchRect(cursor, TimeSpan.FromHours(24));
-        _canvas.Children.Add(At(new Rectangle { Width = area + 4, Height = Y(we) - Y(ws), Fill = B(Th.Ink(0x06)) }, Gutter - 2, Y(ws)));
+        if (regular) _canvas.Children.Add(At(new Rectangle { Width = area + 4, Height = Y(we) - Y(ws), Fill = B(Th.Ink(0x06)) }, Gutter - 2, Y(ws)));
         for (int i = 0; i < overtime.Count; i++)
         {
             var (a, b) = overtime[i];
@@ -351,8 +355,11 @@ public sealed class DayView : Grid
         }
 
         // the working hours' edges: drag them (this day only); double-click goes back to the default
-        WorkHandle(ws, true, area);
-        WorkHandle(we, false, area);
+        if (regular)
+        {
+            WorkHandle(ws, true, area);
+            WorkHandle(we, false, area);
+        }
         for (int i = 0; i < overtime.Count; i++)
         {
             WorkHandle(overtime[i].Start, true, area, i);
@@ -378,7 +385,8 @@ public sealed class DayView : Grid
         if (!_scrolled && _scroll.ActualHeight > 0)
         {
             _scrolled = true;
-            var first = _date == DateTime.Today ? TimeSpan.FromTicks(Math.Min(DateTime.Now.TimeOfDay.Ticks, ws.Ticks)) : ws;
+            var start = regular ? ws : overtime.Count > 0 ? overtime[0].Start : TimeSpan.FromHours(9);
+            var first = _date == DateTime.Today ? TimeSpan.FromTicks(Math.Min(DateTime.Now.TimeOfDay.Ticks, start.Ticks)) : start;
             _scroll.ScrollToVerticalOffset(Math.Max(0, Y(first) - HourH * 0.75));
         }
         foreach (var el in _canvas.Children.OfType<FrameworkElement>()) if (el.ToolTip != null) ToolTipService.SetInitialShowDelay(el, 250);

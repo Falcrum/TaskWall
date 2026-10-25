@@ -362,6 +362,25 @@ static partial class L
         ("zmierzonego czasu pracy (łącznie na tych zadaniach)", "of tracked working time (in total on these tasks)"),
         ("Źródło Markdown (czysty tekst ze znakami)", "Markdown source (plain text with the marks)"),
 
+        // 0.32 – settings rework
+        ("Do uzupełnienia", "Still to fill in"),
+        ("Domyślne godziny w widoku dnia. Każdy dzień może mieć własne – przeciągnij ich krawędzie na osi. Weekendy i święta nie mają godzin pracy: dodaj nadgodziny prawym przyciskiem na osi.", "The default hours of the day view. Each day can have its own – drag their edges on the line. Weekends and holidays have none: add overtime with the right button on the line."),
+        ("Godziny pracy", "Working hours"),
+        ("Jak to działa", "How it works"),
+        ("Miejscowość", "Place"),
+        ("Pokazuje tablicę na wierzchu z polem nowego zadania na dziś; Esc chowa.", "Brings the board to the front with a new task for today; Esc hides it."),
+        ("Projekty i bazy Notion", "Projects and Notion databases"),
+        ("Skrót klawiszowy", "Keyboard shortcut"),
+        ("Synchronizacja między komputerami: każdy komputer zapisuje swój plik w folderze konta (devices\\board-NAZWA.json) i scala pliki pozostałych – zadania, alarmy, oznaczenia i notatki; ustawienia programu tak samo (devices\\settings-NAZWA.json w folderze konta Praca). Lokalne zostają: foldery, ekran i rozmiar, autostart, adresy kalendarzy i tokeny Notion. Folder na Dysku Google jest rozpoznawany niezależnie od litery dysku (G:, H:…).",
+         "Sync between computers: each computer writes its own file in the account's folder (devices\\board-NAME.json) and merges the others' – tasks, alarms, marks and notes; the program's settings the same way (devices\\settings-NAME.json in the Work account's folder). Local only: folders, screen and size, autostart, calendar addresses and Notion tokens. A Google Drive folder is found whatever its drive letter (G:, H: …)."),
+        ("UZUPEŁNIJ", "FILL IN"),
+        ("Zadania w trakcie przechodzą na kolejne dni robocze", "Tasks in progress carry on to the next working days"),
+        ("Zadania w trakcie, review i testach same przechodzą na kolejne dni robocze, aż do zrobienia – w historii i raportach widać każdy dzień pracy. Weekendy, święta i urlop są pomijane.", "Tasks in progress, review and tests carry on to the next working days until done – the history and reports show every day of work. Weekends, holidays and leave are skipped."),
+        ("Zrobione zadania dnia w jednej linii („✓ 3 zrobione”) – rozwija ją kliknięcie.", "A day's done tasks in one line (“✓ 3 done”) – a click unfolds it."),
+        ("Zwijaj zrobione zadania", "Fold done tasks"),
+        ("miasto do prognozy pogody", "a place for the weather forecast"),
+        ("token Notion konta „{0}”", "the Notion token of “{0}”"),
+
         // 0.30 – company days off
         ("Dzień wolny od firmy", "Company day off"),
         ("Dzień wolny od firmy…", "Company day off…"),

@@ -1102,7 +1102,8 @@ public partial class BoardWindow
         var today = DayKey(DateTime.Today);
         // a multi-day task still within its planned days (Mon–Fri on Wednesday) isn't late
         return Store.Data.Tasks.Where(t => !t.Done && !t.Archived && t.Day != null && string.CompareOrdinal(t.Day, today) < 0
-                && !(t.PlanEnd != null && string.CompareOrdinal(t.PlanEnd, today) >= 0))
+                && !(t.PlanEnd != null && string.CompareOrdinal(t.PlanEnd, today) >= 0)
+                && !(S.StretchActive && t.IsStarted)) // in progress / review / tests: they carry on to working days by themselves
             .OrderBy(t => t.Day).ThenBy(t => t.Order).ToList();
     }
 

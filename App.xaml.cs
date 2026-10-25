@@ -137,7 +137,7 @@ public partial class App : Application
         Anim.Enter(Board.FrameElement, 0, 22, 520);
         Anim.Enter(_clock.FrameElement, 0, -30, 520, 150);
         ApplySettings();
-        if (Settings.AutoRollover) Board.RollOverdue();
+        if (Settings.AutoRollover && IsWorkingDay(DateTime.Today)) Board.RollOverdue(); // never onto a weekend or a day off
         RefreshCalendars();
         // alarms of the other account ring too: open its data once the board is up (only when its drive is there)
         Dispatcher.BeginInvoke(() =>
@@ -407,10 +407,14 @@ public partial class App : Application
         ScheduleGlass();
     }
 
+    /// <summary>A working day: Mon–Fri that isn't a holiday, company day off or leave – or a day with overtime set by hand.</summary>
+    bool IsWorkingDay(DateTime d) => (d.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday) && !DaysOff.Is(d))
+        || Stores.Values.Any(s => s.Overtime(Days.Key(d)).Count > 0 || s.HasOwnHours(Days.Key(d)));
+
     public void OnNewDay()
     {
         if (Settings.StretchActive) foreach (var st in Stores.Values) st.StretchActive(DateTime.Today);
-        if (Settings.AutoRollover) Board?.RollOverdue();
+        if (Settings.AutoRollover && IsWorkingDay(DateTime.Today)) Board?.RollOverdue();
     }
 
     public async void RefreshCalendars()
@@ -431,7 +435,7 @@ public partial class App : Application
         if (kind is not ("dots" or "grid" or "fabric")) return Brushes.Transparent;
         var g = new DrawingGroup();
         byte V(byte a) => (byte)Math.Clamp(a * visibility, 0, 255); // the visibility slider: 0–300 %
-        scale = Math.Clamp(scale, 0.25, 4);
+        scale = Math.Clamp(scale, 0.25, 1); // larger than designed only blurs the pattern
         if (kind == "fabric")
         {
             // a barely visible checkerboard turned by 45° – reads like woven fabric, not like a pattern

@@ -641,8 +641,10 @@ public sealed class BoardStore
     public int StretchActive(DateTime today)
     {
         if (Offline != null) return 0; // a stale copy (the folder isn't there yet): again once it is
-        static bool Workday(DateTime d) => d.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday) && !DaysOff.Is(d);
         var tk = Days.Key(today);
+        // a weekend, holiday or leave is a working day only when overtime (or own hours) was set for it by hand
+        bool Workday(DateTime d) => (d.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday) && !DaysOff.Is(d)) || Overtime(Days.Key(d)).Count > 0 || HasOwnHours(Days.Key(d));
+        if (!Workday(today)) return BackFromDayOff(today, Workday); // nothing carries onto a day off
         double order = Data.Tasks.Where(t => t.Day == tk).Select(t => t.Order).DefaultIfEmpty(-1).Max();
         int n = 0;
         foreach (var t in Data.Tasks.Where(t => t.IsStarted && !t.Archived && t.Day != null && string.CompareOrdinal(t.Day, tk) < 0).OrderBy(t => t.Day).ThenBy(t => t.Order).ToList())
@@ -655,6 +657,30 @@ public sealed class BoardStore
             n++;
         }
         if (n > 0) { _undo.Clear(); MarkDirty(); } // Ctrl+Z never puts carried tasks back on yesterday
+        return n;
+    }
+
+    /// <summary>
+    /// Tasks carried onto a day off (by 0.25–0.31 on a weekend) go back to the last working day they were on; days
+    /// off without overtime leave their history. Returns how many moved.
+    /// </summary>
+    int BackFromDayOff(DateTime today, Func<DateTime, bool> workday)
+    {
+        var tk = Days.Key(today);
+        int n = 0;
+        foreach (var t in Data.Tasks.Where(t => t.IsStarted && !t.Archived && t.Day == tk && t.WorkedDays is { Count: > 0 }).ToList())
+        {
+            t.WorkedDays!.RemoveAll(k => Days.TryParse(k, out var d) && !workday(d));
+            if (t.DayStates != null) foreach (var k in t.DayStates.Keys.Where(k => Days.TryParse(k, out var d) && !workday(d)).ToList()) t.DayStates.Remove(k);
+            var last = t.WorkedDays.Where(k => string.CompareOrdinal(k, tk) < 0).OrderBy(k => k, StringComparer.Ordinal).LastOrDefault();
+            if (last == null) continue;
+            t.WorkedDays.Remove(last);
+            t.DayStates?.Remove(last);
+            t.Day = last;
+            t.Modified = t.Modified.AddTicks(1);
+            n++;
+        }
+        if (n > 0) { _undo.Clear(); MarkDirty(); }
         return n;
     }
 
@@ -957,6 +983,9 @@ public sealed class BoardStore
     }
 
     /// <summary>The day's working hours: its own (set on the timeline) or the defaults.</summary>
+    /// <summary>The day has working hours of its own (dragged on the day view).</summary>
+    public bool HasOwnHours(string day) => Data.Days.TryGetValue(day, out var d) && d.WorkStart != null;
+
     public (string Start, string End) WorkHours(string day, string defStart, string defEnd) =>
         Data.Days.TryGetValue(day, out var d) && d.WorkStart != null && d.WorkEnd != null ? (d.WorkStart, d.WorkEnd) : (defStart, defEnd);
 
@@ -1012,6 +1041,9 @@ public sealed class BoardStore
     /// <summary>Hours of overtime on a day.</summary>
     public double OvertimeHours(string day)
     {
+        // a weekend, holiday or leave has no regular hours: all of it is overtime
+        if (!HasOwnHours(day) && Days.TryParse(day, out var date) && (date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday || DaysOff.Is(date)))
+            return Overtime(day).Sum(p => (p.End - p.Start).TotalHours);
         // only what lies outside the day's regular hours (an extra period dragged into them doesn't count twice)
         var (s, e) = WorkHours(day, App.Settings?.WorkStart ?? "09:00", App.Settings?.WorkEnd ?? "17:00");
         TimeSpan? T(string x) => x == "23:59" ? TimeSpan.FromHours(24) : TimeSpan.TryParseExact(x, @"h\:mm", System.Globalization.CultureInfo.InvariantCulture, out var t) ? t : null;

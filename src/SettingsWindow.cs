@@ -36,6 +36,31 @@ public sealed class SettingsWindow : DarkWindow
         ResizeMode = ResizeMode.CanResize;
         Content = new ScrollViewer { Content = _sections, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
 
+        // what a fresh install still needs, at the top (each one is also marked "UZUPEŁNIJ" in its section)
+        var todo = new List<(string What, int Section)>();
+        foreach (var a in S.Accounts.Where(a => a.NotionSources.Any(l => l.Database.Length > 0) && a.Notion.TokenProtected == null))
+            todo.Add((L.F("token Notion konta „{0}”", a.Name), 2));
+        if (S.Weather.Enabled && !S.Weather.Ready) todo.Add((L.T("miasto do prognozy pogody"), 3));
+        if (todo.Count > 0)
+        {
+            var box = new Border
+            {
+                CornerRadius = new CornerRadius(8), Padding = new Thickness(12, 8, 12, 8), Margin = new Thickness(0, 0, 0, 10),
+                Background = new SolidColorBrush(Color.FromArgb(0x22, 0xE8, 0xA2, 0x3A)), BorderBrush = new SolidColorBrush(Color.FromArgb(0x90, 0xE8, 0xA2, 0x3A)), BorderThickness = new Thickness(1),
+            };
+            var list = new StackPanel();
+            list.Children.Add(Label(L.T("Do uzupełnienia"), 12, "Fg", FontWeights.Bold));
+            foreach (var (what, section) in todo)
+            {
+                int s = section;
+                var go = Btn("→ " + what, "LinkButton", (_, _) => _openers[s]());
+                go.HorizontalAlignment = HorizontalAlignment.Left;
+                list.Children.Add(go);
+            }
+            box.Child = list;
+            _sections.Children.Add(box);
+        }
+
         AddSection(L.T("Ogólne"), L.T("język, autostart, zegar, alarmy i przypomnienia, linki Notion, skrót klawiszowy"), BuildGeneral);
         AddSection(L.T("Konta"), L.T("Praca i Prywatne: folder, kalendarze Google, kategorie, oznaczenia dni"), BuildAccounts);
         AddSection(L.T("Połączenia"), L.T("Notion: automatyczne wczytywanie zadań z bazy"), BuildConnections);
@@ -131,10 +156,8 @@ public sealed class SettingsWindow : DarkWindow
         }
         Paint();
         panel.Children.Add(switcher);
-        panel.Children.Add(Label(L.T("Każde konto ma osobny folder danych, kalendarze, kategorie i oznaczenia dni. Przełączanie: ikona warstwy na górnym pasku, Ctrl+1 / Ctrl+2."), 11.5, "FgDim"));
-        var syncNote = Label(L.T("Synchronizacja między komputerami: zadania, alarmy i oznaczenia są w folderze konta (board.json), ustawienia programu – w pliku taskwall-settings.json w folderze konta Praca. Lokalne zostają: foldery, ekran i rozmiar, autostart, adresy kalendarzy i tokeny Notion. Folder na Dysku Google jest rozpoznawany niezależnie od litery dysku (G:, H:…)."), 11.5, "FgFaint");
-        syncNote.Margin = new Thickness(0, 6, 0, 0);
-        panel.Children.Add(syncNote);
+        panel.Children.Add(Note(L.T("Każde konto ma osobny folder danych, kalendarze, kategorie i oznaczenia dni. Przełączanie: ikona warstwy na górnym pasku, Ctrl+1 / Ctrl+2.") + "\n\n"
+            + L.T("Synchronizacja między komputerami: każdy komputer zapisuje swój plik w folderze konta (devices\\board-NAZWA.json) i scala pliki pozostałych – zadania, alarmy, oznaczenia i notatki; ustawienia programu tak samo (devices\\settings-NAZWA.json w folderze konta Praca). Lokalne zostają: foldery, ekran i rozmiar, autostart, adresy kalendarzy i tokeny Notion. Folder na Dysku Google jest rozpoznawany niezależnie od litery dysku (G:, H:…).")));
         panel.Children.Add(_accountBody);
         FillAccount(Paint);
         return panel;
@@ -171,8 +194,7 @@ public sealed class SettingsWindow : DarkWindow
         UpdateStatus();
 
         // calendars
-        p.Children.Add(Sub(L.T("Kalendarze Google")));
-        p.Children.Add(Label(L.T("Adres iCal: Kalendarz Google → Ustawienia → kalendarz → Integracja kalendarza → Tajny adres w formacie iCal. Adres jest zapisywany tylko na tym komputerze."), 11, "FgFaint"));
+        p.Children.Add(Sub(L.T("Kalendarze Google"), L.T("Adres iCal: Kalendarz Google → Ustawienia → kalendarz → Integracja kalendarza → Tajny adres w formacie iCal. Adres jest zapisywany tylko na tym komputerze.")));
         var feeds = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
         p.Children.Add(feeds);
         void FillFeeds()
@@ -234,8 +256,7 @@ public sealed class SettingsWindow : DarkWindow
 
 
         // categories (stored in this account's board.json, so they sync with its other computers)
-        p.Children.Add(Sub(L.T("Kategorie")));
-        p.Children.Add(Label(L.T("Etykieta [Nazwa] na początku zadania. Przypisanie: prawy przycisk → Kategoria, etykiety pod polem nowego zadania albo #nazwa."), 11, "FgFaint"));
+        p.Children.Add(Sub(L.T("Kategorie"), L.T("Etykieta [Nazwa] na początku zadania. Przypisanie: prawy przycisk → Kategoria, etykiety pod polem nowego zadania albo #nazwa.")));
         var cats = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
         p.Children.Add(cats);
         FillCategories(store, cats);
@@ -252,8 +273,7 @@ public sealed class SettingsWindow : DarkWindow
         p.Children.Add(addCat);
 
         // day marks (HO, BŚU, Urlop …) – also per account, synced like the categories
-        p.Children.Add(Sub(L.T("Oznaczenia dni")));
-        p.Children.Add(Label(L.T("Kod w nagłówku dnia (np. HO, BŚU, Urlop). Ustawianie: prawy przycisk na dniu; stały cykl: przycisk Cykl…. Uwzględniane w widoku roku i eksporcie CSV."), 11, "FgFaint"));
+        p.Children.Add(Sub(L.T("Oznaczenia dni"), L.T("Kod w nagłówku dnia (np. HO, BŚU, Urlop). Ustawianie: prawy przycisk na dniu; stały cykl: przycisk Cykl…. Uwzględniane w widoku roku i eksporcie CSV.")));
         var marks = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
         p.Children.Add(marks);
         FillMarks(store, marks);
@@ -271,8 +291,7 @@ public sealed class SettingsWindow : DarkWindow
         p.Children.Add(addMark);
 
         // clearing this account's data (goes to the other computers too)
-        p.Children.Add(Sub(L.T("Wyczyść dane")));
-        p.Children.Add(Label(L.T("Usuwa dane konta, również na innych komputerach synchronizujących ten folder. Zadania i oznaczenia można przywrócić przez Ctrl+Z lub z kopii dziennej."), 11, "FgFaint"));
+        p.Children.Add(Sub(L.T("Wyczyść dane"), L.T("Usuwa dane konta, również na innych komputerach synchronizujących ten folder. Zadania i oznaczenia można przywrócić przez Ctrl+Z lub z kopii dziennej.")));
         var clearRow = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
         void ClearButton(string label, Func<int> count, Func<int> clear, string what)
         {
@@ -447,11 +466,12 @@ public sealed class SettingsWindow : DarkWindow
     {
         var w = S.Weather;
         var p = new StackPanel();
-        p.Children.Add(Label(L.T("Prognoza na 16 dni (Open-Meteo, bez konta): symbol pogody, temperatura maks. / min., szansa opadów i wiatr w nagłówku dnia. Do serwisu wysyłane są wyłącznie współrzędne miasta."), 11, "FgFaint"));
+        p.Children.Add(Note(L.T("Prognoza na 16 dni (Open-Meteo, bez konta): symbol pogody, temperatura maks. / min., szansa opadów i wiatr w nagłówku dnia. Do serwisu wysyłane są wyłącznie współrzędne miasta.")));
         var status = Label("", 11.5, "FgDim");
         void ShowStatus() => status.Text = !w.Ready ? L.T("Wybierz miasto, aby włączyć prognozę.")
             : WeatherService.Error != null ? L.F("Błąd: {0}", WeatherService.Error)
             : WeatherService.Fetched is { } f ? L.F("{0} · pobrano {1}", w.City, f.ToString("HH:mm")) : w.City;
+        if (w.Enabled && !w.Ready) p.Children.Add(Sub(L.T("Miejscowość"), null, needed: true));
         p.Children.Add(Check(L.T("Pokazuj pogodę w nagłówkach dni"), w.Enabled, v => { w.Enabled = v; if (v) WeatherService.Refresh(); }));
         p.Children.Add(Check(L.T("Opady: szansa (0–100%) i przewidywana ilość (mm)"), w.ShowRain, v => w.ShowRain = v));
         p.Children.Add(Check(L.T("Prędkość wiatru (km/h)"), w.ShowWind, v => w.ShowWind = v));
@@ -533,7 +553,7 @@ public sealed class SettingsWindow : DarkWindow
             buttons.Children.Add(b);
         }
         panel.Children.Add(switcher);
-        panel.Children.Add(Label(L.T("Połączenia ustawia się osobno dla każdego konta. Zadania trafiają do backlogu wybranego konta."), 11.5, "FgDim"));
+        panel.Children.Add(Note(L.T("Połączenia ustawia się osobno dla każdego konta. Zadania trafiają do backlogu wybranego konta.")));
         panel.Children.Add(body);
         Fill();
         return panel;
@@ -543,7 +563,7 @@ public sealed class SettingsWindow : DarkWindow
     {
         var link = acc.Notion; // token and options of the account; its database is the first one
         var p = new StackPanel();
-        p.Children.Add(Label(L.T("Wczytuje zadania z baz Notion do backlogu konta (tylko odczyt). Wymaga osobistego tokenu Notion. Token jest szyfrowany dla bieżącego użytkownika Windows i zapisywany tylko na tym komputerze; na innym komputerze należy podać ten sam albo nowy token."), 11, "FgFaint"));
+        p.Children.Add(Note(L.T("Wczytuje zadania z baz Notion do backlogu konta (tylko odczyt). Wymaga osobistego tokenu Notion. Token jest szyfrowany dla bieżącego użytkownika Windows i zapisywany tylko na tym komputerze; na innym komputerze należy podać ten sam albo nowy token.")));
 
         // the token is never shown: a saved one appears as ******** (typing / pasting replaces it)
         const string Mask = "************************";
@@ -589,7 +609,7 @@ public sealed class SettingsWindow : DarkWindow
         };
         ShowTokenState();
         Verify();
-        p.Children.Add(Pair(L.T("Osobisty token"), tokenRow));
+        p.Children.Add(Pair(L.T("Osobisty token"), tokenRow, needed: link.TokenProtected == null && acc.NotionSources.Any(l => l.Database.Length > 0)));
         p.Children.Add(tokenState);
 
         var every = new ComboBox { Width = 90, Margin = new Thickness(8, 0, 0, 0) };
@@ -625,10 +645,7 @@ public sealed class SettingsWindow : DarkWindow
         p.Children.Add(done);
 
         // ----- the databases (one per project), each with a short name shown on its tasks -----
-        var head = Label(L.T("PROJEKTY I BAZY NOTION"), 11, "FgDim", FontWeights.Bold);
-        head.Margin = new Thickness(0, 14, 0, 2);
-        p.Children.Add(head);
-        p.Children.Add(Label(L.T("Każdy projekt ma krótką nazwę i kolor – widać je na jego zadaniach, a komenda @nazwa (np. @FoA) przypisuje projekt własnemu zadaniu. Link do bazy Notion jest opcjonalny; z linkiem wczytywane są zadania tej bazy. Link do widoku: w Notion nazwa widoku nad tabelą → Copy link to view."), 11, "FgFaint"));
+        p.Children.Add(Sub(L.T("Projekty i bazy Notion"), L.T("Każdy projekt ma krótką nazwę i kolor – widać je na jego zadaniach, a komenda @nazwa (np. @FoA) przypisuje projekt własnemu zadaniu. Link do bazy Notion jest opcjonalny; z linkiem wczytywane są zadania tej bazy. Link do widoku: w Notion nazwa widoku nad tabelą → Copy link to view.")));
         var howTo = Btn(L.T("Jak skopiować link do widoku (pomoc Notion) ↗"), "LinkButton", (_, _) => GlassWindow.OpenUrl("https://www.notion.com/help/views-filters-and-sorts"));
         howTo.HorizontalAlignment = HorizontalAlignment.Left;
         howTo.Margin = new Thickness(-7, 2, 0, 6);
@@ -791,11 +808,10 @@ public sealed class SettingsWindow : DarkWindow
             link.Conditions = list.Count > 0 ? list : null;
             SettingsStore.Save(S);
         };
-        p.Children.Add(Pair(L.T("Dodatkowe warunki"), cond));
+        p.Children.Add(Pair(L.T("Dodatkowe warunki"), cond, L.T("Jeden w wierszu, np. „Dział != PM” albo „Projekt = Mnich DLC”. Działają też na zadania już wczytane: nieruszane zadania z backlogu, które ich nie spełniają, znikają przy synchronizacji.")));
         p.Children.Add(condState);
         var usable = (link.KnownColumns ?? new()).Where(c => c.EndsWith(": select") || c.EndsWith(": multi_select") || c.EndsWith(": status") || c.EndsWith(": people") || c.EndsWith(": rich_text")).Select(c => c[..c.LastIndexOf(':')]).ToList();
         if (usable.Count > 0) p.Children.Add(Label(L.F("Kolumny tej bazy: {0}", string.Join(", ", usable)), 11, "FgFaint"));
-        p.Children.Add(Label(L.T("Jeden w wierszu, np. „Dział != PM” albo „Projekt = Mnich DLC”. Działają też na zadania już wczytane: nieruszane zadania z backlogu, które ich nie spełniają, znikają przy synchronizacji."), 11, "FgFaint"));
         p.Children.Add(result);
         return card;
     }
@@ -983,7 +999,7 @@ public sealed class SettingsWindow : DarkWindow
             S.FoldPastDone = k == "past";
             App.Instance.ApplySettings();
         };
-        p.Children.Add(Pair(L.T("Zwijaj zrobione zadania do jednej linii („✓ 3 zrobione”)"), fold));
+        p.Children.Add(Pair(L.T("Zwijaj zrobione zadania"), fold, L.T("Zrobione zadania dnia w jednej linii („✓ 3 zrobione”) – rozwija ją kliknięcie.")));
         // default working hours (the day view; a day can have its own – drag the edges there)
         var hours = new StackPanel { Orientation = Orientation.Horizontal };
         static TimeSpan? ParseHour(string s) =>
@@ -1004,12 +1020,12 @@ public sealed class SettingsWindow : DarkWindow
         hours.Children.Add(HourBox(() => S.WorkStart, v => S.WorkStart = v, false));
         hours.Children.Add(new TextBlock { Text = "  –  ", VerticalAlignment = VerticalAlignment.Center, Foreground = Ui.Res("FgDim") });
         hours.Children.Add(HourBox(() => S.WorkEnd, v => S.WorkEnd = v, true));
-        p.Children.Add(Pair(L.T("Godziny pracy (widok dnia; dzień może mieć własne – przeciągnij ich krawędzie na osi)"), hours));
+        p.Children.Add(Pair(L.T("Godziny pracy"), hours, L.T("Domyślne godziny w widoku dnia. Każdy dzień może mieć własne – przeciągnij ich krawędzie na osi. Weekendy i święta nie mają godzin pracy: dodaj nadgodziny prawym przyciskiem na osi.")));
         p.Children.Add(Check(L.T("Widok dnia: notatnik po lewej, oś godzin po prawej"), S.DayNotesLeft, v => S.DayNotesLeft = v));
         p.Children.Add(Check(L.T("Podsumowanie poprzedniego tygodnia przy pierwszym uruchomieniu w tygodniu"), S.WeeklySummary, v => S.WeeklySummary = v));
         p.Children.Add(Check(L.T("Przycisk widoku roku (365 dni)"), S.ShowYearButton, v => S.ShowYearButton = v));
         p.Children.Add(Check(L.T("Automatycznie przenoś niezrobione zadania z minionych dni na dziś"), S.AutoRollover, v => S.AutoRollover = v));
-        p.Children.Add(Check(L.T("Zadania w trakcie i w review same przechodzą na kolejne dni robocze (aż do zrobienia) – w historii i raportach widać każdy dzień pracy"), S.StretchActive, v => S.StretchActive = v));
+        p.Children.Add(Check(L.T("Zadania w trakcie przechodzą na kolejne dni robocze"), S.StretchActive, v => S.StretchActive = v, L.T("Zadania w trakcie, review i testach same przechodzą na kolejne dni robocze, aż do zrobienia – w historii i raportach widać każdy dzień pracy. Weekendy, święta i urlop są pomijane.")));
         var mode = new ComboBox { Width = 320, HorizontalAlignment = HorizontalAlignment.Left };
         mode.Items.Add(new ComboBoxItem { Content = L.T("Wysuwany po kliknięciu (na szerokość weekendu)"), Tag = "drawer" });
         mode.Items.Add(new ComboBoxItem { Content = L.T("Przypięty z prawej strony"), Tag = "pinned" });
@@ -1049,7 +1065,7 @@ public sealed class SettingsWindow : DarkWindow
         pattern.SelectionChanged += (_, _) => { if (pattern.SelectedItem is ComboBoxItem it) { S.Pattern = (string)it.Tag; App.Instance.ApplySettings(); } };
         p.Children.Add(Pair(L.T("Wzór tła"), pattern));
         p.Children.Add(SliderRow(L.T("Widoczność wzoru"), 0, 300, S.PatternVisibility * 100, v => S.PatternVisibility = v / 100, v => $"{v:0}%"));
-        p.Children.Add(SliderRow(L.T("Skala wzoru"), 25, 400, S.PatternScale * 100, v => S.PatternScale = v / 100, v => $"{v:0}%"));
+        p.Children.Add(SliderRow(L.T("Skala wzoru"), 25, 100, S.PatternScale * 100, v => S.PatternScale = v / 100, v => $"{v:0}%"));
         p.Children.Add(Check(L.T("Matowe szkło (rozmyta tapeta pod tablicą)"), S.Blur, v => S.Blur = v));
         p.Children.Add(Check(L.T("Animacje"), S.Animations, v => S.Animations = v));
         p.Children.Add(Check(L.T("Podpisy przy ikonach górnego paska"), S.BarCaptions, v => S.BarCaptions = v));
@@ -1129,7 +1145,7 @@ public sealed class SettingsWindow : DarkWindow
         void UpdateWarn() => warn.Visibility = App.Instance.HotkeyTaken ? Visibility.Visible : Visibility.Collapsed;
         hot.SelectionChanged += (_, _) => { if (hot.SelectedItem is ComboBoxItem it) { S.Hotkey = (string)it.Tag; App.Instance.ApplySettings(); UpdateWarn(); } };
         UpdateWarn();
-        p.Children.Add(Pair(L.T("Skrót: tablica na wierzch + nowe zadanie na dziś (Esc chowa)"), hot));
+        p.Children.Add(Pair(L.T("Skrót klawiszowy"), hot, L.T("Pokazuje tablicę na wierzchu z polem nowego zadania na dziś; Esc chowa.")));
         p.Children.Add(warn);
         return p;
     }
@@ -1165,8 +1181,7 @@ public sealed class SettingsWindow : DarkWindow
         p.Children.Add(check);
 
         // backup: everything in one ZIP; restoring merges (the newer version of each task wins)
-        p.Children.Add(Sub(L.T("Kopia zapasowa")));
-        p.Children.Add(Label(L.T("Jeden plik ZIP z danymi wszystkich kont (zadania, kopie dzienne, raporty) i ustawieniami. Przywracanie scala zadania z tablicą – nowsza wersja każdego zadania wygrywa, nic nie jest nadpisywane w ciemno."), 11, "FgFaint"));
+        p.Children.Add(Sub(L.T("Kopia zapasowa"), L.T("Jeden plik ZIP z danymi wszystkich kont (zadania, kopie dzienne, raporty) i ustawieniami. Przywracanie scala zadania z tablicą – nowsza wersja każdego zadania wygrywa, nic nie jest nadpisywane w ciemno.")));
         var bRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
         var exp = Btn(L.T("Zapisz kopię…"), "SecondaryButton", (_, _) =>
         {
@@ -1195,25 +1210,74 @@ public sealed class SettingsWindow : DarkWindow
 
     // ---------- small builders ----------
 
-    static FrameworkElement Sub(string title)
+    /// <summary>A small round "i": the longer explanation in its tool tip (shown at once, for as long as needed).</summary>
+    static FrameworkElement Info(string text)
     {
-        var t = Label(title.ToUpper(BoardWindow.Pl), 11, "FgDim", FontWeights.Bold);
-        t.Margin = new Thickness(0, 16, 0, 6);
-        return t;
+        var b = new Border
+        {
+            Width = 15, Height = 15, CornerRadius = new CornerRadius(7.5), Margin = new Thickness(7, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
+            BorderBrush = Ui.Res("FgFaint"), BorderThickness = new Thickness(1), Background = Brushes.Transparent, Cursor = Cursors.Help,
+            Child = new TextBlock { Text = "i", FontSize = 9.5, FontWeight = FontWeights.Bold, Foreground = Ui.Res("FgDim"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, -1, 0, 0) },
+            ToolTip = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, MaxWidth = 380 },
+        };
+        ToolTipService.SetInitialShowDelay(b, 80);
+        ToolTipService.SetShowDuration(b, 60000);
+        return b;
     }
 
-    static FrameworkElement Pair(string label, FrameworkElement control)
+    /// <summary>"UZUPEŁNIJ": something a fresh install still needs (a token, a city …).</summary>
+    static FrameworkElement Needed(string? why = null)
+    {
+        var b = new Border
+        {
+            CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 1, 6, 2), Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
+            Background = new SolidColorBrush(Color.FromArgb(0x30, 0xE8, 0xA2, 0x3A)), BorderBrush = new SolidColorBrush(Color.FromRgb(0xE8, 0xA2, 0x3A)), BorderThickness = new Thickness(1),
+            Child = new TextBlock { Text = L.T("UZUPEŁNIJ"), FontSize = 9.5, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(Color.FromRgb(0xE8, 0xA2, 0x3A)) },
+            ToolTip = why,
+        };
+        return b;
+    }
+
+    /// <summary>A heading inside a section; its explanation (if any) behind an "i", and a "UZUPEŁNIJ" mark when needed.</summary>
+    static FrameworkElement Sub(string title, string? info = null, bool needed = false)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 16, 0, 6) };
+        row.Children.Add(Label(title.ToUpper(BoardWindow.Pl), 11, "FgDim", FontWeights.Bold));
+        if (info != null) row.Children.Add(Info(info));
+        if (needed) row.Children.Add(Needed());
+        return row;
+    }
+
+    /// <summary>A short line under the section's top that opens its explanation on hover (instead of a paragraph).</summary>
+    static FrameworkElement Note(string info)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+        row.Children.Add(Label(L.T("Jak to działa"), 11, "FgFaint"));
+        row.Children.Add(Info(info));
+        return row;
+    }
+
+    static FrameworkElement Pair(string label, FrameworkElement control, string? info = null, bool needed = false)
     {
         var sp = new StackPanel { Margin = new Thickness(0, 4, 0, 8) };
-        var l = Label(label, 12, "FgDim");
-        l.Margin = new Thickness(0, 0, 0, 5);
-        sp.Children.Add(l);
+        var head = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 5) };
+        head.Children.Add(Label(label, 12, "FgDim"));
+        if (info != null) head.Children.Add(Info(info));
+        if (needed) head.Children.Add(Needed());
+        sp.Children.Add(head);
         sp.Children.Add(control);
         return sp;
     }
 
-    static FrameworkElement Check(string label, bool value, Action<bool> set)
+    static FrameworkElement Check(string label, bool value, Action<bool> set, string? info = null)
     {
+        if (info != null)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(Check(label, value, set));
+            row.Children.Add(Info(info));
+            return row;
+        }
         var cb = new CheckBox { Content = label, IsChecked = value, Margin = new Thickness(0, 5, 0, 5) };
         cb.Checked += (_, _) => { set(true); App.Instance.ApplySettings(); };
         cb.Unchecked += (_, _) => { set(false); App.Instance.ApplySettings(); };

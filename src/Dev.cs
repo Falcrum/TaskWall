@@ -555,6 +555,18 @@ static class Dev
             Check("repeat on chosen weekdays: Mon–Wed every week, not Thursday, label 'Pn, Wt, Śr'",
                 mtw.Occurs(new DateTime(2026, 10, 19)) && mtw.Occurs(new DateTime(2026, 10, 21)) && !mtw.Occurs(new DateTime(2026, 10, 22)) && mtw.Occurs(new DateTime(2026, 10, 27))
                 && (L.En || mtw.RepeatLabel == "Pn, Wt, Śr"));
+            var wkStore = new BoardStore("work");
+            var onSunday = new TaskItem { Text = "w", Day = "2026-10-25", Started = true, WorkedDays = new() { "2026-10-22", "2026-10-23", "2026-10-24" } };
+            wkStore.Add(onSunday);
+            wkStore.StretchActive(new DateTime(2026, 10, 25)); // a Sunday without overtime
+            var stillFriday = new TaskItem { Text = "f2", Day = "2026-10-23", Started = true };
+            wkStore.Add(stillFriday);
+            wkStore.StretchActive(new DateTime(2026, 10, 24)); // Saturday: nothing carries
+            Check("weekends: a task carried onto Sunday goes back to Friday (Saturday leaves its history); nothing carries onto a day off",
+                onSunday.Day == "2026-10-23" && onSunday.WorkedDays!.SequenceEqual(new[] { "2026-10-22" }) && stillFriday.Day == "2026-10-23");
+            wkStore.SetOvertime("2026-10-24", new[] { (TimeSpan.FromHours(10), TimeSpan.FromHours(12)) });
+            wkStore.StretchActive(new DateTime(2026, 10, 24));
+            Check("weekends: with overtime on Saturday the task carries onto it", stillFriday.Day == "2026-10-24");
             var lvStore = new BoardStore("work");
             foreach (var day in new[] { "2025-03-03", "2025-03-04", "2025-03-08" }) lvStore.SetDayMark(day, "BŚU"); // 8 Mar 2025 is a Saturday
             var lvType = new MarkType { Code = "BŚU", Allowance = 21, CarryOver = 3, CarryYear = 2025 };
