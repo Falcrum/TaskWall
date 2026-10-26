@@ -29,6 +29,8 @@ static class SharedSettings
         nameof(AppSettings.SharedModified), nameof(AppSettings.SharedHash), nameof(AppSettings.SharedPath), nameof(AppSettings.SharedBaseline),
         // view state that changes by itself (zoom, filters, the last weekly summary): never a reason to overwrite another PC's settings
         nameof(AppSettings.Timeline), nameof(AppSettings.LastWeekSummary), nameof(AppSettings.NotesSource), nameof(AppSettings.DayNotesLeft),
+        // screens and hardware differ per computer
+        nameof(AppSettings.BoardMax), nameof(AppSettings.SecondMonitor), nameof(AppSettings.SecondView), nameof(AppSettings.Meters),
     };
 
     static string? PathFor(AppSettings s) => Dev.Arg("--data") is { } dev ? Path.Combine(dev, FileName)

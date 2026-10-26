@@ -694,7 +694,17 @@ public sealed class AppSettings
 
     public bool StartWithWindows { get; set; }
     public bool Use24h { get; set; } = true;
+    /// <summary>The top bar: the clock and date (the calendar under them), the weather now, the computer's load.</summary>
     public bool ShowClock { get; set; } = true;
+    /// <summary>The weather now on the left of the top bar (needs a place in Settings → Pogoda).</summary>
+    public bool BarWeather { get; set; } = true;
+    /// <summary>The top bar's load rings on the right, in order: cpu, gpu, ram, disk, net (empty = none).</summary>
+    public string Meters { get; set; } = "cpu,gpu,ram,disk,net";
+    /// <summary>The board fills the whole screen under the top bar (the button next to "hide").</summary>
+    public bool BoardMax { get; set; }
+    /// <summary>A second board on another screen (its device name; empty = none) and the view it shows.</summary>
+    public string SecondMonitor { get; set; } = "";
+    public string SecondView { get; set; } = "timeline";
     /// <summary>Legacy (v1–v5): replaced by View.</summary>
     public bool ShowNextWeek { get; set; } = true;
     public bool ShowWeekends { get; set; } = true;

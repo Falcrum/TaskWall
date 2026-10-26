@@ -49,6 +49,7 @@ public partial class BoardWindow
         NextButton.Content = Icons.Chevron(true);
         MoreButton.Content = Icons.More();
         HideButton.Content = Icons.Minimize();
+        UpdateMaxButton();
         SearchButton.Content = Icons.Labeled(Icons.Search(), L.T("SZUKAJ"), cap);
         AlarmButton.Content = Icons.Labeled(Icons.Alarm(), L.T("ALARMY"), cap);
         BacklogButton.Content = Icons.Labeled(Icons.WithBadge(Icons.Backlog(), out var bc), "BACKLOG", cap);
@@ -1139,6 +1140,7 @@ public partial class BoardWindow
         }
         if (e.Key == Key.Escape && SearchPanel.Visibility == Visibility.Visible) { e.Handled = true; CloseSearch(); return; }
         if (e.Key == Key.F1) { e.Handled = true; HelpWindow.ShowHelp(); return; }
+        if (e.Key == Key.F11 && !IsSecond) { e.Handled = true; ToggleMax(); return; }
         if (e.Key is Key.OemQuestion or Key.Divide && Keyboard.Modifiers == ModifierKeys.Control) { e.Handled = true; HelpWindow.ShowHelp(); return; } // the cheat sheet
         if (Keyboard.FocusedElement is TextBox) return;
         // the task under the mouse: Space = next state (○ → ◐ → ✓), Shift+1/2/3 = priority (! !! !!!), Shift+0 = none,
@@ -1244,6 +1246,24 @@ public partial class BoardWindow
     void DayView_Click(object sender, RoutedEventArgs e) => SetView(ViewMode.Day);
     void OneWeek_Click(object sender, RoutedEventArgs e) => SetView(ViewMode.Week1);
     void Hide_Click(object sender, RoutedEventArgs e) => App.Instance.SetBoardHidden(true);
+    void Max_Click(object sender, RoutedEventArgs e) => ToggleMax();
+
+    /// <summary>The board over the whole screen under the top bar, and back (F11).</summary>
+    void ToggleMax()
+    {
+        S.BoardMax = !S.BoardMax;
+        SettingsStore.Save(S);
+        UpdateMaxButton();
+        App.Instance.LayoutWindows();
+        Rebuild();
+    }
+
+    void UpdateMaxButton()
+    {
+        MaxButton.Visibility = IsSecond ? Visibility.Collapsed : Visibility.Visible; // the second screen is always whole
+        MaxButton.Content = Icons.Maximize(S.BoardMax);
+        MaxButton.ToolTip = S.BoardMax ? L.T("Tablica w swoim rozmiarze (F11)") : L.T("Tablica na cały ekran (F11)");
+    }
     void WeekView_Click(object sender, RoutedEventArgs e) => SetView(ViewMode.Week2);
     void MonthView_Click(object sender, RoutedEventArgs e) => SetView(ViewMode.Month);
     void Year_Click(object sender, RoutedEventArgs e) => SetView(ViewMode.Year);

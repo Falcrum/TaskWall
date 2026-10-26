@@ -24,6 +24,9 @@ public sealed class WeatherSettings
     [System.Text.Json.Serialization.JsonIgnore] public bool Ready => Enabled && (Latitude != 0 || Longitude != 0);
 }
 
+/// <summary>The weather now (Open-Meteo "current", every 30 minutes).</summary>
+public sealed record WeatherNow(DateTime At, int Code, double Temp, double? Feels, double? Wind, int? Humidity, bool Day);
+
 /// <summary>One day of the forecast.</summary>
 public sealed record WeatherDay(DateTime Date, int Code, double Max, double Min, int? Rain, double? Wind = null)
 {
@@ -39,7 +42,7 @@ static class WeatherService
 {
     static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(20) };
     static readonly string CacheFile = Path.Combine(SettingsStore.Dir, "weather-cache.json");
-    static readonly DispatcherTimer Timer = new() { Interval = TimeSpan.FromHours(3) };
+    static readonly DispatcherTimer Timer = new() { Interval = TimeSpan.FromMinutes(30) }; // the top bar shows the weather now
     static Dictionary<DateTime, WeatherDay> _days = new();
     public static DateTime? Fetched { get; private set; }
     public static string? Error { get; private set; }
@@ -52,7 +55,7 @@ static class WeatherService
         LoadCache();
         Timer.Tick += (_, _) => Refresh();
         Timer.Start();
-        if (Fetched == null || DateTime.Now - Fetched > TimeSpan.FromHours(3)) Refresh();
+        if (Fetched == null || DateTime.Now - Fetched > TimeSpan.FromMinutes(30)) Refresh();
     }
 
     public static async void Refresh()
@@ -62,9 +65,10 @@ static class WeatherService
         try
         {
             var url = string.Create(CultureInfo.InvariantCulture,
-                $"https://api.open-meteo.com/v1/forecast?latitude={w.Latitude:0.####}&longitude={w.Longitude:0.####}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,wind_speed_10m_max&timezone=auto&forecast_days=16");
+                $"https://api.open-meteo.com/v1/forecast?latitude={w.Latitude:0.####}&longitude={w.Longitude:0.####}&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,relative_humidity_2m,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,wind_speed_10m_max&timezone=auto&forecast_days=16");
             var json = await Http.GetStringAsync(url);
             _days = Parse(json);
+            Now = ParseNow(json);
             Fetched = DateTime.Now;
             Error = null;
             try { File.WriteAllText(CacheFile, json); } catch { }
@@ -75,6 +79,24 @@ static class WeatherService
             Log.Error("weather", ex);
         }
         Changed?.Invoke();
+    }
+
+    /// <summary>The weather now (the top bar); null when unknown or older than 3 hours.</summary>
+    public static WeatherNow? Current => App.Settings.Weather.Ready && Now is { } n && DateTime.Now - n.At < TimeSpan.FromHours(3) ? n : null;
+    static WeatherNow? Now;
+
+    public static WeatherNow? ParseNow(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("current", out var c)) return null;
+            double? N(string p) => c.TryGetProperty(p, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : null;
+            if (N("temperature_2m") is not { } temp) return null;
+            var at = c.TryGetProperty("time", out var tv) && DateTime.TryParse(tv.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var t) ? t : DateTime.Now;
+            return new WeatherNow(at, (int)(N("weather_code") ?? 0), temp, N("apparent_temperature"), N("wind_speed_10m"), (int?)N("relative_humidity_2m"), N("is_day") != 0);
+        }
+        catch { return null; }
     }
 
     public static Dictionary<DateTime, WeatherDay> Parse(string json)
@@ -106,7 +128,9 @@ static class WeatherService
         try
         {
             if (!File.Exists(CacheFile)) return;
-            _days = Parse(File.ReadAllText(CacheFile));
+            var json = File.ReadAllText(CacheFile);
+            _days = Parse(json);
+            Now = ParseNow(json);
             // a cache from before the wind / rain amount were read: fetch again right away
             Fetched = _days.Values.Any(d => d.Wind != null && d.Mm != null) ? File.GetLastWriteTime(CacheFile) : null;
         }

@@ -975,6 +975,15 @@ public sealed class SettingsWindow : DarkWindow
         monCombo.SelectedIndex = Math.Max(0, idx >= 0 ? idx : monitors.FindIndex(m => m.Primary));
         monCombo.SelectionChanged += (_, _) => { if (monCombo.SelectedItem is ComboBoxItem it) { S.Monitor = (string)it.Tag; App.Instance.ApplySettings(); } };
         p.Children.Add(Pair("Monitor", monCombo));
+        // a second board on another screen, with a view of its own (picked on that board, remembered)
+        var second = new ComboBox { Width = 320, HorizontalAlignment = HorizontalAlignment.Left };
+        second.Items.Add(new ComboBoxItem { Content = L.T("Brak"), Tag = "" });
+        for (int i = 0; i < monitors.Count; i++)
+            second.Items.Add(new ComboBoxItem { Content = monitors[i].Label(i), Tag = monitors[i].Device });
+        second.SelectedItem = second.Items.Cast<ComboBoxItem>().FirstOrDefault(it => (string)it.Tag == S.SecondMonitor) ?? second.Items[0];
+        second.SelectionChanged += (_, _) => { if (second.SelectedItem is ComboBoxItem it) { S.SecondMonitor = (string)it.Tag; App.Instance.ApplySettings(); } };
+        p.Children.Add(Pair(L.T("Drugi ekran"), second,
+            L.T("Druga tablica na całym drugim ekranie, z własnym widokiem – np. DZIEŃ tutaj, a TIMELINE tam. Widok wybierasz na niej samej, zapamiętuje się. Zmiany z jednej tablicy od razu widać na drugiej. Ten sam ekran co główna tablica = bez drugiej tablicy.")));
         p.Children.Add(SliderRow(L.T("Skala całości"), 80, 220, S.UiScale * 100, v => S.UiScale = Math.Round(v) / 100, v => $"{v:0}%"));
         p.Children.Add(SliderRow(L.T("Szerokość tablicy"), 40, 100, S.WidthPercent, v => S.WidthPercent = v, v => $"{v:0}%"));
         p.Children.Add(SliderRow(L.T("Wysokość tygodnia"), 10, 100, S.WeekHeightPercent, v => S.WeekHeightPercent = v, v => v >= 99 ? L.T("od zegara do paska zadań") : L.F("{0:0}% ekranu", v)));
@@ -1126,7 +1135,29 @@ public sealed class SettingsWindow : DarkWindow
         langRow.Children.Add(restart);
         p.Children.Add(Pair("Język / Language", langRow));
         p.Children.Add(Check(L.T("Uruchamiaj razem z Windows"), S.StartWithWindows, v => S.StartWithWindows = v));
-        p.Children.Add(Check(L.T("Pokazuj zegar z kalendarzem"), S.ShowClock, v => S.ShowClock = v));
+        p.Children.Add(Check(L.T("Pasek u góry ekranu"), S.ShowClock, v => S.ShowClock = v,
+            L.T("Wąski pasek nad tablicą, tak szeroki jak ona: pogoda teraz po lewej, godzina i data w środku (kliknięcie otwiera kalendarz miesiąca), obciążenie komputera po prawej.")));
+        p.Children.Add(Check(L.T("Pogoda teraz na pasku"), S.BarWeather, v => S.BarWeather = v, L.T("Potrzebuje miejscowości w sekcji Pogoda. Odświeżana co 30 minut.")));
+        // the load rings: one tick per kind, the order stays CPU, GPU, RAM, disk, network
+        var meters = new WrapPanel();
+        var names = new Dictionary<string, string> { ["cpu"] = "CPU", ["gpu"] = "GPU", ["ram"] = "RAM", ["disk"] = L.T("Dyski"), ["net"] = L.T("Sieć") };
+        foreach (var kind in SysMeters.Kinds)
+        {
+            var k = kind;
+            var cb = new CheckBox { Content = names[k], IsChecked = S.Meters.Split(',').Contains(k), Margin = new Thickness(0, 5, 14, 5) };
+            void Set(bool on)
+            {
+                var set = S.Meters.Split(',', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+                if (on) set.Add(k); else set.Remove(k);
+                S.Meters = string.Join(",", SysMeters.Kinds.Where(set.Contains));
+                App.Instance.ApplySettings();
+            }
+            cb.Checked += (_, _) => Set(true);
+            cb.Unchecked += (_, _) => Set(false);
+            meters.Children.Add(cb);
+        }
+        p.Children.Add(Pair(L.T("Obciążenie na pasku"), meters,
+            L.T("Kręgi wypełniają się jak w Menedżerze zadań: procesor, karta graficzna (najbardziej zajęty silnik), pamięć, najbardziej zajęty dysk (czas aktywności; wolne miejsce w podpowiedzi), sieć (ruch względem prędkości łącza). Odczyt co 2 sekundy, tylko gdy pasek jest widoczny.")));
         p.Children.Add(Check(L.T("Zegar 24-godzinny"), S.Use24h, v => S.Use24h = v));
         p.Children.Add(Check(L.T("Dźwięk alarmów"), S.AlarmSound, v => S.AlarmSound = v));
         var remind = new ComboBox { Width = 200, HorizontalAlignment = HorizontalAlignment.Left };

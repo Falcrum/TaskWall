@@ -205,7 +205,7 @@ public sealed class TimelineView : Grid
         _saveZoom.Stop();
         _saveZoom.Start();
         Refresh();
-        App.Board?.UpdateTimelineRange();
+        (Window.GetWindow(this) as BoardWindow)?.UpdateTimelineRange(); // the board it sits on (either screen)
     }
 
     /// <summary>First and last day on screen (the top bar shows them).</summary>
@@ -538,7 +538,7 @@ public sealed class TimelineView : Grid
         }
         if (_items.Count == 0)
             _bars.Children.Add(At(new TextBlock { Text = L.T("Brak zadań do pokazania – zmień filtry albo dodaj zadania na dni."), Foreground = Res("FgFaint"), FontSize = 12 }, 12, 14));
-        App.Board?.UpdateTimelineRange();
+        (Window.GetWindow(this) as BoardWindow)?.UpdateTimelineRange(); // the board it sits on (either screen)
     }
 
     int _meetingRows;

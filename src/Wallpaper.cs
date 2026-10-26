@@ -19,7 +19,7 @@ public sealed class MonitorInfo
     public required bool Primary { get; init; }
 
     public string Label(int index) =>
-        $"Monitor {index + 1}{(Primary ? " (główny)" : "")} – {Bounds.Width}×{Bounds.Height}";
+        $"Monitor {index + 1}{(Primary ? L.T(" (główny)") : "")} – {Bounds.Width}×{Bounds.Height}";
 }
 
 static class Monitors

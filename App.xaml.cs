@@ -8,6 +8,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Microsoft.Win32;
 
@@ -28,6 +29,11 @@ public partial class App : Application
         ? (n is "Praca" or "Prywatne" ? L.T(n) : n)
         : L.T(layer == "private" ? "Prywatne" : "Praca");
     public static BoardWindow? Board { get; private set; }
+    /// <summary>The board on the second screen (Settings → Ekran) with a view of its own; null when there is none.</summary>
+    public static BoardWindow? Second => Instance._second;
+    BoardWindow? _second;
+    /// <summary>Both boards (the main one first).</summary>
+    public static System.Collections.Generic.List<BoardWindow> Boards => new[] { Board, Instance._second }.OfType<BoardWindow>().ToList();
 
     const int HotkeyId = 0xD35;
     public bool HotkeyTaken { get; private set; }
@@ -111,7 +117,7 @@ public partial class App : Application
         CalendarService.LoadCache();
         Board = new BoardWindow();
         _clock = new ClockWindow { KeepAbove = Board };
-        CalendarService.Changed += () => Board.OnExternalChange(quiet: true);
+        CalendarService.Changed += () => { foreach (var b in Boards) b.OnExternalChange(quiet: true); };
 
         SetupTray();
         SystemEvents.DisplaySettingsChanged += (_, _) => Dispatcher.BeginInvoke(ApplySettings);
@@ -128,6 +134,14 @@ public partial class App : Application
         };
         _glassTimer.Tick += (_, _) => { _glassTimer.Stop(); RefreshGlass(); };
         _applySoon.Tick += (_, _) => { _applySoon.Stop(); ApplySettings(); };
+        // a change on one board shows on the other (second screen) a moment later
+        BoardStore.Dirtied += () => { if (_second == null) return; if (_dirtyAt == default) _dirtyAt = DateTime.UtcNow; _boardsSync.Stop(); _boardsSync.Start(); };
+        _boardsSync.Tick += (_, _) =>
+        {
+            _boardsSync.Stop();
+            foreach (var b in Boards.Where(b => b.BuiltAt < _dirtyAt)) b.OnExternalChange(quiet: true);
+            _dirtyAt = default;
+        };
         _folderRetry.Tick += (_, _) => RetryPendingFolders();
         _trimTimer.Tick += (_, _) => { _trimTimer.Stop(); TrimMemory(); };
         _calendarTimer.Tick += (_, _) => RefreshCalendars();
@@ -148,15 +162,15 @@ public partial class App : Application
                 if (!string.IsNullOrEmpty(root) && Directory.Exists(root))
                     try { OpenLayer(a.Id); } catch (Exception ex) { Log.Error("open account " + a.Id, ex); }
             }
-            AlarmService.Changed += () => Board?.OnExternalChange(quiet: true);
+            AlarmService.Changed += () => { foreach (var b in Boards) b.OnExternalChange(quiet: true); };
             AlarmService.Start();
             Updater.Start();
             if (Dev.Arg("--data") == null) ReportWindow.ShowWeeklyIfDue();
-            WeatherService.Changed += () => Board?.OnExternalChange(quiet: true);
+            WeatherService.Changed += () => { foreach (var b in Boards) b.OnExternalChange(quiet: true); };
             WeatherService.Start();
             // Notion: each account with a token syncs on its own interval (first run right after start-up)
             _notionTimer.Tick += (_, _) => { PullSharedSettings(); NotionSync.Tick(); FullSync(); };
-            NotionSync.StateChanged += () => Board?.UpdateSyncIcon();
+            NotionSync.StateChanged += () => { foreach (var b in Boards) b.UpdateSyncIcon(); };
             _notionTimer.Start();
             NotionSync.Tick(startup: true); // always on start, then on each account's interval
             FullSync(startup: true);
@@ -185,24 +199,27 @@ public partial class App : Application
         SettingsStore.Save(Settings);
         if (hidden)
         {
-            Board.EndEditing();
             if (GlassWindow.IsPeeking) GlassWindow.Peek(false);
-            var frame = Board.FrameElement;
-            var fade = new System.Windows.Media.Animation.DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(Settings.Animations ? 200 : 1));
-            fade.Completed += (_, _) =>
+            foreach (var b in Boards) // both screens
             {
-                Board.Hide();
-                frame.BeginAnimation(UIElement.OpacityProperty, null);
-                frame.Opacity = 1;
-                ScheduleTrim();
-            };
-            frame.BeginAnimation(UIElement.OpacityProperty, fade);
+                b.EndEditing();
+                var frame = b.FrameElement;
+                var fade = new System.Windows.Media.Animation.DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(Settings.Animations ? 200 : 1));
+                fade.Completed += (_, _) =>
+                {
+                    b.Hide();
+                    frame.BeginAnimation(UIElement.OpacityProperty, null);
+                    frame.Opacity = 1;
+                    ScheduleTrim();
+                };
+                frame.BeginAnimation(UIElement.OpacityProperty, fade);
+            }
             _tray?.Balloon("TaskWall", L.F("Tablica ukryta. Pokażesz ją z menu ikony w zasobniku albo skrótem {0}.", Settings.Hotkey));
         }
         else
         {
             LayoutWindows();
-            Anim.Enter(Board.FrameElement, 0, 22, 420);
+            foreach (var b in Boards) Anim.Enter(b.FrameElement, 0, 22, 420);
         }
     }
 
@@ -239,7 +256,7 @@ public partial class App : Application
         SettingsStore.Save(Settings);
         WeatherService.Refresh();
         ApplySettings();
-        Board?.UpdateSyncIcon();
+        foreach (var b in Boards) b.UpdateSyncIcon();
     }
 
     /// <summary>Accounts whose data is loaded (for alarms).</summary>
@@ -271,7 +288,7 @@ public partial class App : Application
                 Stores[layer].WriteMirror(null);
                 if (layer == "work") PullSharedSettings();
                 _pendingFolders.Remove(layer);
-                Board?.UpdateSyncIcon();
+                foreach (var b in Boards) b.UpdateSyncIcon();
                 Log.Error($"folder {folder} is reachable again – data merged back");
             }
             catch (Exception ex) { Log.Error("retry folder " + folder, ex); }
@@ -314,8 +331,8 @@ public partial class App : Application
             _pendingFolders[layer] = folder; // checked quietly every few seconds; once there, merged into it
             _folderRetry.Start();
         }
-        s.ExternalChange += () => { if (ReferenceEquals(s, Store)) Board?.OnExternalChange(); };
-        s.SyncStateChanged += () => Board?.UpdateSyncIcon();
+        s.ExternalChange += () => { if (ReferenceEquals(s, Store)) foreach (var b in Boards) b.OnExternalChange(); };
+        s.SyncStateChanged += () => { foreach (var b in Boards) b.UpdateSyncIcon(); };
         Stores[layer] = s;
         if (Settings.StretchActive) s.StretchActive(DateTime.Today); // in progress / in review: on to today (after it is in Stores: its BŚU days count)
         s.FillMissing(Settings.AccountFor(layer).Notion.Name); // older tasks get what newer ones have (a project, an "added" date)
@@ -365,7 +382,7 @@ public partial class App : Application
         Store = OpenLayer(layer);
         CalendarService.Layer = layer;
         SettingsStore.Save(Settings);
-        Board.OnLayerChanged();
+        foreach (var b in Boards) b.OnLayerChanged();
     }
 
     /// <summary>Settings changed the folder of a layer: move that layer's data there (merged).</summary>
@@ -398,10 +415,14 @@ public partial class App : Application
         SetAutostart(Settings.StartWithWindows);
         if (Board == null || _clock == null) return;
 
-        Board.ApplyScale(Settings.UiScale);
+        UpdateSecond();
+        foreach (var b in Boards)
+        {
+            b.ApplyScale(Settings.UiScale);
+            b.Rebuild();
+        }
         _clock.SetScale(Settings.UiScale);
-        Board.Rebuild();
-        _clock.UpdateText();
+        _clock.ApplySettings();
         LayoutWindows();
         RegisterHotkey();
         ScheduleGlass();
@@ -506,35 +527,104 @@ public partial class App : Application
         var wa = mon.Work;
         int P(double dip) => (int)Math.Round(dip * s);
 
-        int bw = (int)Math.Round(wa.Width * Math.Clamp(Settings.WidthPercent, 30, 100) / 100);
+        // the board as set, or (the button next to "hide") the whole screen under the top bar
+        bool max = Settings.BoardMax;
+        int edge = P(10);
+        int bw = max ? wa.Width - 2 * edge : (int)Math.Round(wa.Width * Math.Clamp(Settings.WidthPercent, 30, 100) / 100);
         double weekH = wa.Height / s * Math.Clamp(Settings.WeekHeightPercent, 5, 100) / 100;
-        int clockCollapsed = P(ClockWindow.HeaderHeight * ui);
-        int clockFull = P((ClockWindow.HeaderHeight + ClockWindow.CalendarHeight) * ui);
-        int cw = P(ClockWindow.TabWidth * ui);
-        int minTop = wa.Y + (Settings.ShowClock ? clockCollapsed + P(18) : P(14));
-        int bh = Math.Min(P(BoardWindow.ChromeHeight * ui + Board.HeightInWeeks * weekH), wa.Y + wa.Height - minTop - P(14));
+        int barH = P(ClockWindow.BarHeight * ui);
+        int minTop = wa.Y + (Settings.ShowClock ? barH + P(10) : P(14));
+        int bh = max ? wa.Y + wa.Height - edge - minTop
+            : Math.Min(P(BoardWindow.ChromeHeight * ui + Board.HeightInWeeks * weekH), wa.Y + wa.Height - minTop - P(14));
         int maxTop = Math.Max(minTop, wa.Y + wa.Height - bh - P(14));
-        int top = minTop + (int)Math.Round((maxTop - minTop) * Math.Clamp(Settings.VerticalPercent, 0, 100) / 100);
+        int top = max ? minTop : minTop + (int)Math.Round((maxTop - minTop) * Math.Clamp(Settings.VerticalPercent, 0, 100) / 100);
         int left = wa.X + (wa.Width - bw) / 2;
 
         Board.PlacePhysical(left, top, bw, bh, s);
-        if (Settings.ShowClock) _clock.PlacePhysical(wa.X + (wa.Width - cw) / 2, wa.Y, cw, clockFull, s);
+        if (Settings.ShowClock)
+        {
+            // the bar as wide as the board, hanging from the top edge; the month opens under the date
+            _clock.PlacePhysical(left, wa.Y, bw, barH, s);
+            int cw = P(CalendarWindow.TabWidth * ui);
+            _clock.Calendar.PlacePhysical(wa.X + (wa.Width - cw) / 2, wa.Y + barH + P(6), cw, P(CalendarWindow.CalendarHeight * ui), s);
+        }
+        if (_second != null && SecondScreen() is { } m2)
+        {
+            // the second screen: the whole of it
+            int e2 = (int)Math.Round(10 * m2.Scale);
+            _second.PlacePhysical(m2.Work.X + e2, m2.Work.Y + e2, m2.Work.Width - 2 * e2, m2.Work.Height - 2 * e2, m2.Scale);
+        }
 
         // first time: paint the glass before showing, so the board never flashes empty
         if (!_glassReady) { RefreshGlass(); _glassReady = true; }
         else ScheduleGlass();
 
-        if (Settings.BoardHidden) { if (Board.IsVisible) Board.Hide(); }
-        else if (!Board.IsVisible) Board.Show();
+        foreach (var b in Boards)
+            if (Settings.BoardHidden) { if (b.IsVisible) b.Hide(); }
+            else if (!b.IsVisible) b.Show();
         if (Settings.ShowClock) { if (!_clock.IsVisible) _clock.Show(); }
-        else if (_clock.IsVisible) _clock.Hide();
+        else
+        {
+            if (_clock.IsVisible) _clock.Hide();
+            if (_clock.Calendar.IsVisible) _clock.Calendar.Hide();
+        }
+    }
+
+    /// <summary>The second screen chosen in Settings, when it is connected and not the board's own screen.</summary>
+    static MonitorInfo? SecondScreen()
+    {
+        if (string.IsNullOrEmpty(Settings.SecondMonitor)) return null;
+        var main = Monitors.Pick(Settings.Monitor);
+        return Monitors.All().FirstOrDefault(m => m.Device == Settings.SecondMonitor && m.Device != main.Device);
+    }
+
+    /// <summary>Opens or closes the board of the second screen (a setting, or the screen plugged in / out).</summary>
+    void UpdateSecond()
+    {
+        if (Board == null) return;
+        bool want = SecondScreen() != null;
+        if (want && _second == null)
+        {
+            _second = new BoardWindow(second: true);
+            _cornerKey2 = "";
+            Anim.Enter(_second.FrameElement, 0, 22, 520);
+        }
+        else if (!want && _second != null)
+        {
+            var old = _second;
+            _second = null;
+            old.EndEditing();
+            old.Close();
+        }
+    }
+
+    string _cornerKey2 = "";
+    readonly DispatcherTimer _boardsSync = new() { Interval = TimeSpan.FromMilliseconds(150) };
+    DateTime _dirtyAt;
+
+    /// <summary>A board's frosted glass and its sharp corners, from the wallpaper of its own screen.</summary>
+    static void PaintBoard(BoardWindow b, MonitorInfo mon, Wallpaper.Source src, ref string cornerKey)
+    {
+        double blurPx = Math.Clamp(Settings.BlurStrength, 0, 100) * 1.3 * mon.Scale;
+        var br = b.PhysicalRect;
+        // without blur the board shows the plain wallpaper at half resolution
+        b.SetGlass(Settings.Blur ? Wallpaper.RenderGlass(src, br, blurPx) : Wallpaper.RenderGlass(src, br, 0, 0.5));
+        // sharp squares behind the rounded corners: redone only when the board moved or the wallpaper changed
+        int c = (int)Math.Ceiling(b.Radius * mon.Scale) + 2;
+        var key = $"{src.GetHashCode()}|{br.X},{br.Y},{br.Width},{br.Height}|{c}";
+        if (key != cornerKey)
+        {
+            cornerKey = key;
+            b.SetCorners(Wallpaper.RenderCorners(src, br, c), c / mon.Scale);
+        }
+        b.UpdateDrawerGlass();
     }
 
     /// <summary>Re-read the wallpaper (settings button / tray / Windows wallpaper change).</summary>
     public void RefreshWallpaper()
     {
         Wallpaper.Invalidate();
-        _cornerKey = "";
+        _cornerKey = _cornerKey2 = "";
         RefreshGlass();
     }
 
@@ -555,21 +645,13 @@ public partial class App : Application
             var src = Wallpaper.Resolve(mon);
             double blurPx = Math.Clamp(Settings.BlurStrength, 0, 100) * 1.3 * mon.Scale;
             var br = Board.PhysicalRect;
-            // without blur the board shows the plain wallpaper at half resolution
-            Board.SetGlass(Settings.Blur ? Wallpaper.RenderGlass(src, br, blurPx) : Wallpaper.RenderGlass(src, br, 0, 0.5));
-
-            // sharp squares behind the rounded corners: redone only when the board moved or the wallpaper changed
-            int c = (int)Math.Ceiling(Board.Radius * mon.Scale) + 2;
-            var key = $"{src.GetHashCode()}|{br.X},{br.Y},{br.Width},{br.Height}|{c}";
-            if (key != _cornerKey)
-            {
-                _cornerKey = key;
-                Board.SetCorners(Wallpaper.RenderCorners(src, br, c), c / mon.Scale);
-            }
+            PaintBoard(Board, mon, src, ref _cornerKey);
+            if (_second != null && SecondScreen() is { } m2) PaintBoard(_second, m2, Wallpaper.Resolve(m2), ref _cornerKey2);
 
             var cr = _clock.PhysicalRect;
             _clock.SetGlass(Settings.Blur && cr.Width > 0 ? Wallpaper.RenderGlass(src, cr, blurPx) : null);
-            Board.UpdateDrawerGlass();
+            var kr = _clock.Calendar.PhysicalRect;
+            _clock.Calendar.SetGlass(Settings.Blur && kr.Width > 0 ? Wallpaper.RenderGlass(src, kr, blurPx) : null);
 
             if (Wallpaper.Average(src, br) is { } avg && avg != _surfaceTint)
             {
@@ -583,7 +665,7 @@ public partial class App : Application
                 {
                     _autoAccent = col;
                     ApplyTheme();
-                    Board.Rebuild();
+                    foreach (var b in Boards) b.Rebuild();
                 }
             }
         }

@@ -84,6 +84,27 @@ static class Icons
     /// <summary>"More": three dots.</summary>
     public static FrameworkElement More(double s = 18) => Box(s, Fill("M4,10.4 a1.6,1.6 0 1 0 0.01,0 Z M12,10.4 a1.6,1.6 0 1 0 0.01,0 Z M20,10.4 a1.6,1.6 0 1 0 0.01,0 Z"));
 
+    /// <summary>The board over the whole screen (a frame) / back to its size (two frames).</summary>
+    public static FrameworkElement Maximize(bool on, double s = 15) =>
+        Box(s, Line(on ? "M8.5,8.5 H19.5 V19.5 H8.5 Z M5,15.5 V4.5 H16" : "M4.5,4.5 H19.5 V19.5 H4.5 Z", 1.7));
+
+    /// <summary>The top bar's load rings: what is measured, drawn in the ring's colour.</summary>
+    public static FrameworkElement Meter(string kind, Brush brush, double s = 12)
+    {
+        var data = kind switch
+        {
+            "cpu" => "M7,7 H17 V17 H7 Z M10.3,10.3 H13.7 V13.7 H10.3 Z M9.7,3.5 V7 M14.3,3.5 V7 M9.7,17 V20.5 M14.3,17 V20.5 M3.5,9.7 H7 M3.5,14.3 H7 M17,9.7 H20.5 M17,14.3 H20.5",
+            "gpu" => "M2.5,6.5 H21.5 V16.5 H2.5 Z M6,11.5 a3,3 0 1 0 6,0 a3,3 0 1 0 -6,0 M15,9.5 H18.5 M15,13.5 H18.5 M5.5,16.5 V19.5 M10,16.5 V19.5",
+            "ram" => "M2.5,7 H21.5 V15.5 H2.5 Z M6.5,9.8 V12.7 M10.5,9.8 V12.7 M14.5,9.8 V12.7 M18,9.8 V12.7 M5,15.5 V18.5 M19,15.5 V18.5",
+            "disk" => "M4,5.5 H20 V18.5 H4 Z M4,13.5 H20 M16.3,16 h0.01",
+            _ => "M8,19 V5 M4.5,8.5 L8,5 L11.5,8.5 M16,5 V19 M12.5,15.5 L16,19 L19.5,15.5",
+        };
+        var p = new Path { Data = Geometry.Parse(data), Stroke = brush, StrokeThickness = 2, StrokeLineJoin = PenLineJoin.Round, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round };
+        var canvas = new Canvas { Width = 24, Height = 24 };
+        canvas.Children.Add(p);
+        return new Viewbox { Width = s, Height = s, Child = canvas, SnapsToDevicePixels = true, IsHitTestVisible = false };
+    }
+
     /// <summary>Hide the board: a line at the bottom (minimise).</summary>
     public static FrameworkElement Minimize(double s = 16) => Box(s, Line("M5,17 H19", 1.9));
 

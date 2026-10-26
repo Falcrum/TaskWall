@@ -35,6 +35,8 @@ public partial class BoardWindow : GlassWindow
 
     static ViewMode ParseView(string v) => v switch { "day" => ViewMode.Day, "week1" => ViewMode.Week1, "month" => ViewMode.Month, "year" => ViewMode.Year, "timeline" => ViewMode.Timeline, _ => ViewMode.Week2 };
     static string ViewKey(ViewMode v) => v switch { ViewMode.Day => "day", ViewMode.Week1 => "week1", ViewMode.Month => "month", ViewMode.Year => "year", ViewMode.Timeline => "timeline", _ => "week2" };
+    /// <summary>The view comes back on the next start – each board its own.</summary>
+    void SaveView(ViewMode v) { if (IsSecond) S.SecondView = ViewKey(v); else S.View = ViewKey(v); }
     int _weekOffset;
     DateTime _monthFirst = new(DateTime.Today.Year, DateTime.Today.Month, 1);
     int _year = DateTime.Today.Year;
@@ -60,8 +62,21 @@ public partial class BoardWindow : GlassWindow
     Point _pressPoint;
     Border? _dropLine;
 
-    public BoardWindow()
+    /// <summary>The board on the second screen: a view of its own (Settings.SecondView), the whole screen, no new-day work.</summary>
+    public bool IsSecond { get; }
+    /// <summary>When it was last built: a change made on the other board rebuilds this one only if it is older.</summary>
+    public DateTime BuiltAt { get; private set; }
+
+    public BoardWindow() : this(false) { }
+
+    public BoardWindow(bool second)
     {
+        IsSecond = second;
+        if (second)
+        {
+            _view = ParseView(S.SecondView);
+            if (IsWeekView) _lastWeekView = _view;
+        }
         MakeOpaque(); // GPU-rendered window; corners are cut by a region and filled with the wallpaper
         InitializeComponent();
         L.Tree(this); // static XAML texts → English when chosen
@@ -75,7 +90,7 @@ public partial class BoardWindow : GlassWindow
             // the day view and the month that showed "today" follow it to the new day
             if (_dayDate == was) _dayDate = _today;
             if (_monthFirst == new DateTime(was.Year, was.Month, 1)) _monthFirst = new DateTime(_today.Year, _today.Month, 1);
-            App.Instance.OnNewDay();
+            if (!IsSecond) App.Instance.OnNewDay(); // once, by the main board
             Rebuild();
         };
         _dayTimer.Start();
@@ -241,7 +256,7 @@ public partial class BoardWindow : GlassWindow
         _slideDir = viewChanged ? 0 : _view == ViewMode.Day ? Math.Sign((date.Date - _dayDate).TotalDays) : Math.Sign(target - _weekOffset);
         _weekOffset = target;
         _dayDate = date.Date;
-        if (viewChanged) { _view = _lastWeekView; S.View = ViewKey(_view); }
+        if (viewChanged) { _view = _lastWeekView; SaveView(_view); }
         Rebuild();
         if (viewChanged) { Anim.Enter(WeeksGrid, 0, 10, 300); App.Instance.LayoutWindows(); }
     }
@@ -262,7 +277,7 @@ public partial class BoardWindow : GlassWindow
         _dayDate = anchor.Date;
         _view = v;
         if (IsWeekView) _lastWeekView = v;
-        S.View = ViewKey(v);
+        SaveView(v);
         SettingsStore.Save(S);
         _weekOffset = (int)Math.Round((Monday(anchor) - Monday(DateTime.Today)).TotalDays / 7);
         _monthFirst = new DateTime(anchor.Year, anchor.Month, 1);
@@ -293,7 +308,7 @@ public partial class BoardWindow : GlassWindow
     /// <summary>Global hotkey: today's "add task" box, ready to type.</summary>
     public void QuickAdd()
     {
-        if (!IsWeekView) { _view = _lastWeekView; S.View = ViewKey(_view); }
+        if (!IsWeekView) { _view = _lastWeekView; SaveView(_view); }
         _weekOffset = 0;
         _dayDate = DateTime.Today;
         SetDrawer(false);
@@ -400,6 +415,7 @@ public partial class BoardWindow : GlassWindow
 
     public void Rebuild()
     {
+        BuiltAt = DateTime.UtcNow;
         // editors in the old visuals are gone after this: make sure their late focus events do nothing
         foreach (var cancel in _editors.ToList()) cancel();
         _editors.Clear();
@@ -857,14 +873,23 @@ public partial class BoardWindow : GlassWindow
         // multi-day tasks of this day (the active one and the days it continued through) go right under the timed ones,
         // each in its week lane; timed block + lanes share their heights across the week, so a task stays in one line
         var lanes = _lanes.TryGetValue(week, out var lw) ? lw : new Dictionary<string, int>();
-        var spanHere = Store.Data.Tasks.Where(t => lanes.ContainsKey(t.Id))
+        // done tasks fold into one "✓ 3 zrobione" line at the top of the day (Settings → Tablica: always, or on days
+        // that are over) – only the ones finished that day: earlier days of a multi-day task show the state it had then
+        bool folding = S.CollapseDone || (S.FoldPastDone && isPast);
+        bool fold = folding && !_showDone.Contains(key);
+        int doneHere = tasks.Count(t => t.Done);
+        var doneToggle = folding && doneHere > 0 ? DoneToggle(key, doneHere, fold, compact) : null;
+        var spanAll = Store.Data.Tasks.Where(t => lanes.ContainsKey(t.Id))
             .Select(t => (t, days: SpanDays(t)!)).Where(x => x.days.Contains(key)).ToList();
-        var spanIds = spanHere.Where(x => x.t.Day == key && !x.t.Archived).Select(x => x.t.Id).ToHashSet();
+        var spanIds = spanAll.Where(x => x.t.Day == key && !x.t.Archived).Select(x => x.t.Id).ToHashSet();
+        var spanHere = spanAll.Where(x => !(fold && x.t.Done && x.t.Day == key)).ToList(); // folded away: its lane is free that day
+        var nested = Nest(tasks.Where(t => !spanIds.Contains(t.Id) && !(fold && t.Done)));
         if (spanHere.Count > 0)
         {
             var block = new Grid();
             block.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto, SharedSizeGroup = $"W{week}T" });
             var timedPanel = new StackPanel();
+            if (doneToggle != null) timedPanel.Children.Add(doneToggle); // inside the shared block: the lanes stay level across the week
             foreach (var (_, el) in timed) timedPanel.Children.Add(el);
             block.Children.Add(timedPanel);
             int maxLane = spanHere.Max(x => lanes[x.t.Id]);
@@ -877,6 +902,21 @@ public partial class BoardWindow : GlassWindow
                 Grid.SetRow(el, lanes[t.Id] + 1);
                 block.Children.Add(el);
             }
+            // a lane nobody uses that day (a multi-day task ended or was shortened, or folded away): the day's own tasks
+            // move up into it, one line each like the lanes, instead of an empty slot
+            var taken = spanHere.Select(x => lanes[x.t.Id]).ToHashSet();
+            var free = Enumerable.Range(0, maxLane).Where(l => !taken.Contains(l)).ToList();
+            var parents = nested.Where(n => n.Depth > 0).Select(n => n.Task.ParentNotionId).ToHashSet();
+            var fillers = _addingKey == key ? new List<TaskItem>() // typing a new task: the list keeps still
+                : nested.Where(n => n.Depth == 0 && (n.Task.NotionId == null || !parents.Contains(n.Task.NotionId)) && !_expanded.Contains(n.Task.Id))
+                    .Take(free.Count).Select(n => n.Task).ToList();
+            for (int i = 0; i < fillers.Count; i++)
+            {
+                var el = BuildTaskRow(fillers[i], false, compact, null, inLane: true);
+                Grid.SetRow(el, free[i] + 1);
+                block.Children.Add(el);
+            }
+            if (fillers.Count > 0) nested = nested.Where(n => !fillers.Contains(n.Task)).ToList();
             panel.Children.Add(block);
             // subtasks of a multi-day task open under the lanes, on its current day only: the shared lane heights stay one line,
             // so the other days of the week get no empty space
@@ -891,31 +931,19 @@ public partial class BoardWindow : GlassWindow
                 panel.Children.Add(sub);
             }
         }
-        else foreach (var (_, el) in timed) panel.Children.Add(el);
+        else
+        {
+            if (doneToggle != null) panel.Children.Add(doneToggle);
+            foreach (var (_, el) in timed) panel.Children.Add(el);
+        }
         // multi-day tasks without a lane in this week (only one of their days is here): a plain row with "↷ k/n"
         foreach (var t in Store.Data.Tasks.Where(t => !lanes.ContainsKey(t.Id) && t.Day != key && SpanDays(t)?.Contains(key) == true))
         {
             var days = SpanDays(t)!;
             panel.Children.Add(BuildContinuedRow(t, (days.IndexOf(key) + 1, days.Count), compact, planned: string.CompareOrdinal(key, t.Day) > 0, dayKey: key));
         }
-        // optional (Settings → Tablica): done tasks folded into one "✓ 3 zrobione" line, click to unfold
-        // folded: always (Settings → Tablica) or on days that are over (on by default) – a past day shows what is still open
-        bool folding = S.CollapseDone || (S.FoldPastDone && isPast);
-        bool fold = folding && !_showDone.Contains(key);
-        var listed = tasks.Where(t => !spanIds.Contains(t.Id) && !(fold && t.Done)).ToList();
-        foreach (var (t, depth) in Nest(listed))
+        foreach (var (t, depth) in nested)
             panel.Children.Add(BuildTaskRow(t, false, compact, SpanDays(t) is { } sd ? (sd.IndexOf(key) + 1, sd.Count) : null, depth));
-        int doneHere = tasks.Count(t => t.Done && !spanIds.Contains(t.Id));
-        if (folding && doneHere > 0)
-        {
-            var toggle = new TextBlock
-            {
-                Text = (fold ? "▸  " : "▾  ") + L.F("✓ {0} zrobione", doneHere), FontSize = Math.Max(9.5, S.FontSize - 2), Foreground = Res("FgFaint"),
-                Cursor = Cursors.Hand, Margin = new Thickness(2, 2, 0, 3), ToolTip = fold ? L.T("Pokaż zrobione zadania") : L.T("Zwiń zrobione zadania"),
-            };
-            toggle.MouseLeftButtonUp += (_, e) => { e.Handled = true; if (!_showDone.Remove(key)) _showDone.Add(key); Rebuild(); };
-            panel.Children.Add(toggle);
-        }
         var addRow = BuildAddRow(key, date, compact);
         if (isToday && !compact && tasks.Count == 0 && spanHere.Count == 0 && _addingKey != key) // an empty today: one line of what can be typed
             panel.Children.Add(new TextBlock
@@ -955,6 +983,31 @@ public partial class BoardWindow : GlassWindow
             menu.IsOpen = true;
         };
         return outer;
+    }
+
+    /// <summary>"✓ 3 zrobione ▸" – the first line of a day with done tasks folded away; a click shows / folds them.</summary>
+    FrameworkElement DoneToggle(string key, int count, bool fold, bool compact)
+    {
+        var green = TaskMarks.DoneGreen;
+        var tb = new TextBlock { FontSize = Math.Max(9.5, S.FontSize - (compact ? 2 : 1.5)), TextTrimming = TextTrimming.CharacterEllipsis };
+        tb.Inlines.Add(new Run("✓  ") { FontWeight = FontWeights.Bold, Foreground = Tx(green) });
+        tb.Inlines.Add(new Run(L.F("{0} zrobione", count)) { Foreground = Res("FgDim") });
+        tb.Inlines.Add(new Run(fold ? "   ▸" : "   ▾") { Foreground = Res("FgFaint") });
+        var pill = new Border
+        {
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(5, compact ? 1 : 2, 4, compact ? 1 : 2),
+            Margin = new Thickness(-4, 0, 0, 2),
+            Background = B(A(green, 0x16)),
+            BorderBrush = B(A(green, 0x50)),
+            BorderThickness = new Thickness(2, 0, 0, 0),
+            Cursor = Cursors.Hand,
+            Child = tb,
+            ToolTip = fold ? L.T("Pokaż zrobione zadania") : L.T("Zwiń zrobione zadania"),
+        };
+        Anim.HoverBackground(pill, A(green, 0x16), A(green, 0x2C));
+        pill.MouseLeftButtonUp += (_, e) => { e.Handled = true; if (!_showDone.Remove(key)) _showDone.Add(key); Rebuild(); };
+        return pill;
     }
 
     /// <summary>Read-only meeting from Google Calendar.</summary>
@@ -1088,18 +1141,20 @@ public partial class BoardWindow : GlassWindow
     FrameworkElement BuildContinuedRow(TaskItem t, (int Index, int Total) span, bool compact, bool planned = false, string? dayKey = null)
     {
         double fs = compact ? Math.Max(9.5, S.FontSize - 1.5) : S.FontSize;
-        var grid = new Grid { Margin = new Thickness(0, 0, 0, compact ? 1 : 3), Opacity = t.Done ? 0.5 : planned ? 0.55 : 0.6, Background = Brushes.Transparent, Cursor = Cursors.Hand };
+        // an earlier day: the state it had that day (in progress / review / tests), also once the task is done – it is
+        // crossed out on the day it was finished; a planned day: dashed (done: done on all of them)
+        var dayState = !planned && dayKey != null ? t.DayStates?.GetValueOrDefault(dayKey) ?? "started" : null;
+        bool doneHere = planned ? t.Done : dayState == "done";
+        var grid = new Grid { Margin = new Thickness(0, 0, 0, compact ? 1 : 3), Opacity = doneHere ? 0.5 : planned ? 0.55 : 0.7, Background = Brushes.Transparent, Cursor = Cursors.Hand };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition());
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        // an earlier day: the state it had that day (in progress / review); a planned one: dashed
-        var dayState = !planned && !t.Done && dayKey != null ? t.DayStates?.GetValueOrDefault(dayKey) ?? "started" : null;
         grid.Children.Add(TaskMarks.Status(t, TaskMarks.BarWidth, dashed: planned && !t.Done, gap: compact ? 5 : 7, state: dayState));
         if (TaskMarks.Right(t) is { } proj) { Grid.SetColumn(proj, 2); proj.Margin = new Thickness(3, 1, 0, 1); grid.Children.Add(proj); }
         var text = new TextBlock { TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = fs, Foreground = Res("Fg") };
         var tags = TaskItem.Tags(t.Text, out var rest);
         var main = new Run(tags.Count > 0 ? rest : t.Text);
-        if (t.Done) main.TextDecorations = TextDecorations.Strikethrough;
+        if (doneHere) main.TextDecorations = TextDecorations.Strikethrough;
         text.Inlines.Add(main);
         // like the task's own row: the name first, the day / project / categories on a small second line
         var meta = new TextBlock { FontSize = Math.Max(8, fs - 3.5), TextTrimming = TextTrimming.CharacterEllipsis, Foreground = Res("FgFaint"), Margin = new Thickness(0, 1, 0, 0), Height = MetaHeight(fs) };
@@ -1115,6 +1170,7 @@ public partial class BoardWindow : GlassWindow
         grid.Children.Add(lines);
         var where = t.Archived ? L.T("w archiwum") : ParseKey(t.Day!).ToString("dddd d MMM", Pl);
         grid.ToolTip = t.Text + "\n" + L.F("Zadanie wielodniowe: dzień {0} z {1}. Teraz: {2}{3}", span.Index, span.Total, where, t.Done ? " – " + L.T("zrobione") : "")
+            + (dayState != null ? "\n" + L.F("Tego dnia: {0}", TaskMarks.StateName(t, dayState)) : "")
             + (planned ? "\n" + L.T("Zaplanowane (Potrwa do…). Shift + przeciągnięcie na dzień zmienia koniec.") : "");
         grid.MouseLeftButtonUp += (_, e) =>
         {
@@ -1374,8 +1430,9 @@ public partial class BoardWindow : GlassWindow
         var content = new StackPanel();
         Grid.SetColumn(content, 1);
         // in a multi-day lane: one line (the lanes stay compact and aligned); the full text is in the tool tip
-        var text = new TextBlock { TextWrapping = span != null ? TextWrapping.NoWrap : TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, Foreground = Res("Fg"), FontSize = fs };
-        if (span != null) text.ToolTip = t.Text;
+        bool oneLine = span != null || inLane; // a lane, or a task moved up into a free lane
+        var text = new TextBlock { TextWrapping = oneLine ? TextWrapping.NoWrap : TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, Foreground = Res("Fg"), FontSize = fs };
+        if (oneLine) text.ToolTip = t.Text;
         var tags = TaskItem.Tags(t.Text, out var rest);
         if (t.Time != null) // planned hours ("14-16" typed with the task) – part of what the task says, so in front
             text.Inlines.Add(new Run((t.End != null ? $"{t.Time}–{t.End}" : t.Time) + "  ") { FontWeight = FontWeights.SemiBold, Foreground = Res("FgDim") });
@@ -1383,7 +1440,7 @@ public partial class BoardWindow : GlassWindow
         // small second line under it, so every name starts at the same place
         var meta = new WrapPanel { Margin = new Thickness(0, 1, 0, 0) };
         double mfs = Math.Max(8, fs - 3.5);
-        if (span != null) { meta.Height = MetaHeight(fs); meta.ClipToBounds = true; } // a multi-day lane: the same height as its other days' rows
+        if (oneLine) { meta.Height = MetaHeight(fs); meta.ClipToBounds = true; } // a multi-day lane: the same height as its other days' rows
         foreach (var tag in tags) meta.Children.Add(TagChip(tag, mfs));
         if (t.IsTracking || t.TrackedMinutes > 0) // the work timer: "⏱ 1h 05m", live while it runs
         {
@@ -2068,8 +2125,20 @@ public partial class BoardWindow : GlassWindow
         ShowDropLine(panel, DropIndex(panel, e));
     }
 
-    static List<FrameworkElement> TaskRows(Panel panel) =>
-        panel.Children.OfType<FrameworkElement>().Where(c => c.Tag is TaskItem).ToList();
+    /// <summary>The day's own task rows in order – also those moved up into a free lane of the multi-day block.</summary>
+    static List<FrameworkElement> TaskRows(Panel panel)
+    {
+        var rows = new List<FrameworkElement>();
+        foreach (var c in panel.Children.OfType<FrameworkElement>())
+            if (c.Tag is TaskItem) rows.Add(c);
+            else if (c is Grid block)
+                rows.AddRange(block.Children.OfType<FrameworkElement>().Where(r => r.Tag is TaskItem t && SpanDays(t) == null).OrderBy(Grid.GetRow));
+        return rows;
+    }
+
+    /// <summary>Where a row sits among the panel's children (a row in the multi-day block: the block's place).</summary>
+    static int PanelIndex(Panel panel, FrameworkElement row) =>
+        row.Parent is Grid g && !ReferenceEquals(g, panel) && g.Parent == panel ? panel.Children.IndexOf(g) : panel.Children.IndexOf(row);
 
     static int DropIndex(Panel panel, DragEventArgs e)
     {
@@ -2084,8 +2153,8 @@ public partial class BoardWindow : GlassWindow
         _dropLine ??= new Border { Height = 2, CornerRadius = new CornerRadius(1), Margin = new Thickness(0, 1, 4, 1), IsHitTestVisible = false };
         _dropLine.Background = Res("AccentBrush");
         var rows = TaskRows(panel);
-        int at = rowIndex < rows.Count ? panel.Children.IndexOf(rows[rowIndex])
-               : rows.Count > 0 ? panel.Children.IndexOf(rows[^1]) + 1 : panel.Children.Count - 1;
+        int at = rowIndex < rows.Count ? PanelIndex(panel, rows[rowIndex])
+               : rows.Count > 0 ? PanelIndex(panel, rows[^1]) + 1 : panel.Children.Count - 1;
         if (_dropLine.Parent == panel)
         {
             int cur = panel.Children.IndexOf(_dropLine);
@@ -2093,8 +2162,8 @@ public partial class BoardWindow : GlassWindow
         }
         if (_dropLine.Parent is Panel old) old.Children.Remove(_dropLine);
         rows = TaskRows(panel);
-        at = rowIndex < rows.Count ? panel.Children.IndexOf(rows[rowIndex])
-           : rows.Count > 0 ? panel.Children.IndexOf(rows[^1]) + 1 : Math.Max(0, panel.Children.Count - 1);
+        at = rowIndex < rows.Count ? PanelIndex(panel, rows[rowIndex])
+           : rows.Count > 0 ? PanelIndex(panel, rows[^1]) + 1 : Math.Max(0, panel.Children.Count - 1);
         panel.Children.Insert(at, _dropLine);
     }
 

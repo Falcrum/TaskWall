@@ -580,9 +580,13 @@ public sealed class BoardStore
 
     // ---------- mutations (always on the UI thread) ----------
 
+    /// <summary>Any store changed (the other board, on the second screen, follows).</summary>
+    public static event Action? Dirtied;
+
     public void MarkDirty()
     {
         _version++;
+        Dirtied?.Invoke();
         _saveTimer.Stop();
         _saveTimer.Start();
     }

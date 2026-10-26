@@ -1,6 +1,6 @@
 # TaskWall
 
-Tablica zadań na pulpicie Windows: dzień, tydzień, dwa tygodnie, miesiąc albo rok, zegar z kalendarzem i matowe szkło z rozmytej tapety, w stylu [Todowall](https://github.com/Dragonify73/Todowall). Kod jest napisany od zera.
+Tablica zadań na pulpicie Windows: dzień, tydzień, dwa tygodnie, miesiąc albo rok, pasek z zegarem, kalendarzem, pogodą i obciążeniem komputera, opcjonalna druga tablica na drugim ekranie oraz matowe szkło z rozmytej tapety, w stylu [Todowall](https://github.com/Dragonify73/Todowall). Kod jest napisany od zera.
 
 Do tego: dwa konta (Praca / Prywatne) z synchronizacją przez folder w chmurze, backlog z Notion (automatyczna synchronizacja albo import CSV), alarmy i spotkania z przypomnieniami, spotkania i święta z Kalendarza Google, oznaczenia dni (np. HO), powtarzane zadania i oznaczenia, checklisty, sprytne dodawanie, wyszukiwarka, estymacje, kategorie, archiwum, cofanie, eksport CSV. Interfejs po polsku albo angielsku.
 

@@ -1,6 +1,6 @@
 # TaskWall
 
-A task board that lives on the Windows desktop: day, week, two weeks, month or year, a clock with a calendar and frosted glass made from your blurred wallpaper – in the spirit of [Todowall](https://github.com/Dragonify73/Todowall), written from scratch.
+A task board that lives on the Windows desktop: day, week, two weeks, month or year, a top bar with the clock, a calendar, the weather and the computer's load, an optional second board on another screen, and frosted glass made from your blurred wallpaper – in the spirit of [Todowall](https://github.com/Dragonify73/Todowall), written from scratch.
 
 On top of that: two accounts (Work / Private) synced through a cloud folder, a backlog fed from Notion (automatic sync or CSV import), alarms and meetings with reminders, Google Calendar meetings and holidays, day marks (e.g. home office), repeating tasks and marks, checklists, smart add, search, estimates, categories, archive, undo, CSV export. The UI is in Polish or English.
 
