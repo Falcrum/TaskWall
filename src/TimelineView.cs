@@ -24,8 +24,14 @@ public sealed class TimelineSettings
     public string? Project { get; set; }
     public string? Category { get; set; }
     public string? Priority { get; set; }
-    /// <summary>"all", "open", "started", "review", "done".</summary>
+    /// <summary>"all", "open", "started", "review", "tests", "hold", "done".</summary>
     public string State { get; set; } = "all";
+    /// <summary>The meetings group open (up to three rows a day) or folded to one row (the first one, "+N").</summary>
+    public bool MeetingsOpen { get; set; }
+    /// <summary>Lower rows: more tasks on screen.</summary>
+    public bool Compact { get; set; }
+    /// <summary>Groups folded to their header (by name).</summary>
+    public List<string>? Folded { get; set; }
 }
 
 /// <summary>
@@ -62,6 +68,8 @@ public sealed class TimelineView : Grid
     bool _dragged;
 
     sealed record Item(TaskItem Task, DateTime Start, DateTime Current, DateTime End, int Row, string Group, int Workdays);
+    sealed record GroupHead(string Name, int Row, int Count, int Done, bool Folded);
+    readonly List<GroupHead> _groupHeads = new();
 
     static TimelineSettings S => App.Settings.Timeline;
     static Brush Res(string key) => (Brush)Application.Current.Resources[key];
@@ -70,7 +78,7 @@ public sealed class TimelineView : Grid
     static SolidColorBrush Tx(Color c) => new(Th.Light ? Color.FromArgb(c.A, (byte)(c.R * 0.6), (byte)(c.G * 0.6), (byte)(c.B * 0.6)) : c);
     static bool DayOff(DateTime d) => d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday || DaysOff.Name(d) != null;
     double W => Math.Clamp(S.DayWidth, 8, 160);
-    double RowHeight => Math.Round(App.Settings.FontSize * 2.5 + 6);
+    double RowHeight => Math.Round(S.Compact ? App.Settings.FontSize * 1.9 + 4 : App.Settings.FontSize * 2.5 + 6);
 
     public TimelineView(Func<BoardStore> store, Func<TaskItem, FrameworkElement, ContextMenu> menu, Action<DateTime> open, Action<TaskItem, int> moveBy, Action<TaskItem, DateTime> setEnd)
     {
@@ -255,8 +263,13 @@ public sealed class TimelineView : Grid
         // meetings first, in their own group: as many rows as meetings overlap on one day
         _meetingRows = MeetingLanes(store);
         int row = _meetingRows > 0 ? _meetingRows + 1 : 0;
+        _groupHeads.Clear();
         foreach (var g in groups)
         {
+            // each group: its header (name, how many, how many done); folded = the header alone
+            bool folded = S.Group != "none" && S.Folded?.Contains(g.Key) == true;
+            _groupHeads.Add(new GroupHead(g.Key, row, g.Count(), g.Count(x => x.T.Done), folded));
+            if (folded) { row += 1; continue; }
             var ends = new List<DateTime>();
             foreach (var x in g)
             {
@@ -299,9 +312,12 @@ public sealed class TimelineView : Grid
         _ => "",
     };
 
+    /// <summary>Grouped by state: each group's header in its state's colour.</summary>
+    static Color StateGroupColor(string g) => TaskMarks.StateColor(null!, g == L.T("Zrobione") ? "done" : g == "Hold" ? "hold" : g == L.T("Testy") ? "tests" : g == L.T("Review") ? "review" : g == L.T("W trakcie") ? "started" : "todo");
+
     int GroupRank(string g) => S.Group switch
     {
-        "state" => g == L.T("Testy") ? 0 : g == L.T("Review") ? 1 : g == L.T("W trakcie") ? 2 : g == L.T("Do zrobienia") ? 3 : 4,
+        "state" => g == "Hold" ? 0 : g == L.T("Testy") ? 1 : g == L.T("Review") ? 2 : g == L.T("W trakcie") ? 3 : g == L.T("Do zrobienia") ? 4 : 5,
         "priority" => Rank(g),
         _ => g.Length == 0 ? 1 : 0, // "no project / category" last
     };
@@ -343,7 +359,7 @@ public sealed class TimelineView : Grid
     {
         _header.Children.Clear();
         _days.Children.Clear();
-        _bars.Children.Clear();
+        _bars.Children.Clear(); // (the hover band goes with them)
         _overlay.Children.Clear();
         int first = (int)Math.Floor(_left), count = (int)Math.Ceiling(width / w) + 2;
         double X(DateTime d) => ((d - Origin).TotalDays - _left) * w;
@@ -372,7 +388,9 @@ public sealed class TimelineView : Grid
                 _days.Children.Add(At(new Rectangle { Width = 1, Height = 4000, Fill = B(Th.Ink(monthStart ? (byte)0x30 : weekStart ? (byte)(Th.Light ? 0x22 : 0x18) : (byte)(Th.Light ? 0x14 : 0x0C))) }, x, 0));
         }
 
-        _days.Children.Insert(0, new Rectangle { Width = width, Height = 4000, Fill = MakeHatch(Th.Ink(Th.Light ? (byte)0x2A : (byte)0x16)), Clip = offDays });
+        // days off: a light hatch (it shouldn't compete with the bars); today: a soft band in the accent
+        _days.Children.Insert(0, new Rectangle { Width = width, Height = 4000, Fill = MakeHatch(Th.Ink(Th.Light ? (byte)0x1C : (byte)0x0E)), Clip = offDays });
+        _days.Children.Add(At(new Rectangle { Width = w, Height = 4000, Fill = B(A(((SolidColorBrush)Res("AccentBrush")).Color, 0x12)) }, X(DateTime.Today), 0));
         foreach (var (mc, g) in marked)
             _days.Children.Add(new Rectangle { Width = width, Height = 4000, Fill = MakeHatch(A(mc, 0x60)), Clip = g });
 
@@ -465,16 +483,20 @@ public sealed class TimelineView : Grid
         if (_meetingRows > 0)
         {
             var violet = Color.FromRgb(0x8C, 0x9B, 0xFF);
-            _bars.Children.Add(At(new Border
+            // folded (the default): one row – each day's first meeting and "+N"; open: up to three rows a day
+            var meetHead = new Border
             {
-                CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 0, 6, 1), Background = B(A(violet, 0x26)),
-                Child = new TextBlock { Text = L.Up(L.T("Spotkania")), FontSize = 9.5, FontWeight = FontWeights.Bold, Foreground = Tx(violet) },
-            }, 8, -1));
+                CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 0, 6, 1), Background = B(A(violet, 0x26)), Cursor = Cursors.Hand,
+                Child = new TextBlock { Text = (S.MeetingsOpen ? "▾  " : "▸  ") + L.Up(L.T("Spotkania")), FontSize = 9.5, FontWeight = FontWeights.Bold, Foreground = Tx(violet) },
+                ToolTip = S.MeetingsOpen ? L.T("Zwiń spotkania do jednego wiersza") : L.T("Rozwiń spotkania (do trzech wierszy dziennie)"),
+            };
+            meetHead.MouseLeftButtonDown += (_, e) => { e.Handled = true; S.MeetingsOpen = !S.MeetingsOpen; SettingsStore.Save(App.Settings); Refresh(); };
+            _bars.Children.Add(At(meetHead, 8, -1));
             for (int i = -1; i < count + 1; i++)
             {
                 var d = Origin.AddDays(first + i);
                 var day = MeetingsOn(store, d);
-                int wanted = w < MeetingListWidth ? Math.Min(day.Count, 1) : Math.Min(day.Count, 3);
+                int wanted = w < MeetingListWidth || !S.MeetingsOpen ? Math.Min(day.Count, 1) : Math.Min(day.Count, 3);
                 if (wanted > _meetingRows && _barDrag == null && _dragFrom == null) _growMeetings = true;
                 if (day.Count == 0) continue;
                 string Line1(Meeting m) => $"{m.From:hh\\:mm}–{(m.To >= TimeSpan.FromHours(24) ? "24:00" : m.To.ToString(@"hh\:mm"))}  {m.Title}" + (m.Own ? "" : "  (" + L.T("z kalendarza") + ")");
@@ -492,6 +514,24 @@ public sealed class TimelineView : Grid
                 }
                 // a small agenda per day, like a calendar's month view: "10:00 Daily", one row each; more than fit: "+N"
                 int rows = Math.Max(1, _meetingRows), shown = day.Count > rows ? rows - 1 : day.Count;
+                if (rows == 1 && day.Count > 1)
+                {
+                    // one row: the first meeting with "+N" after it, all of them in the tool tip
+                    var one = new TextBlock { FontSize = Math.Max(9.5, App.Settings.FontSize - 2.5), Foreground = Res("Fg"), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+                    one.Inlines.Add(new System.Windows.Documents.Run(day[0].From.ToString(@"hh\:mm") + "  ") { FontWeight = FontWeights.SemiBold, Foreground = Tx(violet) });
+                    one.Inlines.Add(new System.Windows.Documents.Run(day[0].Title));
+                    var plus = new TextBlock { Text = $"+{day.Count - 1}", FontSize = 9.5, FontWeight = FontWeights.Bold, Foreground = Tx(violet), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0) };
+                    var dock = new DockPanel();
+                    DockPanel.SetDock(plus, Dock.Right);
+                    dock.Children.Add(plus);
+                    dock.Children.Add(one);
+                    _bars.Children.Add(At(new Border
+                    {
+                        Width = Math.Max(10, w - 6), Height = RowHeight - 14, CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 0, 4, 0),
+                        Background = B(A(violet, 0x40)), BorderBrush = B(A(violet, 0xC0)), BorderThickness = new Thickness(2.5, 0, 0, 0), ToolTip = tipAll, Child = dock,
+                    }, X(d) + 3, 16));
+                    continue;
+                }
                 for (int k = 0; k <= shown && k < rows; k++)
                 {
                     bool more = k == shown;
@@ -516,28 +556,41 @@ public sealed class TimelineView : Grid
                 }
             }
         }
-        string? lastGroup = null;
-        foreach (var it in _items)
-        {
-            if (S.Group != "none" && it.Group != lastGroup)
+        // groups: a line and a header "▾ FOA  12 · 4 ✓" – a click folds the group to its header and back
+        if (S.Group != "none")
+            foreach (var gh in _groupHeads)
             {
-                lastGroup = it.Group;
-                var name = it.Group.Length > 0 ? it.Group : S.Group switch { "project" => L.T("bez projektu"), "category" => L.T("bez kategorii"), "priority" => L.T("bez priorytetu"), _ => "" };
-                Color gc = S.Group == "project" && it.Group.Length > 0 ? ProjectColor(it.Group)
-                    : S.Group == "priority" && it.Group.Length > 0 ? BoardWindow.PriorityColor(it.Group) : Th.Ink(0x90);
-                double gy = it.Row * RowHeight - 4;
-                _bars.Children.Add(At(new Line { X1 = 0, X2 = width, Stroke = B(A(gc, 0x70)), StrokeThickness = 1, StrokeDashArray = new DoubleCollection { 5, 4 } }, 0, Math.Max(1, gy)));
+                var name = gh.Name.Length > 0 ? gh.Name : S.Group switch { "project" => L.T("bez projektu"), "category" => L.T("bez kategorii"), "priority" => L.T("bez priorytetu"), _ => "" };
+                Color gc = S.Group == "project" && gh.Name.Length > 0 ? ProjectColor(gh.Name)
+                    : S.Group == "priority" && gh.Name.Length > 0 ? BoardWindow.PriorityColor(gh.Name)
+                    : S.Group == "state" ? StateGroupColor(gh.Name) : Th.Ink(0x90);
+                double gy = gh.Row * RowHeight - 4;
+                _bars.Children.Add(At(new Line { X1 = 0, X2 = width, Stroke = B(A(gc, 0x50)), StrokeThickness = 1, StrokeDashArray = new DoubleCollection { 5, 4 } }, 0, Math.Max(1, gy)));
+                var label = new TextBlock { FontSize = 9.5, FontWeight = FontWeights.Bold, Foreground = Tx(gc) };
+                label.Inlines.Add(new System.Windows.Documents.Run((gh.Folded ? "▸  " : "▾  ") + L.Up(name)));
+                label.Inlines.Add(new System.Windows.Documents.Run($"   {gh.Count}" + (gh.Done > 0 ? $" · {gh.Done} ✓" : "")) { FontWeight = FontWeights.Normal, Foreground = Res("FgFaint") });
                 var head = new Border
                 {
-                    CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 0, 6, 1), Background = B(A(gc, 0x26)),
-                    Child = new TextBlock { Text = L.Up(name), FontSize = 9.5, FontWeight = FontWeights.Bold, Foreground = Tx(gc) },
+                    CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 0, 7, 1), Background = B(A(gc, 0x26)), Child = label, Cursor = Cursors.Hand,
+                    ToolTip = (gh.Folded ? L.T("Rozwiń grupę") : L.T("Zwiń grupę")) + "\n" + L.F("{0} zadań, zrobione {1}", gh.Count, gh.Done),
+                };
+                var key = gh.Name;
+                head.MouseLeftButtonDown += (_, e) =>
+                {
+                    e.Handled = true;
+                    var folded = S.Folded ??= new List<string>();
+                    if (!folded.Remove(key)) folded.Add(key);
+                    SettingsStore.Save(App.Settings);
+                    Refresh();
                 };
                 _bars.Children.Add(At(head, 8, gy + 3));
             }
+        foreach (var it in _items)
+        {
             if (it.End < viewFrom || it.Start > viewTo) continue;
             BuildBar(it, X, w);
         }
-        if (_items.Count == 0)
+        if (_items.Count == 0 && _groupHeads.Count == 0)
             _bars.Children.Add(At(new TextBlock { Text = L.T("Brak zadań do pokazania – zmień filtry albo dodaj zadania na dni."), Foreground = Res("FgFaint"), FontSize = 12 }, 12, 14));
         (Window.GetWindow(this) as BoardWindow)?.UpdateTimelineRange(); // the board it sits on (either screen)
     }
@@ -570,7 +623,7 @@ public sealed class TimelineView : Grid
             max = Math.Max(max, day.Count);
         }
         // a list per day: up to three rows (the third says "+N"); zoomed out, one badge per day
-        return W < MeetingListWidth ? Math.Min(max, 1) : Math.Min(max, 3);
+        return W < MeetingListWidth || !S.MeetingsOpen ? Math.Min(max, 1) : Math.Min(max, 3); // folded: one row
     }
 
     static Color ProjectColor(string name) =>
@@ -587,6 +640,7 @@ public sealed class TimelineView : Grid
     // ---------- a task's bar: only its name inside; the rest in the tool tip. Drag = move, the right edge = its end ----------
 
     (TaskItem Task, Grid Bar, bool Resize, double StartX, double Width)? _barDrag;
+    readonly Rectangle _rowBand = new() { IsHitTestVisible = false, Fill = new SolidColorBrush(Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF)) };
 
     /// <summary>The state of each day worked on the task, from its first day to its current one ("started", "review", "tests", "done").</summary>
     static List<(DateTime Day, string State)> StateHistory(TaskItem t, DateTime from, DateTime current)
@@ -621,10 +675,13 @@ public sealed class TimelineView : Grid
         var bar = new Grid { Width = fullWidth, Height = height, Tag = t, Cursor = Cursors.Hand, Opacity = t.Done ? 0.5 : 1, Background = Brushes.Transparent };
         // the part already worked on / its day: a solid card; the planned days after it: dashed, lighter
         double solid = Math.Clamp(xCur - x0, 6, fullWidth);
+        // the card in its state's colour (soft), so the state reads at a glance; to do stays neutral
+        var stateColor = TaskMarks.StateColor(t);
+        Brush CardBg(byte a) => t.State is "todo" ? B(Th.Ink((byte)(a * 0.6))) : B(A(stateColor, a));
         bar.Children.Add(new Border
         {
             Width = solid, HorizontalAlignment = HorizontalAlignment.Left, CornerRadius = new CornerRadius(4, solid >= fullWidth - 1 ? 4 : 0, solid >= fullWidth - 1 ? 4 : 0, 4),
-            Background = B(t.IsStarted ? A(accent, 0x30) : Th.Ink(0x1C)), BorderBrush = B(Th.Ink(0x1A)), BorderThickness = new Thickness(1),
+            Background = CardBg(0x2E), BorderBrush = B(Th.Ink(0x1A)), BorderThickness = new Thickness(1),
         });
         if (fullWidth - solid > 1)
             bar.Children.Add(new Rectangle
@@ -642,15 +699,20 @@ public sealed class TimelineView : Grid
         // the way through the states, day by day: a thin strip under each day worked in the colour of that day's
         // state (in progress, review, tests, done) – a task stuck in review shows a long violet stretch
         var history = StateHistory(t, it.Start, it.Current);
-        foreach (var (day, state) in history)
+        // runs of days in one state drawn as one strip (no gaps between days); a day not worked (a weekend) ends a run
+        for (int i = 0; i < history.Count;)
         {
-            double sx = X(day) - x0 + 2, sw = Math.Max(2, w - 4);
+            int j = i;
+            while (j + 1 < history.Count && history[j + 1].State == history[i].State && history[j + 1].Day == history[j].Day.AddDays(1)) j++;
+            double sx = X(history[i].Day) - x0 + 2, sw = Math.Max(2, X(history[j].Day.AddDays(1)) - X(history[i].Day) - 4);
+            var st = history[i].State;
+            i = j + 1;
             if (sx + sw < 0 || sx > fullWidth) continue;
             bar.Children.Add(new Border
             {
                 Width = sw, Height = 3, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Bottom,
                 Margin = new Thickness(sx, 0, 0, 1.5), CornerRadius = new CornerRadius(1.5), IsHitTestVisible = false,
-                Background = B(TaskMarks.StateColor(t, state)),
+                Background = B(TaskMarks.StateColor(t, st)),
             });
         }
 
@@ -661,7 +723,7 @@ public sealed class TimelineView : Grid
         {
             var title = new TextBlock
             {
-                Text = Title(t), FontSize = fs, Foreground = Res("Fg"), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center,
+                Text = (shift > 0 ? "‹ " : "") + Title(t), FontSize = fs, // "‹": it began before the screen's left edge Foreground = Res("Fg"), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(10 + shift, 0, 8, 1), IsHitTestVisible = false,
             };
             if (t.Done) title.TextDecorations = TextDecorations.Strikethrough;
@@ -685,9 +747,16 @@ public sealed class TimelineView : Grid
             + "\n\n" + L.T("Przeciągnij: przesuń · prawa krawędź: zmień koniec · dwuklik: pokaż w tygodniu · prawy przycisk: menu");
         var card = (Border)bar.Children[0];
         var normalBg = card.Background;
-        var hoverBg = B(t.IsStarted ? A(accent, 0x48) : Th.Ink(0x2A));
-        bar.MouseEnter += (_, _) => { card.Background = hoverBg; card.BorderBrush = B(A(accent, 0xC0)); };
-        bar.MouseLeave += (_, _) => { card.Background = normalBg; card.BorderBrush = B(Th.Ink(0x1A)); };
+        var hoverBg = CardBg(0x4C);
+        // hover: the card lights up and its whole row gets a soft band, so a long bar is easy to follow across
+        bar.MouseEnter += (_, _) =>
+        {
+            card.Background = hoverBg; card.BorderBrush = B(A(accent, 0xC0));
+            _rowBand.Width = _bars.Width; _rowBand.Height = rh; _rowBand.Fill = B(Th.Ink(0x10));
+            Canvas.SetTop(_rowBand, top - 5);
+            if (_rowBand.Parent == null) _bars.Children.Insert(0, _rowBand);
+        };
+        bar.MouseLeave += (_, _) => { card.Background = normalBg; card.BorderBrush = B(Th.Ink(0x1A)); _bars.Children.Remove(_rowBand); };
         bar.MouseLeftButtonDown += (_, e) =>
         {
             e.Handled = true;
@@ -719,9 +788,9 @@ public sealed class TimelineView : Grid
     {
         _toolbar.Children.Clear();
         var store = _store();
-        ComboBox Combo(string label, string? current, IEnumerable<(string? Value, string Text)> options, Action<string?> set, double minWidth = 130)
+        ComboBox Combo(Panel into, string label, string? current, IEnumerable<(string? Value, string Text)> options, Action<string?> set, double minWidth = 130)
         {
-            var box = new ComboBox { MinWidth = minWidth, Margin = new Thickness(0, 0, 6, 0), ToolTip = label };
+            var box = new ComboBox { MinWidth = minWidth, Margin = new Thickness(0, 0, 6, into == _toolbar ? 0 : 6), ToolTip = label };
             foreach (var (value, text) in options) box.Items.Add(new ComboBoxItem { Content = text, Tag = value });
             var match = box.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string?)i.Tag == current);
             if (match == null && current != null) set((box.Items[0] as ComboBoxItem)?.Tag as string);
@@ -731,36 +800,124 @@ public sealed class TimelineView : Grid
                 set((box.SelectedItem as ComboBoxItem)?.Tag as string);
                 SettingsStore.Save(App.Settings);
                 Refresh();
+                FillChips();
             };
-            _toolbar.Children.Add(box);
+            into.Children.Add(box);
             return box;
         }
-        var tasks = store.Data.Tasks.Where(t => t.Day != null && !t.Archived).ToList();
-        var projects = App.Settings.AccountFor(App.Settings.Layer).Projects.Select(p => p.Name).Concat(tasks.Select(t => t.NotionSource).Where(p => p != null).Select(p => p!))
-            .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(p => p).ToList();
-        Combo(L.T("Projekt"), S.Project, new (string?, string)[] { (null, L.T("Projekt: wszystkie")) }.Concat(projects.Select(p => ((string?)p, p))).Append(("", L.T("bez projektu"))), v => S.Project = v);
-        var cats = tasks.SelectMany(t => TaskItem.Tags(t.Text, out _)).Distinct().OrderBy(c => c).ToList();
-        Combo(L.T("Kategoria"), S.Category, new (string?, string)[] { (null, L.T("Kategoria: wszystkie")) }.Concat(cats.Select(c => ((string?)c, store.CategoryFor(c)?.Name ?? c))), v => S.Category = v);
-        var prios = tasks.Select(t => t.Priority).Where(p => !string.IsNullOrEmpty(p)).Select(p => p!).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(Rank).ToList();
-        Combo(L.T("Priorytet"), S.Priority, new (string?, string)[] { (null, L.T("Priorytet: wszystkie")) }.Concat(prios.Select(p => ((string?)p, p))).Append(("", L.T("bez priorytetu"))), v => S.Priority = v);
-        Combo(L.T("Stan"), S.State, new (string?, string)[] { ("all", L.T("Stan: wszystkie")), ("open", L.T("niezrobione")), ("started", L.T("w trakcie")), ("review", L.T("review")), ("tests", L.T("testy")), ("hold", "hold"), ("done", L.T("zrobione")) }, v => S.State = v ?? "all", 120);
-        _toolbar.Children.Add(new Border { Width = 1, Height = 18, Margin = new Thickness(6, 0, 12, 0), Background = Res("Line"), VerticalAlignment = VerticalAlignment.Center });
-        Combo(L.T("Sortuj"), S.Sort, new (string?, string)[] { ("start", L.T("Sortuj: data rozpoczęcia")), ("priority", L.T("Sortuj: priorytet")), ("name", L.T("Sortuj: nazwa")), ("added", L.T("Sortuj: kolejność dodania")), ("length", L.T("Sortuj: długość")) }, v => S.Sort = v ?? "start", 170);
-        Combo(L.T("Grupuj"), S.Group, new (string?, string)[] { ("project", L.T("Grupuj: projekt")), ("category", L.T("Grupuj: kategoria")), ("priority", L.T("Grupuj: priorytet")), ("state", L.T("Grupuj: stan")), ("none", L.T("Bez grup")) }, v => S.Group = v ?? "none", 150);
-
-        Button SmallIcon(FrameworkElement icon, string tip, Action a)
+        Button SmallIcon(object content, string tip, Action a)
         {
-            var b = new Button { Style = (Style)Application.Current.Resources["BarIcon"], Content = icon, ToolTip = tip, VerticalAlignment = VerticalAlignment.Center, Foreground = Res("FgDim") };
+            var b = new Button { Style = (Style)Application.Current.Resources["BarIcon"], Content = content, ToolTip = tip, VerticalAlignment = VerticalAlignment.Center, Foreground = Res("FgDim") };
             b.Click += (_, _) => a();
             return b;
         }
-        _toolbar.Children.Add(new Border { Width = 1, Height = 18, Margin = new Thickness(6, 0, 6, 0), Background = Res("Line"), VerticalAlignment = VerticalAlignment.Center });
-        _toolbar.Children.Add(SmallIcon(Icons.Zoom(false), L.T("Oddal (Ctrl + kółko myszy)"), () => Zoom(1 / 1.4)));
-        _toolbar.Children.Add(SmallIcon(Icons.Zoom(true), L.T("Przybliż (Ctrl + kółko myszy)"), () => Zoom(1.4)));
-        _toolbar.Children.Add(new TextBlock
+        Border Sep() => new() { Width = 1, Height = 18, Margin = new Thickness(6, 0, 8, 0), Background = Res("Line"), VerticalAlignment = VerticalAlignment.Center };
+
+        // the filters in one popup ("Filtry"); what is on shows as chips next to it, × takes it off
+        var tasks = store.Data.Tasks.Where(t => t.Day != null && !t.Archived).ToList();
+        var filters = new StackPanel { Margin = new Thickness(10) };
+        var projects = App.Settings.AccountFor(App.Settings.Layer).Projects.Select(p => p.Name).Concat(tasks.Select(t => t.NotionSource).Where(p => p != null).Select(p => p!))
+            .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(p => p).ToList();
+        Combo(filters, L.T("Projekt"), S.Project, new (string?, string)[] { (null, L.T("Projekt: wszystkie")) }.Concat(projects.Select(p => ((string?)p, p))).Append(("", L.T("bez projektu"))), v => S.Project = v, 220);
+        var cats = tasks.SelectMany(t => TaskItem.Tags(t.Text, out _)).Distinct().OrderBy(c => c).ToList();
+        Combo(filters, L.T("Kategoria"), S.Category, new (string?, string)[] { (null, L.T("Kategoria: wszystkie")) }.Concat(cats.Select(c => ((string?)c, store.CategoryFor(c)?.Name ?? c))), v => S.Category = v, 220);
+        var prios = tasks.Select(t => t.Priority).Where(p => !string.IsNullOrEmpty(p)).Select(p => p!).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(Rank).ToList();
+        Combo(filters, L.T("Priorytet"), S.Priority, new (string?, string)[] { (null, L.T("Priorytet: wszystkie")) }.Concat(prios.Select(p => ((string?)p, p))).Append(("", L.T("bez priorytetu"))), v => S.Priority = v, 220);
+        Combo(filters, L.T("Stan"), S.State, StateOptions(), v => S.State = v ?? "all", 220);
+        var popupBox = new Border { Child = filters, CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1), BorderBrush = Res("Line") };
+        popupBox.SetResourceReference(Border.BackgroundProperty, "MenuBg");
+        var filterButton = new Button { Style = (Style)Application.Current.Resources["BarButton"], VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
+        var popup = new Popup { Child = popupBox, PlacementTarget = filterButton, Placement = PlacementMode.Bottom, StaysOpen = false, AllowsTransparency = true };
+        filterButton.Click += (_, _) => popup.IsOpen = !popup.IsOpen;
+        _toolbar.Children.Add(filterButton);
+        _toolbar.Children.Add(_chips);
+        _filterButton = filterButton;
+        FillChips();
+
+        _toolbar.Children.Add(Sep());
+        Combo(_toolbar, L.T("Sortuj"), S.Sort, new (string?, string)[] { ("start", L.T("Sortuj: data rozpoczęcia")), ("priority", L.T("Sortuj: priorytet")), ("name", L.T("Sortuj: nazwa")), ("added", L.T("Sortuj: kolejność dodania")), ("length", L.T("Sortuj: długość")) }, v => S.Sort = v ?? "start", 170);
+        Combo(_toolbar, L.T("Grupuj"), S.Group, new (string?, string)[] { ("project", L.T("Grupuj: projekt")), ("category", L.T("Grupuj: kategoria")), ("priority", L.T("Grupuj: priorytet")), ("state", L.T("Grupuj: stan")), ("none", L.T("Bez grup")) }, v => S.Group = v ?? "none", 150);
+
+        _toolbar.Children.Add(Sep());
+        // density and "fit": more tasks on screen at once
+        _toolbar.Children.Add(SmallIcon(new TextBlock { Text = S.Compact ? "☰" : "≡", FontSize = 15 }, S.Compact ? L.T("Wiersze: wygodne") : L.T("Wiersze: kompaktowe (więcej zadań na ekranie)"), () =>
         {
-            Text = L.T("przeciągnij, żeby przesunąć · Shift + kółko: w bok · Ctrl + kółko: skala"), FontSize = 10.5, Foreground = Res("FgFaint"),
-            VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0),
-        });
+            S.Compact = !S.Compact;
+            SettingsStore.Save(App.Settings);
+            BuildToolbar();
+            Refresh();
+        }));
+        _toolbar.Children.Add(SmallIcon(new TextBlock { Text = "⤢", FontSize = 14 }, L.T("Dopasuj do ekranu: wszystkie niezrobione zadania naraz"), FitAll));
+        var zoomTip = "\n" + L.T("przeciągnij, żeby przesunąć · Shift + kółko: w bok · Ctrl + kółko: skala");
+        _toolbar.Children.Add(SmallIcon(Icons.Zoom(false), L.T("Oddal (Ctrl + kółko myszy)") + zoomTip, () => Zoom(1 / 1.4)));
+        _toolbar.Children.Add(SmallIcon(Icons.Zoom(true), L.T("Przybliż (Ctrl + kółko myszy)") + zoomTip, () => Zoom(1.4)));
+        _toolbar.Children.Add(Sep());
+        _toolbar.Children.Add(Legend());
+    }
+
+    static (string?, string)[] StateOptions() => new (string?, string)[]
+    {
+        ("all", L.T("Stan: wszystkie")), ("open", L.T("niezrobione")), ("started", L.T("w trakcie")), ("review", L.T("review")), ("tests", L.T("testy")), ("hold", "hold"), ("done", L.T("zrobione")),
+    };
+
+    readonly WrapPanel _chips = new() { VerticalAlignment = VerticalAlignment.Center };
+    Button? _filterButton;
+
+    /// <summary>The filters that are on, as chips ("Projekt: FoA ×"); the button says how many.</summary>
+    void FillChips()
+    {
+        _chips.Children.Clear();
+        var store = _store();
+        var on = new List<(string Text, Action Clear)>();
+        if (S.Project != null) on.Add((L.T("Projekt") + ": " + (S.Project == "" ? L.T("bez projektu") : S.Project), () => S.Project = null));
+        if (S.Category != null) on.Add((L.T("Kategoria") + ": " + (store.CategoryFor(S.Category)?.Name ?? S.Category), () => S.Category = null));
+        if (S.Priority != null) on.Add((L.T("Priorytet") + ": " + (S.Priority == "" ? L.T("bez priorytetu") : S.Priority), () => S.Priority = null));
+        if (S.State != "all") on.Add((L.T("Stan") + ": " + (StateOptions().FirstOrDefault(o => o.Item1 == S.State).Item2 ?? S.State), () => S.State = "all"));
+        if (_filterButton != null) _filterButton.Content = on.Count > 0 ? L.F("Filtry ({0}) ▾", on.Count) : L.T("Filtry ▾");
+        foreach (var (text, clear) in on)
+        {
+            var chip = new Border
+            {
+                CornerRadius = new CornerRadius(9), Padding = new Thickness(8, 1, 6, 2), Margin = new Thickness(0, 0, 5, 0), Background = B(A(((SolidColorBrush)Res("AccentBrush")).Color, 0x2A)),
+                Cursor = Cursors.Hand, ToolTip = L.T("Kliknij, żeby zdjąć ten filtr"), VerticalAlignment = VerticalAlignment.Center,
+                Child = new TextBlock { Text = text + "  ×", FontSize = 11, Foreground = Res("Fg") },
+            };
+            chip.MouseLeftButtonUp += (_, e) => { e.Handled = true; clear(); SettingsStore.Save(App.Settings); BuildToolbar(); Refresh(); };
+            _chips.Children.Add(chip);
+        }
+    }
+
+    /// <summary>Zoom and scroll so all open tasks (or all, when everything is done) fit on screen.</summary>
+    void FitAll()
+    {
+        var open = _items.Where(i => !i.Task.Done).ToList();
+        var list = open.Count > 0 ? open : _items;
+        if (list.Count == 0 || ActualWidth <= 0) return;
+        var from = list.Min(i => i.Start).AddDays(-1);
+        var to = list.Max(i => i.End).AddDays(2);
+        double days = Math.Max(7, (to - from).TotalDays);
+        S.DayWidth = Math.Clamp(ActualWidth / days, 8, 160);
+        _left = (from - Origin).TotalDays;
+        _saveZoom.Stop();
+        _saveZoom.Start();
+        Refresh();
+        (Window.GetWindow(this) as BoardWindow)?.UpdateTimelineRange();
+    }
+
+    /// <summary>"Legenda": the states' colours and what the strips, dashes and hatching mean (in its tool tip).</summary>
+    FrameworkElement Legend()
+    {
+        var tip = new StackPanel { Margin = new Thickness(2) };
+        void Row(Color c, string text, bool dashed = false)
+        {
+            var r = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
+            r.Children.Add(new Border { Width = 22, Height = 10, CornerRadius = new CornerRadius(3), Background = dashed ? Brushes.Transparent : B(A(c, 0x90)), BorderBrush = B(c), BorderThickness = new Thickness(dashed ? 1 : 0), Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center });
+            r.Children.Add(new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center });
+            tip.Children.Add(r);
+        }
+        foreach (var s in new[] { "todo", "started", "review", "tests", "hold", "done" }) Row(TaskMarks.StateColor(null!, s), TaskMarks.StateName(null!, s));
+        Row(Th.Ink(0x90), L.T("przerywana ramka: dni zaplanowane (Potrwa do…)"), dashed: true);
+        tip.Children.Add(new TextBlock { Text = L.T("Pasek pod zadaniem: stan w każdym przepracowanym dniu.\nKreskowanie: weekendy i dni wolne · pas w kolorze akcentu: dziś."), Margin = new Thickness(0, 6, 0, 0), Foreground = Res("FgDim") });
+        return new TextBlock { Text = "ⓘ " + L.T("Legenda"), FontSize = 11, Foreground = Res("FgFaint"), VerticalAlignment = VerticalAlignment.Center, Cursor = Cursors.Help, ToolTip = tip, Margin = new Thickness(2, 0, 0, 0) };
     }
 }

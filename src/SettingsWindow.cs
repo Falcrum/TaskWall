@@ -1074,6 +1074,14 @@ public sealed class SettingsWindow : DarkWindow
         pattern.SelectedItem = pattern.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == S.Pattern) ?? pattern.Items[0];
         pattern.SelectionChanged += (_, _) => { if (pattern.SelectedItem is ComboBoxItem it) { S.Pattern = (string)it.Tag; App.Instance.ApplySettings(); } };
         p.Children.Add(Pair(L.T("Wzór tła"), pattern));
+        // the task state: a bar that fills up, or a round icon (the shape says the state, the colours help)
+        var stateIcon = new ComboBox { Width = 260, HorizontalAlignment = HorizontalAlignment.Left };
+        foreach (var (tag, label) in new[] { ("bar", L.T("Pasek (wypełnia się)")), ("circle", L.T("Koło (jak Linear / Jira)")) })
+            stateIcon.Items.Add(new ComboBoxItem { Content = label, Tag = tag });
+        stateIcon.SelectedItem = stateIcon.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == S.StateIcon) ?? stateIcon.Items[0];
+        stateIcon.SelectionChanged += (_, _) => { if (stateIcon.SelectedItem is ComboBoxItem it) { S.StateIcon = (string)it.Tag; App.Instance.ApplySettings(); } };
+        p.Children.Add(Pair(L.T("Znacznik stanu zadania"), stateIcon,
+            L.T("Pasek: pusty → ¼ w trakcie → ½ review → ¾ testy → pełny zrobione, hold w paski. Koło: pusty pierścień, ćwiartka, połowa, trzy czwarte, pełne z ✓, hold z ‖ – kształt czytelny także bez kolorów.")));
         p.Children.Add(SliderRow(L.T("Widoczność wzoru"), 0, 300, S.PatternVisibility * 100, v => S.PatternVisibility = v / 100, v => $"{v:0}%"));
         p.Children.Add(SliderRow(L.T("Skala wzoru"), 25, 100, S.PatternScale * 100, v => S.PatternScale = v / 100, v => $"{v:0}%"));
         p.Children.Add(Check(L.T("Matowe szkło (rozmyta tapeta pod tablicą)"), S.Blur, v => S.Blur = v));

@@ -760,6 +760,8 @@ public sealed class AppSettings
     public bool BarWeather { get; set; } = true;
     /// <summary>The top bar's load rings on the right, in order: cpu, gpu, ram, disk, net (empty = none).</summary>
     public string Meters { get; set; } = "cpu,gpu,ram,disk,net";
+    /// <summary>The task state's mark: "bar" (a thin bar that fills up) or "circle" (a round icon like Linear / Jira).</summary>
+    public string StateIcon { get; set; } = "bar";
     /// <summary>The board fills the whole screen under the top bar (the button next to "hide").</summary>
     public bool BoardMax { get; set; }
     /// <summary>A second board on another screen (its device name; empty = none) and the view it shows.</summary>

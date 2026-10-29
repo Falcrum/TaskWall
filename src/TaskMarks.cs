@@ -75,33 +75,89 @@ static class TaskMarks
         bool held = state == "hold";
         // held: as full as the state under it (what it goes back to), the whole bar striped – no work is going on
         double fill = held && state == t.State ? Math.Max(0.25, Fill(t.WorkState)) : Fill(state);
-        var hit = new Grid { Width = width + gap, Background = Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Stretch };
-        var bar = new Grid { Width = width, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 1, 0, 1), MinHeight = 8 };
-        bar.RowDefinitions.Add(new RowDefinition { Height = new GridLength(Math.Max(0.0001, 1 - fill), GridUnitType.Star) });
-        bar.RowDefinitions.Add(new RowDefinition { Height = new GridLength(Math.Max(0.0001, fill), GridUnitType.Star) });
-        double r = Math.Min(1.6, width / 3);
-        var outline = new Rectangle { Stroke = new SolidColorBrush(c), StrokeThickness = 1.2, RadiusX = r, RadiusY = r };
-        if (dashed) outline.StrokeDashArray = new DoubleCollection { 2, 1.5 };
-        Grid.SetRowSpan(outline, 2);
-        if (fill > 0)
+        bool round = App.Settings.StateIcon == "circle";
+        var hit = new Grid { Width = (round ? CircleSize : width) + gap, Background = Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Stretch };
+        Shape outline;
+        if (round) outline = Circle(hit, state, c, held, dashed);
+        else
         {
-            var part = new Rectangle { Fill = held ? Stripes : new SolidColorBrush(c), RadiusX = r, RadiusY = r, Tag = "fill" };
-            Grid.SetRow(part, 1); // from the bottom up
-            bar.Children.Add(part);
+            var bar = new Grid { Width = width, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 1, 0, 1), MinHeight = 8 };
+            bar.RowDefinitions.Add(new RowDefinition { Height = new GridLength(Math.Max(0.0001, 1 - fill), GridUnitType.Star) });
+            bar.RowDefinitions.Add(new RowDefinition { Height = new GridLength(Math.Max(0.0001, fill), GridUnitType.Star) });
+            double r = Math.Min(1.6, width / 3);
+            outline = new Rectangle { Stroke = new SolidColorBrush(c), StrokeThickness = 1.2, RadiusX = r, RadiusY = r };
+            if (dashed) outline.StrokeDashArray = new DoubleCollection { 2, 1.5 };
+            Grid.SetRowSpan(outline, 2);
+            if (fill > 0)
+            {
+                var part = new Rectangle { Fill = held ? Stripes : new SolidColorBrush(c), RadiusX = r, RadiusY = r, Tag = "fill" };
+                Grid.SetRow(part, 1); // from the bottom up
+                bar.Children.Add(part);
+            }
+            bar.Children.Add(outline);
+            hit.Children.Add(bar);
         }
-        bar.Children.Add(outline);
-        hit.Children.Add(bar);
         if (click != null)
         {
             hit.Cursor = Cursors.Hand;
             hit.ToolTip = StateName(t) + (t.Priority is { Length: > 0 } pr ? "  ·  " + L.F("Priorytet: {0}", pr) : "") + "\n"
                 + (t.Done ? L.T("Kliknij, aby przywrócić") : t.IsHold ? L.F("Wstrzymane (hold) – kliknij, żeby wznowić: {0}", StateName(t, t.WorkState)) : t.IsTesting ? L.T("Kliknij: zrobione") : t.IsReview ? L.T("Kliknij: testy  ·  Shift+klik: zrobione") : t.IsStarted ? L.T("Kliknij: review  ·  Shift+klik: zrobione") : L.T("Kliknij: w trakcie  ·  Shift+klik: od razu zrobione"));
             ToolTipService.SetInitialShowDelay(hit, 300);
-            hit.MouseEnter += (_, _) => outline.StrokeThickness = 2;
-            hit.MouseLeave += (_, _) => outline.StrokeThickness = 1.2;
+            double normal = outline.StrokeThickness;
+            hit.MouseEnter += (_, _) => outline.StrokeThickness = normal + 0.8;
+            hit.MouseLeave += (_, _) => outline.StrokeThickness = normal;
             hit.MouseLeftButtonDown += (_, e) => { e.Handled = true; click(); };
         }
         return hit;
+    }
+
+    /// <summary>The round icon (Settings → Wygląd): its diameter.</summary>
+    public const double CircleSize = 12;
+
+    /// <summary>
+    /// The state as a round icon (like Linear / Jira): an empty ring to do, a quarter / half / three quarters of the disc in
+    /// progress / review / tests, a full disc with a tick done, a ring with ‖ on hold. The shape reads without the colours.
+    /// Returns the ring (thicker on hover).
+    /// </summary>
+    static Shape Circle(Grid host, string state, Color c, bool held, bool dashed)
+    {
+        double d = CircleSize, mid = d / 2;
+        var box = new Grid { Width = d, Height = d, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2.5, 0, 0) };
+        var brush = new SolidColorBrush(c);
+        var ring = new Ellipse { Stroke = brush, StrokeThickness = 1.4 };
+        if (dashed) ring.StrokeDashArray = new DoubleCollection { 1.6, 1.4 };
+        if (state == "done")
+        {
+            ring.Fill = brush;
+            box.Children.Add(ring);
+            box.Children.Add(new Path { Data = Geometry.Parse("M3.4,6.2 L5.2,8 L8.8,4.2"), Stroke = Brushes.White, StrokeThickness = 1.5, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round, Tag = "fill" });
+        }
+        else if (held)
+        {
+            box.Children.Add(ring);
+            box.Children.Add(new Path { Data = Geometry.Parse("M4.6,3.8 V8.2 M7.4,3.8 V8.2"), Stroke = brush, StrokeThickness = 1.5, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, Tag = "fill" });
+        }
+        else
+        {
+            box.Children.Add(ring);
+            double f = Fill(state);
+            if (f > 0)
+            {
+                // a slice of the disc inside the ring, clockwise from the top
+                double r = mid - 2.6, a = f * 2 * Math.PI;
+                var g = new StreamGeometry();
+                using (var ctx = g.Open())
+                {
+                    ctx.BeginFigure(new Point(mid, mid), true, true);
+                    ctx.LineTo(new Point(mid, mid - r), false, false);
+                    ctx.ArcTo(new Point(mid + r * Math.Sin(a), mid - r * Math.Cos(a)), new Size(r, r), 0, f > 0.5, SweepDirection.Clockwise, false, false);
+                }
+                g.Freeze();
+                box.Children.Add(new Path { Data = g, Fill = brush, Tag = "fill" });
+            }
+        }
+        host.Children.Add(box);
+        return ring;
     }
 
     /// <summary>
