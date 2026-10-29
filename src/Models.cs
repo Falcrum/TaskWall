@@ -514,6 +514,38 @@ public sealed class DayInfo
     /// <summary>Extra working periods of the day (overtime), "20:00-22:00" each, besides the regular hours.</summary>
     public List<string>? Overtime { get; set; }
     public DateTime Modified { get; set; } = DateTime.UtcNow;
+    /// <summary>
+    /// When each part last changed (the mark, the working hours, the overtime): two computers editing different parts
+    /// of the same day keep both. Missing (older files) = <see cref="Modified"/>.
+    /// </summary>
+    public DateTime? MarkAt { get; set; }
+    public DateTime? HoursAt { get; set; }
+    public DateTime? OvertimeAt { get; set; }
+
+    [JsonIgnore] public DateTime MarkTime => MarkAt ?? Modified;
+    [JsonIgnore] public DateTime HoursTime => HoursAt ?? Modified;
+    [JsonIgnore] public DateTime OvertimeTime => OvertimeAt ?? Modified;
+
+    public DayInfo Copy() => new()
+    {
+        Extra = Extra, Mark = Mark, WorkStart = WorkStart, WorkEnd = WorkEnd, Overtime = Overtime, Modified = Modified,
+        MarkAt = MarkAt, HoursAt = HoursAt, OvertimeAt = OvertimeAt,
+    };
+
+    /// <summary>Two copies of one day: each part from the copy that changed it last.</summary>
+    public static DayInfo Merge(DayInfo a, DayInfo b)
+    {
+        var newer = b.Modified > a.Modified ? b : a;
+        var m = newer.Copy();
+        var mark = b.MarkTime > a.MarkTime ? b : a;
+        var hours = b.HoursTime > a.HoursTime ? b : a;
+        var ot = b.OvertimeTime > a.OvertimeTime ? b : a;
+        m.Mark = mark.Mark; m.MarkAt = mark.MarkTime;
+        m.WorkStart = hours.WorkStart; m.WorkEnd = hours.WorkEnd; m.HoursAt = hours.HoursTime;
+        m.Overtime = ot.Overtime; m.OvertimeAt = ot.OvertimeTime;
+        m.Modified = a.Modified > b.Modified ? a.Modified : b.Modified;
+        return m;
+    }
 }
 
 /// <summary>The day's notes (the notebook next to the day view's timeline), as light Markdown.</summary>

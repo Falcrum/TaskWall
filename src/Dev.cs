@@ -139,6 +139,12 @@ static class Dev
             var a = new BoardData(); a.Days["2026-10-06"] = new DayInfo { Mark = "HO", Modified = new DateTime(2026, 1, 1) };
             var b = new BoardData(); b.Days["2026-10-06"] = new DayInfo { Mark = "BŚU", Modified = new DateTime(2026, 1, 2) };
             Check("day marks merge (newer wins)", BoardStore.Merge(a, b).Days["2026-10-06"].Mark == "BŚU" && BoardStore.Merge(b, a).Days["2026-10-06"].Mark == "BŚU");
+            // one computer marks the day, the other drags its working hours (each later than the other's file): both stay
+            var da = new BoardData(); da.Days["2026-10-07"] = new DayInfo { Mark = "HO", Modified = new DateTime(2026, 1, 3), MarkAt = new DateTime(2026, 1, 3), HoursAt = new DateTime(2026, 1, 1), OvertimeAt = new DateTime(2026, 1, 1) };
+            var db = new BoardData(); db.Days["2026-10-07"] = new DayInfo { WorkStart = "10:00", WorkEnd = "18:00", Modified = new DateTime(2026, 1, 2), MarkAt = new DateTime(2026, 1, 1), HoursAt = new DateTime(2026, 1, 2), OvertimeAt = new DateTime(2026, 1, 1) };
+            var dm1 = BoardStore.Merge(da, db).Days["2026-10-07"]; var dm2 = BoardStore.Merge(db, da).Days["2026-10-07"];
+            Check("day merge per part: a mark from one computer and working hours from the other both stay",
+                dm1.Mark == "HO" && dm1.WorkStart == "10:00" && dm2.Mark == "HO" && dm2.WorkEnd == "18:00", $"{dm1.Mark} {dm1.WorkStart} / {dm2.Mark} {dm2.WorkStart}");
 
             var store = new BoardStore();
             store.Open(dir);

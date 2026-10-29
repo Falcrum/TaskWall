@@ -916,7 +916,7 @@ public sealed class BoardStore
         foreach (var key in Data.Days.Where(kv => !string.IsNullOrEmpty(kv.Value.Mark)).Select(kv => kv.Key).ToList())
         {
             var day = Data.Days[key];
-            Data.Days[key] = new DayInfo { Extra = day.Extra, Mark = null, WorkStart = day.WorkStart, WorkEnd = day.WorkEnd, Overtime = day.Overtime, Modified = Stamp.After(day.Modified) };
+            EditDay(key, "mark", x => x.Mark = null);
             n++;
         }
         foreach (var r in Data.MarkRules.Where(r => !r.Deleted).ToList()) { r.Deleted = true; Changed(r); n++; }
@@ -976,13 +976,32 @@ public sealed class BoardStore
 
     public RecurringRule? MarkRuleOn(DateTime date) => Data.MarkRules.FirstOrDefault(r => r.Occurs(date));
 
+    /// <summary>
+    /// Changes one part of a day ("mark", "hours" or "overtime"): only that part gets the new time, so another computer's
+    /// edit of a different part of the same day isn't outweighed by it.
+    /// </summary>
+    void EditDay(string day, string part, Action<DayInfo> change)
+    {
+        Data.Days.TryGetValue(day, out var d);
+        var n = d?.Copy() ?? new DayInfo();
+        // the untouched parts keep the times they had (a day from an older file: its one time)
+        n.MarkAt = d?.MarkTime ?? DateTime.MinValue;
+        n.HoursAt = d?.HoursTime ?? DateTime.MinValue;
+        n.OvertimeAt = d?.OvertimeTime ?? DateTime.MinValue;
+        change(n);
+        n.Modified = Stamp.After(d?.Modified ?? DateTime.MinValue);
+        if (part == "mark") n.MarkAt = n.Modified;
+        else if (part == "hours") n.HoursAt = n.Modified;
+        else n.OvertimeAt = n.Modified;
+        Data.Days[day] = n;
+    }
+
     public void SetDayMark(string day, string? mark)
     {
-        var before = Data.Days.TryGetValue(day, out var d) ? d.Modified : DateTime.MinValue;
         // same as the series → no override; removing a series mark → "" (explicit "nothing")
         var series = SeriesMark(day);
         string? stored = mark == series ? null : mark ?? "";
-        Data.Days[day] = new DayInfo { Extra = d?.Extra, Mark = stored, WorkStart = d?.WorkStart, WorkEnd = d?.WorkEnd, Overtime = d?.Overtime, Modified = Stamp.After(before) };
+        EditDay(day, "mark", x => x.Mark = stored);
         MarkDirty();
     }
 
@@ -996,7 +1015,7 @@ public sealed class BoardStore
     public void SetWorkHours(string day, string? start, string? end)
     {
         Data.Days.TryGetValue(day, out var d);
-        Data.Days[day] = new DayInfo { Extra = d?.Extra, Mark = d?.Mark, WorkStart = start, WorkEnd = end, Overtime = d?.Overtime, Modified = Stamp.After(d?.Modified ?? DateTime.MinValue) };
+        EditDay(day, "hours", x => { x.WorkStart = start; x.WorkEnd = end; });
         MarkDirty();
     }
 
@@ -1032,13 +1051,7 @@ public sealed class BoardStore
             if (merged.Count > 0 && p.Start <= merged[^1].End) merged[^1] = (merged[^1].Start, p.End > merged[^1].End ? p.End : merged[^1].End);
             else merged.Add(p);
         }
-        Data.Days.TryGetValue(day, out var d);
-        Data.Days[day] = new DayInfo
-        {
-            Extra = d?.Extra, Mark = d?.Mark, WorkStart = d?.WorkStart, WorkEnd = d?.WorkEnd,
-            Overtime = merged.Count > 0 ? merged.Select(p => Period(p.Start, p.End)).ToList() : null,
-            Modified = Stamp.After(d?.Modified ?? DateTime.MinValue),
-        };
+        EditDay(day, "overtime", x => x.Overtime = merged.Count > 0 ? merged.Select(p => Period(p.Start, p.End)).ToList() : null);
         MarkDirty();
     }
 
@@ -1173,7 +1186,10 @@ public sealed class BoardStore
             var now = Data.Days.TryGetValue(key, out var b) ? b.Mark : null;
             var wasStart = a?.WorkStart; var wasEnd = a?.WorkEnd;
             if (was != now || wasStart != b?.WorkStart || wasEnd != b?.WorkEnd || string.Join(",", a?.Overtime ?? new()) != string.Join(",", b?.Overtime ?? new()))
-                Data.Days[key] = new DayInfo { Extra = b?.Extra, Mark = was, WorkStart = wasStart, WorkEnd = wasEnd, Overtime = a?.Overtime, Modified = Stamp.After(b?.Modified ?? DateTime.MinValue) };
+            {
+                var at = Stamp.After(b?.Modified ?? DateTime.MinValue); // undone: every part as a new change
+                Data.Days[key] = new DayInfo { Extra = b?.Extra, Mark = was, WorkStart = wasStart, WorkEnd = wasEnd, Overtime = a?.Overtime, Modified = at, MarkAt = at, HoursAt = at, OvertimeAt = at };
+            }
         }
         MarkDirty();
         return true;
@@ -1441,9 +1457,9 @@ public sealed class BoardStore
             }
         }
 
+        // per part of the day: the copy that changed it last (one computer the mark, the other the hours – both stay)
         foreach (var kv in a.Days.Concat(b.Days))
-            if (!result.Days.TryGetValue(kv.Key, out var d) || kv.Value.Modified > d.Modified)
-                result.Days[kv.Key] = kv.Value;
+            result.Days[kv.Key] = result.Days.TryGetValue(kv.Key, out var d) ? DayInfo.Merge(d, kv.Value) : kv.Value;
         if (a.Notes != null || b.Notes != null)
         {
             result.Notes = new();
