@@ -229,6 +229,12 @@ public sealed class DayView : Grid
             var to = a.IsMeeting ? (a.EndAt(_date).Date > _date ? TimeSpan.FromHours(24) : a.EndAt(_date).TimeOfDay) : at + TimeSpan.FromMinutes(20);
             list.Add(new Block(at, to > at ? to : at + TimeSpan.FromMinutes(15), a.IsMeeting ? "meeting" : "alarm", a, false));
         }
+        // yesterday's meeting running past midnight: its tail from 00:00
+        foreach (var a in store.Alarms.Where(a => a.ContinuesInto(_date)))
+        {
+            var to = a.EndAt(_date.AddDays(-1)).TimeOfDay;
+            if (to > TimeSpan.Zero) list.Add(new Block(TimeSpan.Zero, to, "meeting", a, false));
+        }
         // an event over midnight or several days: only its part on this day
         foreach (var ev in CalendarService.On(_date).Where(e => !e.IsHoliday && !e.AllDay))
         {

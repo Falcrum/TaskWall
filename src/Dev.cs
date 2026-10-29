@@ -125,7 +125,7 @@ static class Dev
     public static void SelfTest(string outFile)
     {
         var log = new System.Collections.Generic.List<string>();
-        void Check(string name, bool ok) => log.Add($"{(ok ? "PASS" : "FAIL")}  {name}");
+        void Check(string name, bool ok, string? got = null) => log.Add($"{(ok ? "PASS" : "FAIL")}  {name}" + (ok || got == null ? "" : $"   (got: {got})"));
         // the tests write and delete files in the --data folder: never in real data (a cloud folder) or without --data
         if (Arg("--data") is not { } testData || SettingsStore.IsOnGoogleDrive(Path.GetFullPath(testData)))
         {
@@ -485,6 +485,9 @@ static class Dev
             Check("notes: Markdown marks format while typing (# , **, *, ~~, `, [] , [x] ), a click ticks the box, Backspace takes the box / heading off",
                 typed[0] == "# Plan" && typed[1] == "a **b** c" && typed[2] == "x *i* ~~s~~ `k`" && typed[3] == "- [ ] zrobić" && typed[4] == "- [x] zrobić"
                 && typed[5] == "zrobić" && typed[6] == "# Tyt" && typed[7] == "- [x] gotowe");
+            var (enterAfter, enterUndo) = NotesEditor.EnterUndoTest("- [ ] zrobić");
+            Check("notes: Enter on a check box line gives a new box, and one Ctrl+Z takes it back whole",
+                enterAfter == "- [ ] zrobić\n- [ ] x" && enterUndo == "- [ ] zrobić", $"{enterAfter} | {enterUndo}");
             Check("notes: plain-text export without marks", NotesEditor.ToPlain("# Plan\n- [x] **zrobione**\n- lista\n[a](https://b.c)") == "PLAN\n====\n☑ zrobione\n• lista\na (https://b.c)");
             var whDir = Path.Combine(Path.GetTempPath(), "taskwall-wh-" + Guid.NewGuid().ToString("N"));
             var whStore = new BoardStore("work");
@@ -685,6 +688,24 @@ static class Dev
                 SharedSettings.Device = "PC-A";
                 var gotA = SharedSettings.Pull(setA);
                 Check("shared settings: a change on another computer comes over from its own file", setA.Theme == "light" && gotA.Contains(nameof(AppSettings.Theme)));
+                // each computer changes a different setting without having seen the other's file yet (the drive was
+                // slow): per setting the newer change wins, so both stay on both
+                setA.Weather.City = "Gdańsk";
+                SharedSettings.Push(setA);
+                System.Threading.Thread.Sleep(20);
+                SharedSettings.Device = "PC-B";
+                setB.Accent = "#FF8800"; // B never read A's new city: A's file isn't on B's drive yet
+                var fileA = Path.Combine(devSet, "devices", "settings-PC-A.json");
+                File.Move(fileA, fileA + ".away", true);
+                SharedSettings.Push(setB);
+                File.Move(fileA + ".away", fileA, true);
+                SharedSettings.Device = "PC-A";
+                SharedSettings.Pull(setA);
+                SharedSettings.Device = "PC-B";
+                SharedSettings.Pull(setB);
+                Check("shared settings: one setting changed on each computer at the same time – both changes survive on both",
+                    setA.Weather.City == "Gdańsk" && setA.Accent == "#FF8800" && setB.Weather.City == "Gdańsk" && setB.Accent == "#FF8800",
+                    $"A {setA.Weather.City}/{setA.Accent}, B {setB.Weather.City}/{setB.Accent}");
                 SharedSettings.Device = null;
                 foreach (var sf3 in Directory.GetFiles(Path.Combine(devSet, "devices"), "settings-PC-*.json")) File.Delete(sf3);
                 if (File.Exists(legacyS)) File.Delete(legacyS);

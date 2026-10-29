@@ -599,11 +599,20 @@ public sealed class NotesEditor : DockPanel
             _box.CaretPosition = next.ContentStart;
             return true;
         }
-        // after the split: a heading is followed by plain text, a check box line by another (unticked) one, code by code
-        Dispatcher.BeginInvoke(() =>
+        // a plain line: the box's own Enter; only no strike-through / underline carried into the new line
+        if (!todo && kind is not ("h1" or "h2" or "h3" or "h4" or "h5" or "h6" or "quote" or "hr" or "code"))
         {
-            if (Current is not { } np || ReferenceEquals(np, cur)) return;
-            _box.BeginChange();
+            Dispatcher.BeginInvoke(() => _box.Selection.ApplyPropertyValue(Inline.TextDecorationsProperty, new TextDecorationCollection()), DispatcherPriority.Input);
+            return false;
+        }
+        // the split and how the new line looks in one change, so one Ctrl+Z takes the whole Enter back:
+        // a heading is followed by plain text, a check box line by another (unticked) one, code by code
+        _box.BeginChange();
+        if (!_box.Selection.IsEmpty) _box.Selection.Text = "";
+        _box.CaretPosition = _box.CaretPosition.InsertParagraphBreak();
+        var np = Current;
+        if (np != null && !ReferenceEquals(np, cur))
+        {
             if (todo)
             {
                 StyleBlock(np, null);
@@ -613,13 +622,40 @@ public sealed class NotesEditor : DockPanel
                 MakeTodo(np, false);
                 if (!IsTodo(cur) && new TextRange(cur.ContentStart, cur.ContentEnd).Text.Trim().Length == 0) StyleBlock(cur, null);
             }
-            else if (kind is "h1" or "h2" or "h3" or "h4" or "h5" or "h6" or "quote" or "hr") StyleBlock(np, null);
             else if (kind == "code") StyleBlock(np, "code");
-            _box.EndChange();
-            if (todo) { var c = np.ContentStart; for (int i = 0; i < 2 && c != null; i++) c = c.GetNextInsertionPosition(LogicalDirection.Forward); if (c != null) _box.CaretPosition = c; }
-            else _box.Selection.ApplyPropertyValue(Inline.TextDecorationsProperty, new TextDecorationCollection());
-        }, DispatcherPriority.Input);
-        return false;
+            else StyleBlock(np, null);
+        }
+        _box.EndChange();
+        if (np != null && todo && np.Inlines.FirstInline?.NextInline is Run gapRun) _box.CaretPosition = gapRun.ContentEnd; // after the box and its gap
+        else _box.Selection.ApplyPropertyValue(Inline.TextDecorationsProperty, new TextDecorationCollection());
+        return true;
+    }
+
+    /// <summary>The self-test: Enter at the end of a check box line, then one undo – the note is back as it was.</summary>
+    public static (string AfterEnter, string AfterUndo) EnterUndoTest(string start)
+    {
+        var e = new NotesEditor();
+        // undo only works in a box that is on screen: an invisible window far off it
+        var host = new Window { Content = e, Width = 400, Height = 200, Left = -30000, Top = -30000, ShowInTaskbar = false, ShowActivated = false, WindowStyle = WindowStyle.None };
+        host.Show();
+        try { return EnterUndoRun(e, start); } finally { host.Close(); }
+    }
+
+    static (string, string) EnterUndoRun(NotesEditor e, string start)
+    {
+        e.SetMode(false, save: false);
+        e.Load(start, force: true);
+        e._box.IsUndoEnabled = true;
+        e._box.UndoLimit = 50;
+        e._box.CaretPosition = e._box.Document.Blocks.LastBlock.ContentEnd;
+        if (!e.Enter()) return ("Enter not handled", "");
+        e._box.BeginChange();
+        e._box.CaretPosition.InsertTextInRun("x");
+        e._box.EndChange();
+        var after = e.Serialize();
+        e._box.Undo(); // the "x"
+        e._box.Undo(); // the Enter, as one step
+        return (after, e.Serialize());
     }
 
     // ---------- pasting Markdown: formatted like typed ----------

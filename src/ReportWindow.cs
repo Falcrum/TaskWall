@@ -69,7 +69,7 @@ public sealed class Report
             keys.Add(key);
             var tasks = store.Data.Tasks.Where(t => t.Day == key && t.Text.Length > 0).Concat(store.VirtualTasks(d)).ToList(); // archived ones too
             r.All.AddRange(tasks.Select(t => (d, t)));
-            double meet = CalendarService.On(d).Where(x => !x.IsHoliday && !x.AllDay).Sum(x => Math.Max(0, ((x.End < d.AddDays(1) ? x.End : d.AddDays(1)) - (x.Start > d ? x.Start : d)).TotalHours)) + store.Alarms.Where(a => a.IsMeeting && a.Occurs(d)).Sum(a => a.Hours); // calendar events: only their part on this day
+            double meet = CalendarService.On(d).Where(x => !x.IsHoliday && !x.AllDay).Sum(x => Math.Max(0, ((x.End < d.AddDays(1) ? x.End : d.AddDays(1)) - (x.Start > d ? x.Start : d)).TotalHours)) + store.Alarms.Sum(a => a.HoursOn(d)); // calendar events: only their part on this day
             var mark = store.DayMark(key);
             if (mark != null)
             {

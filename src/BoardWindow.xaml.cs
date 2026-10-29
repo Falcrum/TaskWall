@@ -787,7 +787,7 @@ public partial class BoardWindow : GlassWindow
 
         // right: estimate sum (+ today's progress count)
         double hours = DayLoad(key, tasks, openOnly: false);
-        double meetingHours = events.Where(e => !e.IsHoliday).Sum(e => e.Hours) + Store.Alarms.Where(a => a.IsMeeting && a.Occurs(date)).Sum(a => a.Hours);
+        double meetingHours = events.Where(e => !e.IsHoliday).Sum(e => e.Hours) + Store.Alarms.Sum(a => a.HoursOn(date));
         var right = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(4, 1, 2, 0) };
         Grid.SetColumn(right, 1);
         int total = tasks.Count + archivedDone, done = tasks.Count(t => t.Done) + archivedDone;
@@ -868,7 +868,7 @@ public partial class BoardWindow : GlassWindow
         // ----- events + tasks -----
         var panel = new StackPanel();
         // alarms, own meetings and calendar meetings in time order, then the tasks
-        var timed = Store.Alarms.Where(a => a.Occurs(date)).Select(a => (at: a.TimeOfDay, el: BuildAlarmRow(a, date, compact)))
+        var timed = Store.Alarms.Where(a => a.Occurs(date) || a.ContinuesInto(date)).Select(a => (at: a.Occurs(date) ? a.TimeOfDay : TimeSpan.Zero, el: BuildAlarmRow(a, date, compact)))
             .Concat(events.Where(e => !e.IsHoliday).Select(e => (at: e.AllDay ? TimeSpan.Zero : e.Start.TimeOfDay, el: BuildEventRow(e, key, compact))))
             .OrderBy(x => x.at);
         // multi-day tasks of this day (the active one and the days it continued through) go right under the timed ones,
@@ -1067,7 +1067,7 @@ public partial class BoardWindow : GlassWindow
     readonly Dictionary<DateTime, List<(object Source, string Title, DateTime From, DateTime To)>> _meetingsCache = new();
 
     List<(object Source, string Title, DateTime From, DateTime To)> ComputeMeetings(DateTime date) =>
-        Store.Alarms.Where(a => a.IsMeeting && a.Occurs(date)).Select(a => ((object)a, a.Text, a.At(date), a.EndAt(date)))
+        Store.Alarms.SelectMany(a => a.PartsOn(date).Select(p => ((object)a, a.Text, p.From, p.To)))
             .Concat(CalendarService.On(date).Where(e => !e.IsHoliday && !e.AllDay).Select(e => ((object)e, e.Title, e.Start, e.End)))
             .ToList();
 
@@ -1085,11 +1085,14 @@ public partial class BoardWindow : GlassWindow
     /// <summary>Alarm or meeting on a day (not a task): click edits, right click deletes.</summary>
     FrameworkElement BuildAlarmRow(Alarm a, DateTime date, bool compact)
     {
-        var at = a.At(date);
+        // the tail of yesterday's meeting that runs past midnight: from 00:00 to its end, marked "↩"
+        bool tail = !a.Occurs(date) && a.ContinuesInto(date);
+        var at = tail ? date.Date : a.At(date);
+        var endAt = tail ? a.EndAt(date.AddDays(-1)) : a.EndAt(date);
         var color = a.IsMeeting ? MeetingColor : AlarmColor;
-        bool past = (a.IsMeeting ? a.EndAt(date) : at) <= DateTime.Now;
+        bool past = (a.IsMeeting ? endAt : at) <= DateTime.Now;
         var what = a.IsMeeting ? L.T("Spotkanie") : L.T("Alarm");
-        var time = a.IsMeeting ? $"{a.Time}–{a.EndAt(date):HH:mm}" : a.Time;
+        var time = tail ? $"↩ 00:00–{endAt:HH:mm}" : a.IsMeeting ? $"{a.Time}–{endAt:HH:mm}" : a.Time;
         var row = new Border
         {
             CornerRadius = new CornerRadius(6),
@@ -1110,8 +1113,8 @@ public partial class BoardWindow : GlassWindow
         tb.Inlines.Add(new Run(a.Text.Length > 0 ? a.Text : what) { Foreground = Res("Fg") });
         if (!a.Once) tb.Inlines.Add(new Run("  ↻") { Foreground = Res("FgFaint") });
         row.Child = tb;
-        if (a.IsMeeting) MarkOverlap(row, tb, date, at, a.EndAt(date), a);
-        row.MouseLeftButtonUp += (_, e) => { e.Handled = true; AlarmWindow.Edit(Store, a, date); };
+        if (a.IsMeeting) MarkOverlap(row, tb, date, at, endAt, a);
+        row.MouseLeftButtonUp += (_, e) => { e.Handled = true; AlarmWindow.Edit(Store, a, tail ? date.AddDays(-1) : date); }; // the tail: its own day
         row.MouseRightButtonUp += (_, e) =>
         {
             e.Handled = true;
@@ -2264,7 +2267,7 @@ public partial class BoardWindow : GlassWindow
     double DayTotal(string key)
     {
         var date = ParseKey(key);
-        double meetings = CalendarService.On(date).Where(e => !e.IsHoliday).Sum(e => e.Hours) + Store.Alarms.Where(a => a.IsMeeting && a.Occurs(date)).Sum(a => a.Hours);
+        double meetings = CalendarService.On(date).Where(e => !e.IsHoliday).Sum(e => e.Hours) + Store.Alarms.Sum(a => a.HoursOn(date));
         return DayLoad(key, Store.Data.Tasks.Where(x => x.Day == key && !x.Archived), openOnly: false) + meetings;
     }
 

@@ -552,7 +552,8 @@ public sealed class TimelineView : Grid
             // over midnight or several days: only the part on this day
             .Select(e => new Meeting(e.Start.Date < d ? TimeSpan.Zero : e.Start.TimeOfDay, e.End.Date > d ? TimeSpan.FromHours(24) : e.End.TimeOfDay, e.Title, false))
             .Where(m => m.To > m.From)
-            .Concat(store.Alarms.Where(a => a.IsMeeting && a.Occurs(d)).Select(a => new Meeting(a.TimeOfDay, a.EndAt(d).Date > d ? TimeSpan.FromHours(24) : a.EndAt(d).TimeOfDay, a.Text, true)))
+            // own meetings: each part on this day (the tail of yesterday's from 00:00, today's up to 24:00)
+            .Concat(store.Alarms.SelectMany(a => a.PartsOn(d).Select(p => new Meeting(p.From.TimeOfDay, p.To.Date > d ? TimeSpan.FromHours(24) : p.To.TimeOfDay, a.Text, true))))
             .OrderBy(m => m.From).ToList();
 
     /// <summary>Rows the meeting group needs: the most meetings on one day around what is on screen.</summary>

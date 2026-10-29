@@ -429,6 +429,26 @@ public sealed class Alarm
 
     [JsonIgnore] public double Hours => IsMeeting ? (EndAt(DateTime.Today) - At(DateTime.Today)).TotalHours : 0;
 
+    /// <summary>A meeting that started the day before and runs past midnight into <paramref name="day"/> (23:00–02:00).</summary>
+    public bool ContinuesInto(DateTime day) => IsMeeting && Occurs(day.Date.AddDays(-1)) && EndAt(day.Date.AddDays(-1)) > day.Date;
+
+    /// <summary>
+    /// The parts of a meeting on <paramref name="day"/>: the tail of the day before's occurrence (from midnight) and its own
+    /// occurrence (up to midnight at most) – a daily 23:00–02:00 has both.
+    /// </summary>
+    public List<(DateTime From, DateTime To)> PartsOn(DateTime day)
+    {
+        var parts = new List<(DateTime, DateTime)>();
+        if (!IsMeeting) return parts;
+        var d = day.Date;
+        if (ContinuesInto(d)) parts.Add((d, EndAt(d.AddDays(-1))));
+        if (Occurs(d)) { var end = EndAt(d); parts.Add((At(d), end > d.AddDays(1) ? d.AddDays(1) : end)); }
+        return parts;
+    }
+
+    /// <summary>A meeting's hours on that day (over midnight: each day its own part).</summary>
+    public double HoursOn(DateTime day) => PartsOn(day).Sum(p => (p.To - p.From).TotalHours);
+
     /// <summary>When the occurrence on <paramref name="day"/> rings: alarm at its time, meeting before it (or never).</summary>
     public DateTime? RingAt(DateTime day) => !IsMeeting ? At(day) : Remind is { } m ? At(day).AddMinutes(-m) : null;
 
@@ -760,6 +780,8 @@ public sealed class AppSettings
     /// <summary>The shared file those came from, and its settings at that sync (to tell what changed here since).</summary>
     public string? SharedPath { get; set; }
     public string? SharedBaseline { get; set; }
+    /// <summary>When each shared setting last changed (on whichever computer): per setting the newest value wins.</summary>
+    public Dictionary<string, DateTime>? SharedStamps { get; set; }
 
     /// <summary>"#RRGGBB" or "auto" (picked from the wallpaper).</summary>
     public string Accent { get; set; } = "auto";
@@ -769,6 +791,8 @@ public sealed class AppSettings
     public bool Animations { get; set; } = true;
 
     public double UiScale { get; set; } = 1.35;
+    /// <summary>The gap (DIP) under the top bar, above the taskbar, at the sides of a whole-screen board and around the second one.</summary>
+    public double Gap { get; set; } = 6;
     public double WidthPercent { get; set; } = 90;
     public double VerticalPercent { get; set; } = 50;
     /// <summary>One week row as % of the screen's work-area height.</summary>

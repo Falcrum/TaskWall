@@ -26,11 +26,11 @@ static class SharedSettings
         nameof(AppSettings.BoardHidden), nameof(AppSettings.SkippedUpdate), nameof(AppSettings.DrawerLocked), nameof(AppSettings.UiScale),
         nameof(AppSettings.WidthPercent), nameof(AppSettings.VerticalPercent), nameof(AppSettings.WeekHeightPercent), nameof(AppSettings.FontSize),
         nameof(AppSettings.BacklogWidth), nameof(AppSettings.Calendars), nameof(AppSettings.Accounts),
-        nameof(AppSettings.SharedModified), nameof(AppSettings.SharedHash), nameof(AppSettings.SharedPath), nameof(AppSettings.SharedBaseline),
+        nameof(AppSettings.SharedModified), nameof(AppSettings.SharedHash), nameof(AppSettings.SharedPath), nameof(AppSettings.SharedBaseline), nameof(AppSettings.SharedStamps),
         // view state that changes by itself (zoom, filters, the last weekly summary): never a reason to overwrite another PC's settings
         nameof(AppSettings.Timeline), nameof(AppSettings.LastWeekSummary), nameof(AppSettings.NotesSource), nameof(AppSettings.DayNotesLeft),
         // screens and hardware differ per computer
-        nameof(AppSettings.BoardMax), nameof(AppSettings.SecondMonitor), nameof(AppSettings.SecondView), nameof(AppSettings.Meters),
+        nameof(AppSettings.BoardMax), nameof(AppSettings.Gap), nameof(AppSettings.SecondMonitor), nameof(AppSettings.SecondView), nameof(AppSettings.Meters),
     };
 
     static string? PathFor(AppSettings s) => Dev.Arg("--data") is { } dev ? Path.Combine(dev, FileName)
@@ -110,11 +110,22 @@ static class SharedSettings
             var shared = Extract(s);
             var hash = Hash(shared);
             if (hash == s.SharedHash && File.Exists(path)) return;
+            var now = Stamp.After(s.SharedModified ?? DateTime.MinValue);
+            // each setting changed here since the last sync gets this moment: per setting, the newest change wins
+            // everywhere (one setting changed on each computer at the same time – both stay)
+            var baseline = s.SharedBaseline is { } bl ? JsonNode.Parse(bl) as JsonObject : null;
+            var stamps = s.SharedStamps ?? new Dictionary<string, DateTime>();
+            foreach (var (key, value) in shared)
+                if (baseline == null || !JsonNode.DeepEquals(value, baseline[key])) stamps[key] = now;
+                else if (!stamps.ContainsKey(key)) stamps[key] = s.SharedModified ?? DateTime.MinValue; // from before the stamps
+            s.SharedStamps = stamps;
             s.SharedHash = hash;
-            s.SharedModified = Stamp.After(s.SharedModified ?? DateTime.MinValue);
+            s.SharedModified = now;
             s.SharedPath = Path.GetDirectoryName(legacy);
             s.SharedBaseline = shared.ToJsonString();
-            var file = new JsonObject { ["Modified"] = s.SharedModified, ["Computer"] = Environment.MachineName, ["Settings"] = shared };
+            var stampNode = new JsonObject();
+            foreach (var (k, t) in stamps.Where(kv => shared.ContainsKey(kv.Key))) stampNode[k] = t;
+            var file = new JsonObject { ["Modified"] = s.SharedModified, ["Computer"] = Environment.MachineName, ["Settings"] = shared, ["Stamps"] = stampNode };
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             var tmp = path + ".tmp";
             File.WriteAllText(tmp, file.ToJsonString(Json.Options), new UTF8Encoding(false));
@@ -140,43 +151,57 @@ static class SharedSettings
             var sig = string.Join("|", Candidates(legacy).Select(f => f + ":" + File.GetLastWriteTimeUtc(f).Ticks + ":" + new FileInfo(f).Length)) + "|" + s.SharedModified?.Ticks;
             if (sig == _lastSignature) return Array.Empty<string>();
             _lastSignature = sig;
-            // the newest version among all computers' files
-            JsonObject? file = null;
-            DateTime newest = DateTime.MinValue;
+            // every computer's file (and the old shared one), each setting with the time it last changed there
+            var files = new List<(JsonObject Settings, Dictionary<string, DateTime> Stamps, DateTime Modified)>();
             foreach (var f in Candidates(legacy))
             {
                 try
                 {
-                    if (JsonNode.Parse(File.ReadAllText(f))?.AsObject() is { } o && o["Modified"]?.GetValue<DateTime>() is { } m && m > newest) { newest = m; file = o; }
+                    if (JsonNode.Parse(File.ReadAllText(f))?.AsObject() is not { } o || o["Settings"] is not JsonObject set || o["Modified"]?.GetValue<DateTime>() is not { } m) continue;
+                    var st = new Dictionary<string, DateTime>();
+                    if (o["Stamps"] is JsonObject so) foreach (var (k, v) in so) if (v?.GetValue<DateTime>() is { } t) st[k] = t;
+                    files.Add((set, st, m)); // a file from before the stamps: all its settings at its own time
                 }
                 catch (Exception ex) { Log.Error("shared settings read " + f, ex); }
             }
             LastError = null;
-            if (file?["Settings"] is not JsonObject theirs || file["Modified"]?.GetValue<DateTime>() is not { } modified) return Array.Empty<string>();
+            if (files.Count == 0) return Array.Empty<string>();
             var path = Path.GetDirectoryName(legacy)!;
             bool samePath = string.Equals(FolderOf(s.SharedPath), path, StringComparison.OrdinalIgnoreCase);
-            if (samePath && s.SharedModified is { } mine && modified <= mine) return Array.Empty<string>();
 
             var before = Extract(s);
-            // three-way: a setting changed here since the last sync stays, everything else comes from the file
+            // per setting: one changed here since the last sync (not written out yet) stays; otherwise the newest change
+            // among all files wins against what this computer has (its own time for it)
             var baseline = samePath && s.SharedBaseline is { } b ? JsonNode.Parse(b) as JsonObject : null;
+            var mine = samePath ? s.SharedStamps ?? new Dictionary<string, DateTime>() : new Dictionary<string, DateTime>();
             var merged = new JsonObject();
+            var synced = new JsonObject(); // the new baseline: what all computers agree on
+            var stamps = new Dictionary<string, DateTime>();
             bool keptLocal = false;
-            foreach (var key in before.Select(kv => kv.Key).Union(theirs.Select(kv => kv.Key)))
+            foreach (var key in before.Select(kv => kv.Key).Union(files.SelectMany(f => f.Settings.Select(kv => kv.Key))).ToList())
             {
                 bool changedHere = baseline != null && before.ContainsKey(key) && !JsonNode.DeepEquals(before[key], baseline[key]);
-                if (changedHere && !JsonNode.DeepEquals(before[key], theirs[key])) keptLocal = true;
-                merged[key] = (changedHere || !theirs.ContainsKey(key) ? before[key] : theirs[key])?.DeepClone();
+                JsonNode? best = before.ContainsKey(key) ? before[key] : null;
+                var bestAt = mine.TryGetValue(key, out var t0) ? t0 : DateTime.MinValue;
+                if (!changedHere)
+                    foreach (var f in files)
+                        if (f.Settings.ContainsKey(key) && (f.Stamps.TryGetValue(key, out var ft) ? ft : f.Modified) is var at && at > bestAt)
+                        { bestAt = at; best = f.Settings[key]; }
+                if (changedHere) keptLocal = true;
+                merged[key] = best?.DeepClone();
+                synced[key] = (changedHere ? baseline![key] : best)?.DeepClone();
+                stamps[key] = bestAt;
             }
             Apply(s, merged);
 
             var after = Extract(s);
-            s.SharedModified = modified;
+            s.SharedModified = new[] { s.SharedModified ?? DateTime.MinValue }.Concat(files.Select(f => f.Modified)).Max();
             s.SharedPath = path;
-            s.SharedBaseline = theirs.ToJsonString();
+            s.SharedBaseline = synced.ToJsonString();
+            s.SharedStamps = stamps;
             // local changes kept: the next save writes them out (the hash no longer matches)
             s.SharedHash = keptLocal ? null : Hash(after);
-            return after.Where(kv => !JsonNode.DeepEquals(kv.Value, before[kv.Key])).Select(kv => kv.Key).ToArray();
+            return after.Where(kv => !before.ContainsKey(kv.Key) || !JsonNode.DeepEquals(kv.Value, before[kv.Key])).Select(kv => kv.Key).ToArray();
         }
         catch (Exception ex) { Log.Error("shared settings read", ex); LastError = ex.Message; return Array.Empty<string>(); }
     }

@@ -988,6 +988,7 @@ public sealed class SettingsWindow : DarkWindow
         p.Children.Add(SliderRow(L.T("Szerokość tablicy"), 40, 100, S.WidthPercent, v => S.WidthPercent = v, v => $"{v:0}%"));
         p.Children.Add(SliderRow(L.T("Wysokość tygodnia"), 10, 100, S.WeekHeightPercent, v => S.WeekHeightPercent = v, v => v >= 99 ? L.T("od zegara do paska zadań") : L.F("{0:0}% ekranu", v)));
         p.Children.Add(SliderRow(L.T("Położenie w pionie"), 0, 100, S.VerticalPercent, v => S.VerticalPercent = v, v => $"{v:0}%"));
+        p.Children.Add(SliderRow(L.T("Odstęp od krawędzi"), 0, 40, S.Gap, v => S.Gap = Math.Round(v), v => $"{Math.Round(v):0} px"));
         p.Children.Add(SliderRow(L.T("Rozmiar tekstu zadań"), 10, 17, S.FontSize, v => S.FontSize = Math.Round(v * 2) / 2, v => $"{Math.Round(v * 2) / 2:0.0}"));
         return p;
     }
