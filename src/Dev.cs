@@ -139,6 +139,18 @@ static class Dev
             var a = new BoardData(); a.Days["2026-10-06"] = new DayInfo { Mark = "HO", Modified = new DateTime(2026, 1, 1) };
             var b = new BoardData(); b.Days["2026-10-06"] = new DayInfo { Mark = "BŚU", Modified = new DateTime(2026, 1, 2) };
             Check("day marks merge (newer wins)", BoardStore.Merge(a, b).Days["2026-10-06"].Mark == "BŚU" && BoardStore.Merge(b, a).Days["2026-10-06"].Mark == "BŚU");
+            // the history: days in one state, a finished task's way through the states, measured time against the estimate
+            var stuckT = new TaskItem { Text = "x", Day = "2026-10-08", Started = true, Review = true, WorkedDays = new() { "2026-10-05", "2026-10-06", "2026-10-07" },
+                DayStates = new() { ["2026-10-05"] = "started", ["2026-10-06"] = "review", ["2026-10-07"] = "review" } };
+            var cycT = new TaskItem { Text = "y #art", NotionSource = "P", Day = "2026-10-07", Done = true, Started = true, Review = true, WorkedDays = new() { "2026-10-05", "2026-10-06" },
+                DayStates = new() { ["2026-10-05"] = "started", ["2026-10-06"] = "review", ["2026-10-07"] = "done" } };
+            var cycles = Insights.Cycles(new[] { stuckT, cycT }, new DateTime(2026, 10, 5), new DateTime(2026, 10, 11));
+            var shaders = Enumerable.Range(0, 3).Select(i => new TaskItem { Text = $"[Shader] s{i}", Done = true, Estimate = 2, TrackedMinutes = 168 }).ToList();
+            var ratios = Insights.EstimateRatios(shaders.Append(new TaskItem { Text = "[Art] z", Done = true, Estimate = 1, TrackedMinutes = 60 }));
+            Check("insights: 3 days in review = stuck; a finished task's days per state; #shader takes 1.4× its estimate (a category with 1 task: none)",
+                Insights.DaysInState(stuckT) == 3 && Insights.IsStuck(stuckT) && cycles.Count == 1 && cycles[0] is { Days: 3, Started: 1, Review: 2, Tests: 0 }
+                && ratios.Count == 1 && ratios[0].Tag == "SHADER" && Math.Abs(ratios[0].Factor - 1.4) < 0.001,
+                $"{Insights.DaysInState(stuckT)} {cycles.Count} {(cycles.Count > 0 ? cycles[0].ToString() : "")} {ratios.Count}");
             // one computer marks the day, the other drags its working hours (each later than the other's file): both stay
             var da = new BoardData(); da.Days["2026-10-07"] = new DayInfo { Mark = "HO", Modified = new DateTime(2026, 1, 3), MarkAt = new DateTime(2026, 1, 3), HoursAt = new DateTime(2026, 1, 1), OvertimeAt = new DateTime(2026, 1, 1) };
             var db = new BoardData(); db.Days["2026-10-07"] = new DayInfo { WorkStart = "10:00", WorkEnd = "18:00", Modified = new DateTime(2026, 1, 2), MarkAt = new DateTime(2026, 1, 1), HoursAt = new DateTime(2026, 1, 2), OvertimeAt = new DateTime(2026, 1, 1) };

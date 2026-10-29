@@ -26,6 +26,12 @@ public sealed class Report
     public List<Category> Categories = new();
     public Dictionary<string, (string Label, string Color, int Days)> Marks = new();
     public List<TaskItem> Carried = new();
+    /// <summary>Multi-day tasks finished in the period, per project: average working days and the days in each state.</summary>
+    public List<Insights.ProjectCycle> Projects = new();
+    /// <summary>Open tasks now in one state for several working days (all of the account, not only this period).</summary>
+    public List<(TaskItem Task, int Days)> Stuck = new();
+    /// <summary>Measured time against the estimate per category (all finished tasks with a timer).</summary>
+    public List<Insights.Ratio> Ratios = new();
 
     public int Tasks => Days.Sum(d => d.Tasks);
     public int Done => Days.Sum(d => d.Done);
@@ -81,6 +87,9 @@ public sealed class Report
                 store.Data.Tasks.Count(t => t.WorkedDays?.Contains(key) == true), store.OvertimeHours(key)));
         }
         r.Carried = store.Data.Tasks.Where(t => !t.Done && t.WorkedDays?.Any(keys.Contains) == true && t.Day != null && !keys.Contains(t.Day)).ToList();
+        r.Projects = Insights.ByProject(Insights.Cycles(store.Data.Tasks, r.From, r.To));
+        r.Stuck = store.Data.Tasks.Select(t => (t, Insights.DaysInState(t))).Where(x => x.Item2 >= Insights.StuckDays).OrderByDescending(x => x.Item2).ToList();
+        r.Ratios = Insights.EstimateRatios(store.Data.Tasks);
         r.Categories = r.All
             .SelectMany(x => (TaskItem.Tags(x.Task.Text, out _) is { Count: > 0 } tags ? tags : new List<string> { "" }).Select(c => (c, x.Task)))
             .GroupBy(x => x.c)
@@ -92,6 +101,7 @@ public sealed class Report
     }
 
     static string H(double h) => BoardWindow.Hours(h);
+    internal static string D1(double d) => d.ToString("0.#", BoardWindow.Pl);
 
     // ---------- HTML (opens in any browser, prints well) ----------
 
@@ -163,6 +173,32 @@ public sealed class Report
             foreach (var c in Categories)
                 sb.Append($"<tr><td><span class=\"dot\" style=\"background:{E(c.Color)}\"></span>{E(c.Name)}</td><td class=\"n\">{c.Done}/{c.Tasks}</td>"
                     + $"<td style=\"width:30%\"><div class=\"meter\"><i style=\"width:{100.0 * c.Done / Math.Max(1, c.Tasks):0}%\"></i></div></td><td class=\"n\">{E(H(c.DoneHours))} / {E(H(c.Hours))}</td></tr>");
+            sb.Append("</table>");
+        }
+
+        // how long multi-day tasks took, per project, and the days in each state
+        if (Projects.Count > 0)
+        {
+            sb.Append($"<h2>{E(L.T("Czas do zrobienia (zadania wielodniowe)"))}</h2><table><tr><th>{E(L.T("Projekt"))}</th><th class=\"n\">{E(L.T("Zadania"))}</th><th></th><th class=\"n\">{E(L.T("Średnio dni"))}</th></tr>");
+            double top = Math.Max(1, Projects.Max(x => x.Days));
+            foreach (var p in Projects)
+            {
+                string Seg(double d, System.Windows.Media.Color c) => d > 0 ? $"<i style=\"display:inline-block;height:7px;border-radius:2px;margin-right:1px;width:{100 * d / top:0.#}%;background:#{c.R:X2}{c.G:X2}{c.B:X2}\" title=\"{d:0.#}\"></i>" : "";
+                sb.Append($"<tr><td>{E(p.Project.Length > 0 ? p.Project : L.T("bez projektu"))}</td><td class=\"n\">{p.Tasks}</td><td style=\"width:40%\" title=\"{E(L.F("w trakcie {0}, review {1}, testy {2}", D1(p.Started), D1(p.Review), D1(p.Tests)))}\">"
+                    + Seg(p.Started, TaskMarks.InProgressOrange) + Seg(p.Review, TaskMarks.ReviewViolet) + Seg(p.Tests, TaskMarks.TestsTeal) + $"</td><td class=\"n\">{D1(p.Days)}</td></tr>");
+            }
+            sb.Append("</table>");
+        }
+        if (Stuck.Count > 0)
+        {
+            sb.Append($"<h2>{E(L.F("Utknęły – {0}+ dni w jednym stanie", Insights.StuckDays))} ({Stuck.Count})</h2><table>");
+            foreach (var (t, days) in Stuck) sb.Append($"<tr><td>{E(t.Text)}</td><td class=\"n\">{E(L.F("{0} dni · {1}", days, TaskMarks.StateName(t)))}</td></tr>");
+            sb.Append("</table>");
+        }
+        if (Ratios.Count > 0)
+        {
+            sb.Append($"<h2>{E(L.T("Estymacja a zmierzony czas"))}</h2><table><tr><th>{E(L.T("Kategoria"))}</th><th class=\"n\">{E(L.T("Zadania"))}</th><th class=\"n\">{E(L.T("Zmierzony / estymacja"))}</th></tr>");
+            foreach (var x in Ratios) sb.Append($"<tr><td>{E(x.Tag)}</td><td class=\"n\">{x.Tasks}</td><td class=\"n\">×{x.Factor.ToString("0.0#", pl)}</td></tr>");
             sb.Append("</table>");
         }
 
@@ -418,6 +454,60 @@ public sealed class ReportWindow : DarkWindow
                 _body.Children.Add(d);
             }
             if (list.Count > limit) _body.Children.Add(Label(L.F("… i {0} więcej (pełna lista w zapisanym raporcie)", list.Count - limit), 11, "FgFaint"));
+        }
+        // how long the finished tasks took, per project, and in which state the days went
+        if (r.Projects.Count > 0)
+        {
+            _body.Children.Add(Caption(L.T("CZAS DO ZROBIENIA (ZADANIA WIELODNIOWE)")));
+            foreach (var p in r.Projects)
+            {
+                var row = new Grid { Margin = new Thickness(0, 2, 0, 2), ToolTip = L.F("{0} zadań · średnio {1} dni pracy: w trakcie {2}, review {3}, testy {4}", p.Tasks, Report.D1(p.Days), Report.D1(p.Started), Report.D1(p.Review), Report.D1(p.Tests)) };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
+                row.Children.Add(Label((p.Project.Length > 0 ? p.Project : L.T("bez projektu")) + $"  ({p.Tasks})", 12, "Fg"));
+                // one bar: the average days, split into the states' colours
+                var bar = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Height = 7 };
+                double scale = 150 / Math.Max(1, r.Projects.Max(x => x.Days));
+                foreach (var (days, color) in new[] { (p.Started, TaskMarks.InProgressOrange), (p.Review, TaskMarks.ReviewViolet), (p.Tests, TaskMarks.TestsTeal) })
+                    if (days > 0) bar.Children.Add(new Border { Width = days * scale, Background = new SolidColorBrush(color), CornerRadius = new CornerRadius(2), Margin = new Thickness(0, 0, 1, 0) });
+                Grid.SetColumn(bar, 1);
+                row.Children.Add(bar);
+                var avg = Label(L.F("śr. {0} dni", Report.D1(p.Days)), 11.5, "FgDim");
+                avg.TextAlignment = TextAlignment.Right;
+                Grid.SetColumn(avg, 2);
+                row.Children.Add(avg);
+                _body.Children.Add(row);
+            }
+        }
+        if (r.Stuck.Count > 0)
+        {
+            _body.Children.Add(Caption(L.F("UTKNĘŁY – {0}+ DNI W JEDNYM STANIE ({1})", Insights.StuckDays, r.Stuck.Count)));
+            foreach (var (t, days) in r.Stuck.Take(12))
+            {
+                var d = new DockPanel { Margin = new Thickness(0, 1, 0, 1) };
+                var what = Label(L.F("{0} dni · {1}", days, TaskMarks.StateName(t)), 11.5, "FgFaint");
+                what.Foreground = new SolidColorBrush(TaskMarks.StateColor(t));
+                DockPanel.SetDock(what, Dock.Right);
+                d.Children.Add(what);
+                var text = Label(t.Text, 12, "Fg");
+                text.TextTrimming = TextTrimming.CharacterEllipsis;
+                d.Children.Add(text);
+                _body.Children.Add(d);
+            }
+        }
+        if (r.Ratios.Count > 0)
+        {
+            _body.Children.Add(Caption(L.T("ESTYMACJA A ZMIERZONY CZAS (WSZYSTKIE ZROBIONE Z LICZNIKIEM)")));
+            foreach (var x in r.Ratios.Take(10))
+            {
+                var d = new DockPanel { Margin = new Thickness(0, 1, 0, 1) };
+                var f = Label($"×{x.Factor.ToString("0.0#", pl)}", 12, x.Factor > 1.15 ? "AccentBrush" : "FgDim", FontWeights.Bold);
+                DockPanel.SetDock(f, Dock.Right);
+                d.Children.Add(f);
+                d.Children.Add(Label($"{x.Tag}  ·  " + L.F("{0} zadań", x.Tasks) + "  ·  " + (x.Factor > 1.05 ? L.F("trwa zwykle o {0}% dłużej niż estymacja", Math.Round((x.Factor - 1) * 100)) : x.Factor < 0.95 ? L.F("trwa zwykle o {0}% krócej niż estymacja", Math.Round((1 - x.Factor) * 100)) : L.T("zgodnie z estymacją")), 12, "Fg"));
+                _body.Children.Add(d);
+            }
         }
         List(L.T("ZROBIONE"), r.All.Where(x => x.Task.Done).OrderBy(x => x.Day), r.Month ? 25 : 15);
         List(L.T("NIEZROBIONE / PRZESZŁY DALEJ"), r.Open.Concat(r.Carried.Where(t => Report.TryDay(t.Day) != null).Select(t => (Report.TryDay(t.Day)!.Value, t))).OrderBy(x => x.Item1), 12);

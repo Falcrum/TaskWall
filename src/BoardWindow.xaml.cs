@@ -1462,6 +1462,13 @@ public partial class BoardWindow : GlassWindow
                 Text = $"↷ {sp.Index}/{sp.Total}", FontSize = mfs + 0.5, FontWeight = FontWeights.SemiBold, Foreground = Res("AccentBrush"),
                 Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center, ToolTip = L.F("Zadanie wielodniowe: dzień {0} z {1}", sp.Index, sp.Total),
             });
+        if (!inBacklog && Insights.DaysInState(t) is var stuck && stuck >= Insights.StuckDays) // e.g. "⚠ 4 dni w review"
+            meta.Children.Add(new TextBlock
+            {
+                Text = "⚠ " + L.F("{0} dni · {1}", stuck, TaskMarks.StateName(t)), FontSize = mfs + 0.5, FontWeight = FontWeights.SemiBold,
+                Foreground = Tx(TaskMarks.StateColor(t)), Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center,
+                ToolTip = L.F("Od {0} dni roboczych w tym samym stanie – utknęło?", stuck),
+            });
         if (t.Done) meta.Opacity = 0.55;
         var mainRun = new Run(tags.Count > 0 ? rest : t.Text);
         text.Inlines.Add(mainRun);
@@ -1897,11 +1904,19 @@ public partial class BoardWindow : GlassWindow
         };
         // smart add preview: "jutro … #art 2h" → where / how long / which category
         var preview = new TextBlock { FontSize = 10.5, Foreground = Res("AccentBrush"), Margin = new Thickness(2, 3, 0, 0), Visibility = Visibility.Collapsed };
+        List<Insights.Ratio>? ratios = null; // measured time against the estimate per category, worked out on the first key
         box.TextChanged += (_, _) =>
         {
             hint.Visibility = box.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
             var p = SmartAdd.Parse(box.Text, Store.Categories);
             var desc = SmartAdd.Describe(p);
+            // "2h #shader" and shader tasks usually take 1.4× their estimate: say so before it is added
+            if (p.Estimate is > 0 and var est && TaskItem.Tags(p.Text, out _) is { Count: > 0 } newTags)
+            {
+                ratios ??= Insights.EstimateRatios(Store.Data.Tasks);
+                if (Insights.RatioFor(newTags, ratios) is { } ratio && Math.Abs(ratio.Factor - 1) >= 0.1)
+                    desc += (desc.Length > 0 ? "   ·   " : "") + L.F("{0} trwa zwykle ×{1} → ~{2}", ratio.Tag, ratio.Factor.ToString("0.0#", Pl), Hours(Math.Round(est * ratio.Factor * 4) / 4));
+            }
             if (TaskItem.Tags(p.Text, out var rest).Contains(TaskItem.MeetingTag))
                 desc = AlarmService.ParseMeeting(rest, p.Estimate, out var f, out var t, out _)
                     ? L.F("→ spotkanie {0:hh\\:mm}–{1:hh\\:mm}", f, t) + (p.Day is { } d ? $", {d.ToString("ddd d MMM", Pl)}" : "")
