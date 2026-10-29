@@ -86,7 +86,8 @@ public sealed class ClockWindow : GlassWindow
         clock.Children.Add(_chevron);
         var middle = new Border { Child = clock, Padding = new Thickness(12, 0, 10, 0), Margin = new Thickness(0, 4, 0, 4), CornerRadius = new CornerRadius(9), Cursor = Cursors.Hand, ToolTip = L.T("Kalendarz") };
         Anim.HoverBackground(middle, Colors.Transparent, Th.Ink(0x18));
-        middle.MouseLeftButtonUp += (_, e) => { e.Handled = true; _calendar.Toggle(); };
+        // a click on the clock while the calendar is open: pressing the mouse already closed it (it lost the focus) – don't open it again
+        middle.MouseLeftButtonUp += (_, e) => { e.Handled = true; if (!_calendar.JustClosed) _calendar.Toggle(); };
         Grid.SetColumn(middle, 1);
 
         var grid = new Grid { Height = BarHeight, Margin = new Thickness(16, 0, 14, 0) };
@@ -306,6 +307,11 @@ public sealed class CalendarWindow : GlassWindow
 
     public void Toggle() => Toggle(!_open);
 
+    DateTime _closedAt;
+
+    /// <summary>Closed a moment ago (the click that closed it is still on its way).</summary>
+    public bool JustClosed => (DateTime.Now - _closedAt).TotalMilliseconds < 400;
+
     public void Toggle(bool open)
     {
         if (_open == open) return;
@@ -321,6 +327,7 @@ public sealed class CalendarWindow : GlassWindow
         }
         else
         {
+            _closedAt = DateTime.Now;
             Anim.Height(Frame, 0, 220);
         }
     }

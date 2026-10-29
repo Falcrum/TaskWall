@@ -68,7 +68,7 @@ static class TaskMarks
     /// The state bar. <paramref name="width"/> is the bar; the element is a little wider so it is easy to hit.
     /// Planned days of a multi-day task: a dashed outline.
     /// </summary>
-    public static FrameworkElement Status(TaskItem t, double width = 5, Action? click = null, bool dashed = false, double gap = 6, string? state = null)
+    public static FrameworkElement Status(TaskItem t, double width = 5, Action? click = null, bool dashed = false, double gap = 6, string? state = null, bool middle = false)
     {
         state ??= t.State; // a multi-day task's earlier day: the state it had then
         var c = StateColor(t, state);
@@ -78,7 +78,7 @@ static class TaskMarks
         bool round = App.Settings.StateIcon == "circle";
         var hit = new Grid { Width = (round ? CircleSize : width) + gap, Background = Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Stretch };
         Shape outline;
-        if (round) outline = Circle(hit, state, c, held, dashed);
+        if (round) outline = Circle(hit, state, c, held, dashed, middle);
         else
         {
             var bar = new Grid { Width = width, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 1, 0, 1), MinHeight = 8 };
@@ -114,15 +114,19 @@ static class TaskMarks
     /// <summary>The round icon (Settings → Wygląd): its diameter.</summary>
     public const double CircleSize = 12;
 
+    /// <summary>How wide the state mark is with the chosen icon (a bar <paramref name="width"/>, a circle wider): text next to it starts after it.</summary>
+    public static double MarkWidth(double width = BarWidth) => App.Settings.StateIcon == "circle" ? CircleSize : width;
+
     /// <summary>
     /// The state as a round icon (like Linear / Jira): an empty ring to do, a quarter / half / three quarters of the disc in
     /// progress / review / tests, a full disc with a tick done, a ring with ‖ on hold. The shape reads without the colours.
     /// Returns the ring (thicker on hover).
     /// </summary>
-    static Shape Circle(Grid host, string state, Color c, bool held, bool dashed)
+    static Shape Circle(Grid host, string state, Color c, bool held, bool dashed, bool middle)
     {
         double d = CircleSize, mid = d / 2;
-        var box = new Grid { Width = d, Height = d, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2.5, 0, 0) };
+        // by the first line of text (rows, blocks); in the middle of a one-line bar (the timeline)
+        var box = new Grid { Width = d, Height = d, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = middle ? VerticalAlignment.Center : VerticalAlignment.Top, Margin = new Thickness(0, middle ? 0 : 2.5, 0, 0) };
         var brush = new SolidColorBrush(c);
         var ring = new Ellipse { Stroke = brush, StrokeThickness = 1.4 };
         if (dashed) ring.StrokeDashArray = new DoubleCollection { 1.6, 1.4 };

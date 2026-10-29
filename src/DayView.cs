@@ -503,7 +503,7 @@ public sealed class DayView : Grid
                 mark.Margin = new Thickness(3, 3, 0, 3);
                 grid.Children.Add(mark);
                 if (TaskMarks.Right(t) is { } proj) { proj.Margin = new Thickness(0, 3, 3, 3); grid.Children.Add(proj); }
-                stack.Margin = new Thickness(12, 3, 8, 2);
+                stack.Margin = new Thickness(8 + TaskMarks.MarkWidth(), 3, 8, 2); // after the mark, a bar or a wider circle
                 var tags = TaskItem.Tags(t.Text, out var rest);
                 // like a task row: the hours in the accent before the name, the categories as chips on the second line
                 title.Inlines.Add(new Run(range + "  ") { FontWeight = FontWeights.SemiBold, Foreground = Res("FgDim") }); // a plan, not an appointment: quieter than a meeting's hours

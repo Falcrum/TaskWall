@@ -15,7 +15,7 @@ namespace TaskWall;
 /// <summary>What the timeline shows and how (kept in the settings, shared between computers).</summary>
 public sealed class TimelineSettings
 {
-    /// <summary>Width of one day in px (zoom): 8 … 160.</summary>
+    /// <summary>Width of one day in px (zoom): 8 … a third of the screen (three days across).</summary>
     public double DayWidth { get; set; } = 38;
     /// <summary>"none", "project", "category", "priority", "state".</summary>
     public string Group { get; set; } = "project";
@@ -77,7 +77,9 @@ public sealed class TimelineView : Grid
     static Color A(Color c, byte a) => Color.FromArgb(a, c.R, c.G, c.B);
     static SolidColorBrush Tx(Color c) => new(Th.Light ? Color.FromArgb(c.A, (byte)(c.R * 0.6), (byte)(c.G * 0.6), (byte)(c.B * 0.6)) : c);
     static bool DayOff(DateTime d) => d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday || DaysOff.Name(d) != null;
-    double W => Math.Clamp(S.DayWidth, 8, 160);
+    double W => Math.Clamp(S.DayWidth, 8, MaxW);
+    /// <summary>The closest zoom: three days across the screen.</summary>
+    double MaxW => Math.Max(160, ActualWidth / 3);
     double RowHeight => Math.Round(S.Compact ? App.Settings.FontSize * 1.9 + 4 : App.Settings.FontSize * 2.5 + 6);
 
     public TimelineView(Func<BoardStore> store, Func<TaskItem, FrameworkElement, ContextMenu> menu, Action<DateTime> open, Action<TaskItem, int> moveBy, Action<TaskItem, DateTime> setEnd)
@@ -208,7 +210,7 @@ public sealed class TimelineView : Grid
     {
         double x = atX ?? ActualWidth / 2;
         double dayAtX = _left + x / W;
-        S.DayWidth = Math.Clamp(W * factor, 8, 160);
+        S.DayWidth = Math.Clamp(W * factor, 8, MaxW);
         _left = dayAtX - x / W;
         _saveZoom.Stop();
         _saveZoom.Start();
@@ -421,7 +423,7 @@ public sealed class TimelineView : Grid
             {
                 var label = new TextBlock
                 {
-                    Text = w >= 34 ? $"{d.Day} {pl.DateTimeFormat.GetAbbreviatedDayName(d.DayOfWeek).TrimEnd('.')}" : d.Day.ToString(),
+                    Text = w >= 200 ? d.ToString("dddd d MMMM", pl) : w >= 34 ? $"{d.Day}{pl.DateTimeFormat.GetAbbreviatedDayName(d.DayOfWeek).TrimEnd('.')}" : d.Day.ToString(),
                     FontSize = 10, Width = w, TextAlignment = TextAlignment.Center, FontWeight = today ? FontWeights.Bold : FontWeights.Normal,
                     Foreground = today ? Brushes.White : DayOff(d) ? B(A(Color.FromRgb(0xF2, 0x6D, 0x6D), 0xC0)) : Res("FgFaint"),
                 };
@@ -690,7 +692,7 @@ public sealed class TimelineView : Grid
                 Fill = B(Th.Ink(0x08)), Stroke = B(Th.Ink(0x40)), StrokeThickness = 1, StrokeDashArray = new DoubleCollection { 4, 3 },
             });
         // the state bar at its start (priority colour, green when done; empty / half / full) and the project's on the right
-        var mark = TaskMarks.Status(t, TaskMarks.BarWidth, gap: 0);
+        var mark = TaskMarks.Status(t, TaskMarks.BarWidth, gap: 0, middle: true);
         mark.Margin = new Thickness(3 + Math.Max(0, -x0), 2, 0, 2); // sticky like the title: visible when the bar starts left of the screen
         mark.IsHitTestVisible = false;
         bar.Children.Add(mark);
@@ -723,8 +725,9 @@ public sealed class TimelineView : Grid
         {
             var title = new TextBlock
             {
-                Text = (shift > 0 ? "‹ " : "") + Title(t), FontSize = fs, // "‹": it began before the screen's left edge Foreground = Res("Fg"), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(10 + shift, 0, 8, 1), IsHitTestVisible = false,
+                // "‹": it began before the screen's left edge; the text starts after the state mark (a bar or a wider circle)
+                Text = (shift > 0 ? "‹ " : "") + Title(t), FontSize = fs, Foreground = Res("Fg"), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(6 + TaskMarks.MarkWidth() + shift, 0, 8, 1), IsHitTestVisible = false,
             };
             if (t.Done) title.TextDecorations = TextDecorations.Strikethrough;
             bar.Children.Add(title);
@@ -896,7 +899,7 @@ public sealed class TimelineView : Grid
         var from = list.Min(i => i.Start).AddDays(-1);
         var to = list.Max(i => i.End).AddDays(2);
         double days = Math.Max(7, (to - from).TotalDays);
-        S.DayWidth = Math.Clamp(ActualWidth / days, 8, 160);
+        S.DayWidth = Math.Clamp(ActualWidth / days, 8, MaxW);
         _left = (from - Origin).TotalDays;
         _saveZoom.Stop();
         _saveZoom.Start();
