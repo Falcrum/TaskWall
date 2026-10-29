@@ -124,7 +124,9 @@ public partial class BoardWindow
         Arrow(Key.Down, false);
         Arrow(Key.Down, false);
         OpenPalette();
-        _paletteBox!.Text = text;
+        bool run = text.StartsWith("run:");
+        _paletteBox!.Text = run ? text[4..] : text;
+        if (run && _shown.Count > 0) RunPalette(_shown[0]); // "run:na jutro" – the first match, done
     }
 
     public void OpenPalette()

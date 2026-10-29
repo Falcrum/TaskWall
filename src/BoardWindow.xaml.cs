@@ -182,10 +182,77 @@ public partial class BoardWindow : GlassWindow
     /// <summary>Wraps a user action: undo checkpoint first, then the change.</summary>
     void Do(Action change, Action? after = null)
     {
+        var before = WeekSigs();
         Store.Checkpoint();
         change();
-        Rebuild();
+        // the week / month views: only the week rows whose days changed are built again (a tick on Tuesday doesn't
+        // rebuild the whole month); anything wider (alarms, series, another view, an open editor) builds it all
+        if (before != null && WeekSigs() is { } now && before.Global == now.Global && _openEditors == 0)
+        {
+            var weeks = now.Days.Where(kv => !before.Days.TryGetValue(kv.Key, out var was) || was != kv.Value).Select(kv => kv.Key.Week).ToHashSet();
+            RebuildWeeks(weeks);
+        }
+        else Rebuild();
         after?.Invoke();
+    }
+
+    /// <summary>What each day on screen shows (its tasks and the multi-day ones over it, its mark and hours), as text, and the rest.</summary>
+    sealed record Sigs(string Global, Dictionary<(int Week, string Day), string> Days);
+
+    Sigs? WeekSigs()
+    {
+        if (_view is not (ViewMode.Week1 or ViewMode.Week2 or ViewMode.Month) || WeeksGrid.Visibility != Visibility.Visible) return null;
+        var first = FirstMonday;
+        int perWeek = Weekends ? 7 : 5;
+        var keys = new Dictionary<string, (int, string)>();
+        for (int w = 0; w < WeekCount; w++)
+            for (int c = 0; c < perWeek; c++) { var k = DayKey(first.AddDays(w * 7 + c)); keys[k] = (w, k); }
+        var text = keys.Values.ToDictionary(x => x, _ => new System.Text.StringBuilder());
+        foreach (var t in Store.Data.Tasks)
+        {
+            void Put(string? day) { if (day != null && keys.TryGetValue(day, out var at)) text[at].Append(t.Id).Append(':').Append(t.Modified.Ticks).Append(t.Archived ? 'a' : '-').Append(';'); }
+            Put(t.Day);
+            if (ComputeSpan(t) is { } span) foreach (var d in span) if (d != t.Day) Put(d); // a lane on its other days too
+        }
+        foreach (var (k, at) in keys) if (Store.Data.Days.TryGetValue(k, out var info)) text[at].Append('|').Append(info.Modified.Ticks);
+        // alarms, series, marks' series, the account: a change there rebuilds everything
+        var global = $"{S.Layer}|{Store.Data.Alarms.Count}|{Store.Data.Alarms.Select(a => a.Modified.Ticks).DefaultIfEmpty().Max()}|{Store.Data.Rules.Count}|{Store.Data.Rules.Select(r => r.Modified.Ticks).DefaultIfEmpty().Max()}"
+            + $"|{Store.Data.MarkRules?.Count}|{Store.Data.MarkRules?.Select(r => r.Modified.Ticks).DefaultIfEmpty().Max()}|{Store.Data.Tasks.Count(t => t.Day == null)}|{_view}|{FirstMonday:yyyyMMdd}|{WeekCount}|{Weekends}";
+        return new Sigs(global, text.ToDictionary(kv => kv.Key, kv => kv.Value.ToString()));
+    }
+
+    /// <summary>A rebuild of just some week rows (and the bar, the backlog) – see <see cref="Do"/>.</summary>
+    void RebuildWeeks(HashSet<int> weeks)
+    {
+        BuiltAt = DateTime.UtcNow;
+        foreach (var cancel in _editors.ToList()) cancel();
+        _editors.Clear();
+        _editorBoxes.Clear();
+        SpanCache.Clear();
+        TaskMarks.ResetCaches();
+        _meetingsCache.Clear();
+        _pressed = null;
+        UpdateTopBar();
+        if (weeks.Count > 0)
+        {
+            var first = FirstMonday;
+            int perWeek = Weekends ? 7 : 5;
+            foreach (var w in weeks)
+                for (int c = 0; c < perWeek; c++)
+                {
+                    var key = DayKey(first.AddDays(w * 7 + c));
+                    if (_panels.TryGetValue(key, out var panel) && panel.Parent is ScrollViewer sv) _scrollOffsets[key] = sv.VerticalOffset;
+                    _panels.Remove(key);
+                }
+            _dropLine = null;
+            BuildGrid(weeks);
+        }
+        if (S.BacklogMode == "drawer" ? _drawerOpen : _pinnedVisible) BuildBacklog(); else _backlogStale = true;
+        _justAdded = _justToggled = null;
+        _flashId = null;
+        _editOnBuild = null;
+        _selFrame = null;
+        if (_sel != null) Dispatcher.BeginInvoke(ApplySelection, System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
     readonly HashSet<string> _showDone = new(); // days whose folded done tasks are unfolded
@@ -621,16 +688,22 @@ public partial class BoardWindow : GlassWindow
         }
     }
 
-    void BuildGrid()
+    /// <param name="only">Just these week rows (a change touched only their days); null = the whole grid.</param>
+    void BuildGrid(ICollection<int>? only = null)
     {
-        WeeksGrid.Children.Clear();
-        WeeksGrid.RowDefinitions.Clear();
-        WeeksGrid.ColumnDefinitions.Clear();
         bool single = _view == ViewMode.Day;
         int days = single ? 1 : Weekends ? 7 : 5;
         bool month = _view == ViewMode.Month;
-        for (int c = 0; c < days; c++) WeeksGrid.ColumnDefinitions.Add(new ColumnDefinition());
-        for (int w = 0; w < WeekCount; w++) WeeksGrid.RowDefinitions.Add(new RowDefinition());
+        if (only == null)
+        {
+            WeeksGrid.Children.Clear();
+            WeeksGrid.RowDefinitions.Clear();
+            WeeksGrid.ColumnDefinitions.Clear();
+            for (int c = 0; c < days; c++) WeeksGrid.ColumnDefinitions.Add(new ColumnDefinition());
+            for (int w = 0; w < WeekCount; w++) WeeksGrid.RowDefinitions.Add(new RowDefinition());
+        }
+        else
+            foreach (var old in WeeksGrid.Children.OfType<UIElement>().Where(c => only.Contains(Grid.GetRow(c))).ToList()) WeeksGrid.Children.Remove(old);
 
         var byDay = TasksByDay();
         var archivedDone = Store.Data.Tasks.Where(t => t.Archived && t.Done && t.Day != null).GroupBy(t => t.Day!).ToDictionary(g => g.Key, g => g.Count());
@@ -638,6 +711,7 @@ public partial class BoardWindow : GlassWindow
         Grid.SetIsSharedSizeScope(WeeksGrid, true); // lanes of multi-day tasks line up across the days of a week
         AssignLanes(first, WeekCount, days);
         for (int w = 0; w < WeekCount; w++)
+            if (only == null || only.Contains(w))
             for (int c = 0; c < days; c++)
             {
                 var date = first.AddDays(w * 7 + c);
