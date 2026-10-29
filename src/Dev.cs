@@ -140,6 +140,21 @@ static class Dev
             var a = new BoardData(); a.Days["2026-10-06"] = new DayInfo { Mark = "HO", Modified = new DateTime(2026, 1, 1) };
             var b = new BoardData(); b.Days["2026-10-06"] = new DayInfo { Mark = "BŚU", Modified = new DateTime(2026, 1, 2) };
             Check("day marks merge (newer wins)", BoardStore.Merge(a, b).Days["2026-10-06"].Mark == "BŚU" && BoardStore.Merge(b, a).Days["2026-10-06"].Mark == "BŚU");
+            // the week's lanes: the screenshot case – a task Mon–Wed, two Wed–Fri, one Tue–Fri; on Thursday the Mon–Wed
+            // lane is free for the day's own tasks; a lane only for 2+ days; done folds only on the day it was finished
+            var wk = new[] { "26", "27", "28", "29", "30" }.Select(d => "2026-10-" + d).ToArray();
+            var laneMap = DayLayout.Lanes(new[]
+            {
+                new DayLayout.Span("long", wk[1..5], 0), new DayLayout.Span("blood", wk[0..3], 1),
+                new DayLayout.Span("woda", wk[2..5], 2), new DayLayout.Span("wodospady", wk[2..5], 3), new DayLayout.Span("one", wk[3..4], 4),
+            });
+            var thursday = new[] { "long", "woda", "wodospady" }.Select(id => laneMap[id]);
+            var doneOnWed = new TaskItem { Day = wk[2], Done = true, WorkedDays = new() { wk[0], wk[1] } };
+            Check("lanes: one line per multi-day task across the week, a free lane where one ended, none for a single day; folding only on the day it was done",
+                laneMap.Count == 4 && laneMap["long"] == 0 && laneMap["blood"] == 1 && laneMap.Values.Distinct().Count() == 4
+                && DayLayout.FreeLanes(thursday).SequenceEqual(new[] { 1 }) && DayLayout.FreeLanes(new[] { 0, 1 }).Count == 0 && DayLayout.FreeLanes(Array.Empty<int>()).Count == 0
+                && DayLayout.Folds(doneOnWed, wk[2], true) && !DayLayout.Folds(doneOnWed, wk[1], true) && !DayLayout.Folds(doneOnWed, wk[2], false),
+                string.Join(",", laneMap.Select(kv => kv.Key + "=" + kv.Value)));
             // the history: days in one state, a finished task's way through the states, measured time against the estimate
             var stuckT = new TaskItem { Text = "x", Day = "2026-10-08", Started = true, Review = true, WorkedDays = new() { "2026-10-05", "2026-10-06", "2026-10-07" },
                 DayStates = new() { ["2026-10-05"] = "started", ["2026-10-06"] = "review", ["2026-10-07"] = "review" } };

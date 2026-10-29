@@ -48,6 +48,7 @@ Aplikacja nie ma okna na pasku zadań. Steruje się nią ikoną w zasobniku (lew
 | Wyczyść | WYCZYŚĆ na górnym pasku przenosi zakończone zadania z widocznego okresu i backlogu do archiwum |
 | Archiwum | ✕ po najechaniu, środkowy przycisk, WYCZYŚĆ albo przeciągnięcie na ARCHIWUM. W panelu: ↺ przywróć, 🗑 usuń całkowicie |
 | Szukaj | Ctrl+F: zadania, serie, spotkania i archiwum (bez względu na polskie znaki) |
+| Paleta poleceń | Ctrl+K: widoki, przejście do daty („pt”, „T45”), dodanie zadania, szukanie, akcje zaznaczonego zadania. Strzałki zaznaczają zadanie i przechodzą po dniach, Ctrl+← → przenosi je o dzień |
 | Cofnij | Ctrl+Z |
 | Zaległe | „⟲ ZALEGŁE: n → DZIŚ” (albo automatycznie, w ustawieniach) |
 | Eksport | ⋯ → Eksportuj widoczny okres do CSV: dni z oznaczeniami, liczba zadań, zrobione, godziny, spotkania, kategorie i lista zadań |

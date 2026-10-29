@@ -48,6 +48,7 @@ TaskWall has no taskbar button. Use the tray icon (left click: the *Today* card,
 | Clear | CLEAR in the top bar moves finished tasks of the visible period and the backlog to the archive |
 | Archive | ✕ on hover, middle click, CLEAR, or drop on ARCHIVE. In the panel: ↺ restore, 🗑 delete for good |
 | Search | Ctrl+F: tasks, series, meetings and archive (accent-insensitive) |
+| Command palette | Ctrl+K: views, go to a date ("fri", "W45"), add a task, search, the selected task's actions. Arrows select a task and move through the days, Ctrl+← → moves it a day |
 | Undo | Ctrl+Z |
 | Overdue | "⟲ OVERDUE: n → TODAY" (or automatically, in settings) |
 | Export | ⋯ → Export the visible period to CSV: days with marks, task counts, done, hours, meetings, category summary and the task list |
