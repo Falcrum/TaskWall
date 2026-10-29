@@ -727,11 +727,12 @@ public partial class BoardWindow
         // ----- status: the five states of the bar -----
         menu.Items.Add(ChipRow(menu, L.T("Status"), new[]
         {
-            new MenuChip(L.T("Do zrobienia"), !t.Done && !t.IsStarted, TaskMarks.StateColor(t, "todo"), () => SetState(t, TaskState.Todo)),
-            new MenuChip(L.T("W trakcie"), t.IsStarted && !t.IsReview && !t.IsTesting, TaskMarks.InProgressOrange, () => SetState(t, TaskState.Started)),
-            new MenuChip(L.T("Review"), t.IsReview, TaskMarks.ReviewViolet, () => SetState(t, TaskState.Review)),
-            new MenuChip(L.T("Testy"), t.IsTesting, TaskMarks.TestsTeal, () => SetState(t, TaskState.Tests)),
+            new MenuChip(L.T("Do zrobienia"), !t.Done && !t.IsHold && !t.IsStarted, TaskMarks.StateColor(t, "todo"), () => SetState(t, TaskState.Todo)),
+            new MenuChip(L.T("W trakcie"), !t.IsHold && t.IsStarted && !t.IsReview && !t.IsTesting, TaskMarks.InProgressOrange, () => SetState(t, TaskState.Started)),
+            new MenuChip(L.T("Review"), !t.IsHold && t.IsReview, TaskMarks.ReviewViolet, () => SetState(t, TaskState.Review)),
+            new MenuChip(L.T("Testy"), !t.IsHold && t.IsTesting, TaskMarks.TestsTeal, () => SetState(t, TaskState.Tests)),
             new MenuChip(L.T("Zrobione"), t.Done, TaskMarks.DoneGreen, () => SetState(t, TaskState.Done)),
+            new MenuChip("Hold", t.IsHold, TaskMarks.HoldRed, () => SetState(t, t.IsHold ? WorkState(t) : TaskState.Hold)), // blocked: on top of the state, a second click releases
         }));
         // ----- priority (own tasks too; Notion tasks get theirs back from Notion on the next sync) -----
         var prios = new List<MenuChip> { new("—", string.IsNullOrEmpty(t.Priority), null, () => SetPriority(t, null)) };
@@ -785,7 +786,7 @@ public partial class BoardWindow
             copy.Done = false;
             copy.Started = null;
             copy.WorkedDays = null;
-            copy.Review = copy.Testing = null;
+            copy.Review = copy.Testing = copy.Hold = null;
             copy.DayStates = null;
             _justAdded = copy.Id;
             Do(() => Store.Add(copy));
@@ -1104,7 +1105,7 @@ public partial class BoardWindow
         // a multi-day task still within its planned days (Mon–Fri on Wednesday) isn't late
         return Store.Data.Tasks.Where(t => !t.Done && !t.Archived && t.Day != null && string.CompareOrdinal(t.Day, today) < 0
                 && !(t.PlanEnd != null && string.CompareOrdinal(t.PlanEnd, today) >= 0)
-                && !(S.StretchActive && t.IsStarted)) // in progress / review / tests: they carry on to working days by themselves
+                && !(S.StretchActive && (t.IsStarted || t.IsHold))) // in progress / review / tests: they carry on to working days by themselves
             .OrderBy(t => t.Day).ThenBy(t => t.Order).ToList();
     }
 
@@ -1161,6 +1162,7 @@ public partial class BoardWindow
             Action? act = (e.Key, Keyboard.Modifiers) switch
             {
                 (Key.Space, ModifierKeys.None) => () => SetState(ht, NextState(ht)),
+                (Key.H, ModifierKeys.None) => () => SetState(ht, ht.IsHold ? WorkState(ht) : TaskState.Hold), // hold / release
                 (Key.D1 or Key.NumPad1, ModifierKeys.Shift) => () => SetPriority(ht, SmartAdd.PriorityName(1)),
                 (Key.D2 or Key.NumPad2, ModifierKeys.Shift) => () => SetPriority(ht, SmartAdd.PriorityName(2)),
                 (Key.D3 or Key.NumPad3, ModifierKeys.Shift) => () => SetPriority(ht, SmartAdd.PriorityName(3)),

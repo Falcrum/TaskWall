@@ -155,6 +155,21 @@ static class Dev
                 && DayLayout.FreeLanes(thursday).SequenceEqual(new[] { 1 }) && DayLayout.FreeLanes(new[] { 0, 1 }).Count == 0 && DayLayout.FreeLanes(Array.Empty<int>()).Count == 0
                 && DayLayout.Folds(doneOnWed, wk[2], true) && !DayLayout.Folds(doneOnWed, wk[1], true) && !DayLayout.Folds(doneOnWed, wk[2], false),
                 string.Join(",", laneMap.Select(kv => kv.Key + "=" + kv.Value)));
+            // hold: on top of the state (review stays under it), carried on to the next working day as held days, counted
+            // apart in the cycle, a click releases it back to review; Notion's "On hold" / "Blocked" mean it
+            var held = new TaskItem { Text = "h", Day = "2026-10-05", Started = true, Review = true, Hold = true };
+            held.NoteState("2026-10-05");
+            held.Stretch(new DateTime(2026, 10, 7), d => true);
+            var heldCycle = new TaskItem { Text = "c", Day = "2026-10-08", Done = true, Started = true, WorkedDays = new() { "2026-10-05", "2026-10-06", "2026-10-07" },
+                DayStates = new() { ["2026-10-05"] = "started", ["2026-10-06"] = "hold", ["2026-10-07"] = "hold", ["2026-10-08"] = "done" } };
+            var hc = Insights.Cycles(new[] { heldCycle }, new DateTime(2026, 10, 5), new DateTime(2026, 10, 11));
+            Check("hold: a state on top of review (released back to review), carried on as held days, counted apart, Notion's On hold / Blocked",
+                held.State == "hold" && held.WorkState == "review" && BoardWindow.NextState(held) == BoardWindow.TaskState.Review
+                && held.Day == "2026-10-07" && held.DayStates!["2026-10-05"] == "hold" && held.DayStates["2026-10-06"] == "hold"
+                && Insights.DaysOnHold(held) == 3 && Insights.DaysInState(held) == 0
+                && hc.Count == 1 && hc[0].Hold == 2 && hc[0].Started == 2 /* its first day and the day it was finished */
+                && NotionSync.LooksOnHold("On hold") && NotionSync.LooksOnHold("Blocked") && NotionSync.LooksOnHold("Wstrzymane") && !NotionSync.LooksOnHold("In progress") && !NotionSync.LooksOnHold("Householding"),
+                $"{held.State} {held.Day} {string.Join(",", held.DayStates ?? new())} {Insights.DaysOnHold(held)} {(hc.Count > 0 ? hc[0].ToString() : "")}");
             // the history: days in one state, a finished task's way through the states, measured time against the estimate
             var stuckT = new TaskItem { Text = "x", Day = "2026-10-08", Started = true, Review = true, WorkedDays = new() { "2026-10-05", "2026-10-06", "2026-10-07" },
                 DayStates = new() { ["2026-10-05"] = "started", ["2026-10-06"] = "review", ["2026-10-07"] = "review" } };

@@ -43,12 +43,20 @@ public sealed class TaskItem
     public bool? Review { get; set; }
     /// <summary>"Tests": after review, before done.</summary>
     public bool? Testing { get; set; }
+    /// <summary>
+    /// "Hold": blocked (waiting for someone else's work) – no work on it now. On top of its state, which comes back when it
+    /// is released; its days count as held, not as work, in the history, the reports and the day's hours.
+    /// </summary>
+    public bool? Hold { get; set; }
+    [JsonIgnore] public bool IsHold => !Done && Hold == true;
     /// <summary>In progress, in review or in tests (all carry on to the next days until done).</summary>
     [JsonIgnore] public bool IsStarted => !Done && (Started == true || Review == true || Testing == true);
     [JsonIgnore] public bool IsTesting => !Done && Testing == true;
     [JsonIgnore] public bool IsReview => !Done && Review == true && Testing != true;
-    /// <summary>"todo", "started", "review", "tests" or "done".</summary>
-    [JsonIgnore] public string State => Done ? "done" : IsTesting ? "tests" : IsReview ? "review" : IsStarted ? "started" : "todo";
+    /// <summary>"todo", "started", "review", "tests", "hold" or "done".</summary>
+    [JsonIgnore] public string State => Done ? "done" : IsHold ? "hold" : WorkState;
+    /// <summary>The state under a hold (what it goes back to): "todo", "started", "review" or "tests".</summary>
+    [JsonIgnore] public string WorkState => IsTesting ? "tests" : IsReview ? "review" : IsStarted ? "started" : "todo";
     /// <summary>The state the task had on each of its earlier days ("started" / "review"), for its history and the reports.</summary>
     public Dictionary<string, string>? DayStates { get; set; }
 
@@ -60,7 +68,7 @@ public sealed class TaskItem
     {
         if (to != null && WorkedDays != null) WorkedDays.RemoveAll(d => string.CompareOrdinal(d, to) >= 0);
         if (PlanEnd != null && (to == null || string.CompareOrdinal(PlanEnd, to) <= 0)) PlanEnd = null; // the plan ran out (or went to the backlog)
-        if (!IsStarted) return; // not started: it simply moves, the board doesn't pretend it was worked on
+        if (!IsStarted && !IsHold) return; // not started: it simply moves, the board doesn't pretend it was worked on
         if (Done || from == null || to == null || string.CompareOrdinal(from, today) >= 0 || string.CompareOrdinal(to, from) <= 0) return;
         WorkedDays ??= new();
         if (!WorkedDays.Contains(from)) WorkedDays.Add(from);
@@ -75,7 +83,7 @@ public sealed class TaskItem
     public void NoteState(string today)
     {
         if (Day == null || string.CompareOrdinal(Day, today) > 0) return; // planned ahead: nothing happened yet
-        if (IsStarted) (DayStates ??= new())[Day] = State;
+        if (IsStarted || IsHold) (DayStates ??= new())[Day] = State;
         else DayStates?.Remove(Day); // back to "to do" (or done): no in-progress / review mark for that day
     }
 
@@ -86,7 +94,7 @@ public sealed class TaskItem
     public bool Stretch(DateTime today, Func<DateTime, bool> workday)
     {
         var tk = Days.Key(today);
-        if (!IsStarted || Archived || Day == null || string.CompareOrdinal(Day, tk) >= 0) return false;
+        if (!(IsStarted || IsHold) || Archived || Day == null || string.CompareOrdinal(Day, tk) >= 0) return false; // held: it waits on, day by day
         if (!DateTime.TryParseExact(Day, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var from)) return false;
         WorkedDays ??= new();
         DayStates ??= new();
@@ -158,7 +166,7 @@ public sealed class TaskItem
         NotionId = o.NotionId; Url = o.Url; Status = o.Status; Priority = o.Priority; NotionTitle = o.NotionTitle; ParentNotionId = o.ParentNotionId; NotionSource = o.NotionSource; Created = o.Created; TrackedMinutes = o.TrackedMinutes; TrackStart = o.TrackStart;
         Checklist = CopyList(o.Checklist);
         Time = o.Time; End = o.End; WorkedDays = o.WorkedDays == null ? null : new List<string>(o.WorkedDays); PlanEnd = o.PlanEnd;
-        Started = o.Started; Review = o.Review; Testing = o.Testing;
+        Started = o.Started; Review = o.Review; Testing = o.Testing; Hold = o.Hold;
         DayStates = o.DayStates == null ? null : new Dictionary<string, string>(o.DayStates);
         Extra = o.Extra;
     }

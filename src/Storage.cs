@@ -651,7 +651,7 @@ public sealed class BoardStore
         if (!Workday(today)) return BackFromDayOff(today, Workday); // nothing carries onto a day off
         double order = Data.Tasks.Where(t => t.Day == tk).Select(t => t.Order).DefaultIfEmpty(-1).Max();
         int n = 0;
-        foreach (var t in Data.Tasks.Where(t => t.IsStarted && !t.Archived && t.Day != null && string.CompareOrdinal(t.Day, tk) < 0).OrderBy(t => t.Day).ThenBy(t => t.Order).ToList())
+        foreach (var t in Data.Tasks.Where(t => (t.IsStarted || t.IsHold) && !t.Archived && t.Day != null && string.CompareOrdinal(t.Day, tk) < 0).OrderBy(t => t.Day).ThenBy(t => t.Order).ToList())
         {
             if (!t.Stretch(today, Workday)) continue;
             t.Order = ++order;
@@ -672,7 +672,7 @@ public sealed class BoardStore
     {
         var tk = Days.Key(today);
         int n = 0;
-        foreach (var t in Data.Tasks.Where(t => t.IsStarted && !t.Archived && t.Day == tk && t.WorkedDays is { Count: > 0 }).ToList())
+        foreach (var t in Data.Tasks.Where(t => (t.IsStarted || t.IsHold) && !t.Archived && t.Day == tk && t.WorkedDays is { Count: > 0 }).ToList())
         {
             t.WorkedDays!.RemoveAll(k => Days.TryParse(k, out var d) && !workday(d));
             if (t.DayStates != null) foreach (var k in t.DayStates.Keys.Where(k => Days.TryParse(k, out var d) && !workday(d)).ToList()) t.DayStates.Remove(k);

@@ -233,8 +233,9 @@ public sealed class TimelineView : Grid
         {
             "open" => list.Where(x => !x.T.Done),
             "started" => list.Where(x => x.T.State == "started"),
-            "review" => list.Where(x => x.T.IsReview),
-            "tests" => list.Where(x => x.T.IsTesting),
+            "review" => list.Where(x => x.T.State == "review"),
+            "tests" => list.Where(x => x.T.State == "tests"),
+            "hold" => list.Where(x => x.T.IsHold),
             "done" => list.Where(x => x.T.Done),
             _ => list,
         };
@@ -294,7 +295,7 @@ public sealed class TimelineView : Grid
         "project" => t.NotionSource ?? "",
         "category" => TaskItem.Tags(t.Text, out _).FirstOrDefault() is { } tag ? (_store().CategoryFor(tag)?.Name ?? tag) : "",
         "priority" => string.IsNullOrEmpty(t.Priority) ? "" : BoardWindow.PriorityLevel(t.Priority) switch { 3 => SmartAdd.PriorityName(3), 2 => SmartAdd.PriorityName(2), 1 => SmartAdd.PriorityName(1), _ => t.Priority! },
-        "state" => t.Done ? L.T("Zrobione") : t.IsTesting ? L.T("Testy") : t.IsReview ? L.T("Review") : t.IsStarted ? L.T("W trakcie") : L.T("Do zrobienia"),
+        "state" => t.Done ? L.T("Zrobione") : t.IsHold ? "Hold" : t.IsTesting ? L.T("Testy") : t.IsReview ? L.T("Review") : t.IsStarted ? L.T("W trakcie") : L.T("Do zrobienia"),
         _ => "",
     };
 
@@ -604,7 +605,7 @@ public sealed class TimelineView : Grid
     /// <summary>"w trakcie 5 dni · review 3 dni · testy 1 dzień" for the bar's tool tip.</summary>
     static string HistoryLine(List<(DateTime Day, string State)> history)
     {
-        var parts = history.Where(h => h.State != "done").GroupBy(h => h.State).OrderBy(g => g.Key switch { "started" => 0, "review" => 1, "tests" => 2, _ => 3 })
+        var parts = history.Where(h => h.State != "done").GroupBy(h => h.State).OrderBy(g => g.Key switch { "started" => 0, "review" => 1, "tests" => 2, "hold" => 3, _ => 4 })
             .Select(g => $"{TaskMarks.StateName(null!, g.Key)} {(g.Count() == 1 ? L.T("1 dzień") : L.F("{0} dni", g.Count()))}").ToList();
         return parts.Count > 1 || history.Count > 1 ? "\n" + string.Join("  ·  ", parts) : "";
     }
@@ -742,7 +743,7 @@ public sealed class TimelineView : Grid
         Combo(L.T("Kategoria"), S.Category, new (string?, string)[] { (null, L.T("Kategoria: wszystkie")) }.Concat(cats.Select(c => ((string?)c, store.CategoryFor(c)?.Name ?? c))), v => S.Category = v);
         var prios = tasks.Select(t => t.Priority).Where(p => !string.IsNullOrEmpty(p)).Select(p => p!).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(Rank).ToList();
         Combo(L.T("Priorytet"), S.Priority, new (string?, string)[] { (null, L.T("Priorytet: wszystkie")) }.Concat(prios.Select(p => ((string?)p, p))).Append(("", L.T("bez priorytetu"))), v => S.Priority = v);
-        Combo(L.T("Stan"), S.State, new (string?, string)[] { ("all", L.T("Stan: wszystkie")), ("open", L.T("niezrobione")), ("started", L.T("w trakcie")), ("review", L.T("review")), ("tests", L.T("testy")), ("done", L.T("zrobione")) }, v => S.State = v ?? "all", 120);
+        Combo(L.T("Stan"), S.State, new (string?, string)[] { ("all", L.T("Stan: wszystkie")), ("open", L.T("niezrobione")), ("started", L.T("w trakcie")), ("review", L.T("review")), ("tests", L.T("testy")), ("hold", "hold"), ("done", L.T("zrobione")) }, v => S.State = v ?? "all", 120);
         _toolbar.Children.Add(new Border { Width = 1, Height = 18, Margin = new Thickness(6, 0, 12, 0), Background = Res("Line"), VerticalAlignment = VerticalAlignment.Center });
         Combo(L.T("Sortuj"), S.Sort, new (string?, string)[] { ("start", L.T("Sortuj: data rozpoczęcia")), ("priority", L.T("Sortuj: priorytet")), ("name", L.T("Sortuj: nazwa")), ("added", L.T("Sortuj: kolejność dodania")), ("length", L.T("Sortuj: długość")) }, v => S.Sort = v ?? "start", 170);
         Combo(L.T("Grupuj"), S.Group, new (string?, string)[] { ("project", L.T("Grupuj: projekt")), ("category", L.T("Grupuj: kategoria")), ("priority", L.T("Grupuj: priorytet")), ("state", L.T("Grupuj: stan")), ("none", L.T("Bez grup")) }, v => S.Group = v ?? "none", 150);

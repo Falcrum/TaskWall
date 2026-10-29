@@ -533,5 +533,19 @@ static partial class L
         ("paleta poleceń: widok, data („pt”, „T45”), nowe zadanie, szukanie, akcje zaznaczonego zadania", "command palette: views, a date (\"fri\", \"W45\"), a new task, search, the selected task's actions"),
         ("zaznacz zadanie i chodź po dniach (Spacja, Shift+1…3, F2, Enter działają na zaznaczonym); Ctrl+← → przenosi je o dzień; Esc odznacza", "select a task and move through the days (Space, Shift+1…3, F2, Enter work on the selected one); Ctrl+← → moves it a day; Esc deselects"),
         ("tablica na cały ekran pod paskiem i z powrotem", "the board over the whole screen under the bar, and back"),
+        ("H (kursor na zadaniu)", "H (mouse over a task)"),
+        ("hold – wstrzymane (czeka na innych) i z powrotem", "hold – on hold (waiting for others) and back"),
+        // 0.35: hold
+        ("WSTRZYMANE – HOLD ({0})", "ON HOLD ({0})"),
+        ("Wstrzymane (hold)", "On hold"),
+        ("Wstrzymane (hold) – kliknij, żeby wznowić: {0}", "On hold – click to resume: {0}"),
+        ("Wstrzymane – czeka na innych. Po wznowieniu (klik na pasku, H) wraca do: {0}", "On hold – waiting for others. Resumed (a click on the bar, H) it goes back to: {0}"),
+        ("czeka {0} dni · potem {1}", "waiting {0} days · then {1}"),
+        ("hold · {0} dni", "hold · {0} days"),
+        ("hold: {0}", "hold: {0}"),
+        ("w trakcie {0}, review {1}, testy {2}, hold {3}", "in progress {0}, review {1}, tests {2}, hold {3}"),
+        ("{0} zadań · średnio {1} dni: w trakcie {2}, review {3}, testy {4}, hold {5}", "{0} tasks · {1} days on average: in progress {2}, review {3}, tests {4}, hold {5}"),
+        ("{0}: hold – wstrzymane", "{0}: hold – on hold"),
+        ("{0}: wznów (koniec hold)", "{0}: resume (end hold)"),
     };
 }

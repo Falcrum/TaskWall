@@ -86,6 +86,13 @@ public partial class BoardWindow
                 Foreground = Tx(TaskMarks.StateColor(t)), Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center,
                 ToolTip = L.F("Od {0} dni roboczych w tym samym stanie – utknęło?", stuck),
             });
+        if (t.IsHold) // waiting on someone: "‖ hold · 3 dni" (on purpose – no warning)
+            meta.Children.Add(new TextBlock
+            {
+                Text = "‖ " + L.F("hold · {0} dni", Insights.DaysOnHold(t)), FontSize = mfs + 0.5, FontWeight = FontWeights.SemiBold,
+                Foreground = Tx(TaskMarks.HoldRed), Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center,
+                ToolTip = L.F("Wstrzymane – czeka na innych. Po wznowieniu (klik na pasku, H) wraca do: {0}", TaskMarks.StateName(t, t.WorkState)),
+            });
         if (t.Done) meta.Opacity = 0.55;
         var mainRun = new Run(tags.Count > 0 ? rest : t.Text);
         text.Inlines.Add(mainRun);

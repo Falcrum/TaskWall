@@ -284,10 +284,11 @@ public partial class BoardWindow
             var name = Short(TaskItem.Tags(t.Text, out var rest) is { Count: > 0 } ? rest : t.Text);
             list.Insert(0, new(L.F("{0}: następny stan", name), sel, () => SetState(t, NextState(t)), L.T("spacja")));
             list.Insert(1, new(L.F("{0}: zrobione", name), sel, () => SetState(t, TaskState.Done)));
-            list.Insert(2, new(L.F("{0}: na dziś", name), sel, () => { _sel = (t.Id, DayKey(DateTime.Today)); Do(() => MoveToEnd(t, DayKey(DateTime.Today))); }));
-            list.Insert(3, new(L.F("{0}: na jutro", name), sel, () => { _sel = (t.Id, DayKey(DateTime.Today.AddDays(1))); Do(() => MoveToEnd(t, DayKey(DateTime.Today.AddDays(1)))); }));
-            list.Insert(4, new(L.F("{0}: do backlogu", name), sel, () => { _sel = null; Do(() => ToBacklog(t)); }));
-            list.Insert(5, new(L.F("{0}: edytuj", name), sel, () => EditSomewhere(t, null, null), "Enter / F2"));
+            list.Insert(2, t.IsHold ? new(L.F("{0}: wznów (koniec hold)", name), sel, () => SetState(t, WorkState(t)), "H") : new(L.F("{0}: hold – wstrzymane", name), sel, () => SetState(t, TaskState.Hold), "H"));
+            list.Insert(3, new(L.F("{0}: na dziś", name), sel, () => { _sel = (t.Id, DayKey(DateTime.Today)); Do(() => MoveToEnd(t, DayKey(DateTime.Today))); }));
+            list.Insert(4, new(L.F("{0}: na jutro", name), sel, () => { _sel = (t.Id, DayKey(DateTime.Today.AddDays(1))); Do(() => MoveToEnd(t, DayKey(DateTime.Today.AddDays(1)))); }));
+            list.Insert(5, new(L.F("{0}: do backlogu", name), sel, () => { _sel = null; Do(() => ToBacklog(t)); }));
+            list.Insert(6, new(L.F("{0}: edytuj", name), sel, () => EditSomewhere(t, null, null), "Enter / F2"));
             for (int p = 1; p <= 3; p++) { var pn = SmartAdd.PriorityName(p); list.Add(new(L.F("{0}: priorytet {1}", name, new string('!', p)), sel, () => SetPriority(t, pn), $"Shift+{p}")); }
         }
         var act = L.T("Akcje");

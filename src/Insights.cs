@@ -23,7 +23,7 @@ public static class Insights
     }
 
     /// <summary>One finished task: working days from the first one to done, and how many of them in each state.</summary>
-    public sealed record Cycle(TaskItem Task, int Days, int Started, int Review, int Tests);
+    public sealed record Cycle(TaskItem Task, int Days, int Started, int Review, int Tests, int Hold = 0);
 
     /// <summary>Tasks finished between the two days (by their last day) that took more than one day.</summary>
     public static List<Cycle> Cycles(IEnumerable<TaskItem> tasks, DateTime from, DateTime to)
@@ -36,18 +36,19 @@ public static class Insights
             if (h.Count < 2) continue;
             // the day it was finished counts as work in the state before done (the work done that day)
             var states = h.Take(h.Count - 1).Select(x => x.State).ToList();
-            states.Add(h.Count >= 2 && t.DayStates?.GetValueOrDefault(t.Day!) is { } last && last != "done" ? last : states.LastOrDefault() ?? "started");
-            list.Add(new Cycle(t, h.Count, states.Count(s => s is "started" or "todo"), states.Count(s => s == "review"), states.Count(s => s == "tests")));
+            // (finished that day, so worked on: a hold before it counts the state under it)
+            states.Add(h.Count >= 2 && t.DayStates?.GetValueOrDefault(t.Day!) is { } last && last is not ("done" or "hold") ? last : states.LastOrDefault(s => s != "hold") ?? "started");
+            list.Add(new Cycle(t, h.Count, states.Count(s => s is "started" or "todo"), states.Count(s => s == "review"), states.Count(s => s == "tests"), states.Count(s => s == "hold")));
         }
         return list;
     }
 
     /// <summary>Averages per project (a task's Notion project, or none): days to done and days in each state.</summary>
-    public sealed record ProjectCycle(string Project, int Tasks, double Days, double Started, double Review, double Tests);
+    public sealed record ProjectCycle(string Project, int Tasks, double Days, double Started, double Review, double Tests, double Hold = 0);
 
     public static List<ProjectCycle> ByProject(List<Cycle> cycles) =>
         cycles.GroupBy(c => c.Task.NotionSource ?? "")
-            .Select(g => new ProjectCycle(g.Key, g.Count(), g.Average(c => c.Days), g.Average(c => c.Started), g.Average(c => c.Review), g.Average(c => c.Tests)))
+            .Select(g => new ProjectCycle(g.Key, g.Count(), g.Average(c => c.Days), g.Average(c => c.Started), g.Average(c => c.Review), g.Average(c => c.Tests), g.Average(c => c.Hold)))
             .OrderByDescending(p => p.Tasks).ToList();
 
     /// <summary>
@@ -67,6 +68,16 @@ public static class Insights
     public const int StuckDays = 3;
 
     public static bool IsStuck(TaskItem t) => DaysInState(t) >= StuckDays;
+
+    /// <summary>How many working days in a row a held task has been waiting (hold is on purpose: not "stuck").</summary>
+    public static int DaysOnHold(TaskItem t)
+    {
+        if (!t.IsHold) return 0;
+        var h = History(t);
+        int n = 0;
+        for (int i = h.Count - 1; i >= 0 && h[i].State == "hold"; i--) n++;
+        return Math.Max(1, n);
+    }
 
     /// <summary>Measured time against the estimate, per category: at least 3 finished tasks with both.</summary>
     public sealed record Ratio(string Tag, double Factor, int Tasks);

@@ -52,6 +52,7 @@ public sealed class HelpWindow : DarkWindow
             ("Ctrl+Z", "cofnij"),
             ("Spacja (kursor na zadaniu)", "następny stan: ○ do zrobienia → ◐ w trakcie → ✓ zrobione"),
             ("Shift+1 · 2 · 3 · 0 (kursor na zadaniu)", "priorytet: niski · średni · wysoki · brak"),
+            ("H (kursor na zadaniu)", "hold – wstrzymane (czeka na innych) i z powrotem"),
             ("F2 · Delete (kursor na zadaniu)", "edytuj · usuń do kosza (30 dni)"),
             ("Enter · Esc", "dodaj i następne · zamknij pole"),
             ("Esc", "zamknij panel / wróć do tygodnia / schowaj tablicę"),

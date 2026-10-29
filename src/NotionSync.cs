@@ -417,6 +417,7 @@ static class NotionSync
                     Started = LooksInProgress(page.Status) || LooksInReview(page.Status) || LooksInTests(page.Status) ? true : null,
                     Review = LooksInReview(page.Status) ? true : null,
                     Testing = LooksInTests(page.Status) ? true : null,
+                    Hold = LooksOnHold(page.Status) ? true : null,
                     NotionSource = link.Name.Length > 0 ? link.Name : null,
                 });
                 added++;
@@ -443,9 +444,12 @@ static class NotionSync
                 // leaves what was set on the board
                 if (!t.Done)
                 {
-                    if (LooksInTests(page.Status)) { t.Started = true; t.Review = null; t.Testing = true; }
-                    else if (LooksInReview(page.Status)) { t.Started = true; t.Review = true; t.Testing = null; }
-                    else if (LooksInProgress(page.Status)) { t.Started = true; t.Review = null; t.Testing = null; }
+                    // on hold in Notion ("On hold", "Blocked", "Wstrzymane"): held here too, the state under it stays
+                    if (LooksOnHold(page.Status)) t.Hold = true;
+                    else if (LooksInTests(page.Status)) { t.Hold = null; t.Started = true; t.Review = null; t.Testing = true; }
+                    else if (LooksInReview(page.Status)) { t.Hold = null; t.Started = true; t.Review = true; t.Testing = null; }
+                    else if (LooksInProgress(page.Status)) { t.Hold = null; t.Started = true; t.Review = null; t.Testing = null; }
+                    else t.Hold = null; // another status: no longer held
                     t.NoteState(Days.Key(DateTime.Today)); // the day keeps the state Notion gave it
                 }
             }
@@ -483,6 +487,10 @@ static class NotionSync
     /// <summary>A Notion status that means "waiting for review / acceptance" (Review, Merge Request, Do odebrania, QA …).</summary>
     public static bool LooksInReview(string? status) => status != null &&
         !LooksInTests(status) && System.Text.RegularExpressions.Regex.IsMatch(status, @"review|merge request|do odebrania|do sprawdzenia|weryfikacj|akceptacj", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    /// <summary>A Notion status that means "blocked, waiting" (On hold, Blocked, Wstrzymane, Zablokowane, Czeka …).</summary>
+    public static bool LooksOnHold(string? status) => status != null &&
+        System.Text.RegularExpressions.Regex.IsMatch(status, @"\bhold\b|on.?hold|block|wstrzym|zablok|czeka|waiting|paused|pauz", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     /// <summary>A Notion status that means "being tested" (Test, Testy, QA, Testing …).</summary>
     public static bool LooksInTests(string? status) => status != null &&

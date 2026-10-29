@@ -95,15 +95,19 @@ public partial class BoardWindow
             }
     }
 
+    /// <summary>On hold that day: a past day it was held, or its current day and the planned ones while it is held.</summary>
+    static bool HeldOn(TaskItem t, string key) => t.DayStates?.GetValueOrDefault(key) == "hold" || (t.IsHold && string.CompareOrdinal(key, t.Day ?? "") >= 0);
+
     /// <summary>
     /// Estimated hours of a day: one-day tasks in full, a multi-day task with its share on each of its days
-    /// (16 h over 2 days = 8 h a day).
+    /// (16 h over 2 days = 8 h a day) – not on the days it is on hold.
     /// </summary>
     static double DayLoad(string key, IEnumerable<TaskItem> dayTasks, bool openOnly)
     {
-        double sum = dayTasks.Where(t => (!openOnly || !t.Done) && SpanDays(t) == null).Sum(t => t.Estimate ?? 0);
+        // a held task: no work on it those days – its hours don't fill them
+        double sum = dayTasks.Where(t => (!openOnly || !t.Done) && SpanDays(t) == null && !HeldOn(t, key)).Sum(t => t.Estimate ?? 0);
         foreach (var t in Store.Data.Tasks.Where(t => t.Estimate is > 0 && (!openOnly || !t.Done)))
-            if (SpanDays(t) is { } days && days.Contains(key)) sum += t.Estimate!.Value / days.Count;
+            if (SpanDays(t) is { } days && days.Contains(key) && !HeldOn(t, key)) sum += t.Estimate!.Value / days.Count;
         return sum;
     }
 

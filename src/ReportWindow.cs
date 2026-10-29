@@ -30,6 +30,8 @@ public sealed class Report
     public List<Insights.ProjectCycle> Projects = new();
     /// <summary>Open tasks now in one state for several working days (all of the account, not only this period).</summary>
     public List<(TaskItem Task, int Days)> Stuck = new();
+    /// <summary>Open tasks on hold now, with the working days they have been waiting.</summary>
+    public List<(TaskItem Task, int Days)> Held = new();
     /// <summary>Measured time against the estimate per category (all finished tasks with a timer).</summary>
     public List<Insights.Ratio> Ratios = new();
 
@@ -54,15 +56,17 @@ public sealed class Report
     /// <summary>Days of the period the task was worked on (its earlier days and its current one) and how many of them in review.</summary>
     internal static DateTime? TryDay(string? k) => TaskWall.Days.Parse(k);
 
-    public (int Days, int Review, int Tests) WorkDays(TaskItem t)
+    public (int Days, int Review, int Tests, int Hold) WorkDays(TaskItem t)
     {
         string from = Key(From), to = Key(To);
         bool In(string k) => string.CompareOrdinal(k, from) >= 0 && string.CompareOrdinal(k, to) <= 0;
         var days = (t.WorkedDays ?? new()).Where(In).ToList();
         if (t.Day != null && In(t.Day) && !days.Contains(t.Day)) days.Add(t.Day);
-        int review = days.Count(k => k == t.Day ? t.IsReview : t.DayStates?.GetValueOrDefault(k) == "review");
-        int tests = days.Count(k => k == t.Day ? t.IsTesting : t.DayStates?.GetValueOrDefault(k) == "tests");
-        return (days.Count, review, tests);
+        string StateOn(string k) => k == t.Day ? t.State : t.DayStates?.GetValueOrDefault(k) ?? "started";
+        int review = days.Count(k => StateOn(k) == "review");
+        int tests = days.Count(k => StateOn(k) == "tests");
+        int hold = days.Count(k => StateOn(k) == "hold"); // waited, not worked
+        return (days.Count, review, tests, hold);
     }
 
     public static Report Build(BoardStore store, string layer, DateTime from, DateTime to, bool month)
@@ -89,6 +93,7 @@ public sealed class Report
         r.Carried = store.Data.Tasks.Where(t => !t.Done && t.WorkedDays?.Any(keys.Contains) == true && t.Day != null && !keys.Contains(t.Day)).ToList();
         r.Projects = Insights.ByProject(Insights.Cycles(store.Data.Tasks, r.From, r.To));
         r.Stuck = store.Data.Tasks.Select(t => (t, Insights.DaysInState(t))).Where(x => x.Item2 >= Insights.StuckDays).OrderByDescending(x => x.Item2).ToList();
+        r.Held = store.Data.Tasks.Where(t => t.IsHold && !t.Archived).Select(t => (t, Insights.DaysOnHold(t))).OrderByDescending(x => x.Item2).ToList();
         r.Ratios = Insights.EstimateRatios(store.Data.Tasks);
         r.Categories = r.All
             .SelectMany(x => (TaskItem.Tags(x.Task.Text, out _) is { Count: > 0 } tags ? tags : new List<string> { "" }).Select(c => (c, x.Task)))
@@ -184,9 +189,15 @@ public sealed class Report
             foreach (var p in Projects)
             {
                 string Seg(double d, System.Windows.Media.Color c) => d > 0 ? $"<i style=\"display:inline-block;height:7px;border-radius:2px;margin-right:1px;width:{100 * d / top:0.#}%;background:#{c.R:X2}{c.G:X2}{c.B:X2}\" title=\"{d:0.#}\"></i>" : "";
-                sb.Append($"<tr><td>{E(p.Project.Length > 0 ? p.Project : L.T("bez projektu"))}</td><td class=\"n\">{p.Tasks}</td><td style=\"width:40%\" title=\"{E(L.F("w trakcie {0}, review {1}, testy {2}", D1(p.Started), D1(p.Review), D1(p.Tests)))}\">"
-                    + Seg(p.Started, TaskMarks.InProgressOrange) + Seg(p.Review, TaskMarks.ReviewViolet) + Seg(p.Tests, TaskMarks.TestsTeal) + $"</td><td class=\"n\">{D1(p.Days)}</td></tr>");
+                sb.Append($"<tr><td>{E(p.Project.Length > 0 ? p.Project : L.T("bez projektu"))}</td><td class=\"n\">{p.Tasks}</td><td style=\"width:40%\" title=\"{E(L.F("w trakcie {0}, review {1}, testy {2}, hold {3}", D1(p.Started), D1(p.Review), D1(p.Tests), D1(p.Hold)))}\">"
+                    + Seg(p.Started, TaskMarks.InProgressOrange) + Seg(p.Review, TaskMarks.ReviewViolet) + Seg(p.Tests, TaskMarks.TestsTeal) + Seg(p.Hold, TaskMarks.HoldRed) + $"</td><td class=\"n\">{D1(p.Days)}</td></tr>");
             }
+            sb.Append("</table>");
+        }
+        if (Held.Count > 0)
+        {
+            sb.Append($"<h2>{E(L.T("Wstrzymane (hold)"))} ({Held.Count})</h2><table>");
+            foreach (var (t, days) in Held) sb.Append($"<tr><td>{E(t.Text)}</td><td class=\"n\">{E(L.F("czeka {0} dni · potem {1}", days, TaskMarks.StateName(t, t.WorkState)))}</td></tr>");
             sb.Append("</table>");
         }
         if (Stuck.Count > 0)
@@ -216,7 +227,7 @@ public sealed class Report
                 sb.Append(t.Url is { Length: > 0 } url ? $"<a href=\"{E(url)}\" style=\"color:inherit\">{E(rest)}</a>" : E(rest));
                 if (t.Checklist is { Count: > 0 } cl) sb.Append($" <span class=\"day\">☑ {cl.Count(x => x.Done)}/{cl.Count}</span>");
                 if (WorkDays(t) is { Days: > 1 } wd) // worked on over several days (in progress / review carried on)
-                    sb.Append($" <span class=\"day\">↷ {E(L.F("{0} dni pracy", wd.Days))}{(wd.Review > 0 ? E(" · " + L.F("review: {0}", wd.Review)) : "")}{(wd.Tests > 0 ? E(" · " + L.F("testy: {0}", wd.Tests)) : "")}</span>");
+                    sb.Append($" <span class=\"day\">↷ {E(L.F("{0} dni pracy", wd.Days))}{(wd.Review > 0 ? E(" · " + L.F("review: {0}", wd.Review)) : "")}{(wd.Tests > 0 ? E(" · " + L.F("testy: {0}", wd.Tests)) : "")}{(wd.Hold > 0 ? E(" · " + L.F("hold: {0}", wd.Hold)) : "")}</span>");
                 sb.Append($"</td><td class=\"n\">{(t.Estimate is > 0 ? E(BoardWindow.Est(t.Estimate.Value)) : "")}{(t.TrackedNow > 0 ? " · ⏱ " + E(BoardWindow.Duration(t.TrackedNow)) : "")}</td></tr>");
             }
             sb.Append("</table>");
@@ -441,7 +452,7 @@ public sealed class ReportWindow : DarkWindow
                 DockPanel.SetDock(when, Dock.Left);
                 d.Children.Add(when);
                 var wd = r.WorkDays(t);
-                var est = Label((wd.Days > 1 ? "↷ " + L.F("{0} dni pracy", wd.Days) + (wd.Review > 0 ? " · " + L.F("review: {0}", wd.Review) : "") + (wd.Tests > 0 ? " · " + L.F("testy: {0}", wd.Tests) : "") + "   " : "")
+                var est = Label((wd.Days > 1 ? "↷ " + L.F("{0} dni pracy", wd.Days) + (wd.Review > 0 ? " · " + L.F("review: {0}", wd.Review) : "") + (wd.Tests > 0 ? " · " + L.F("testy: {0}", wd.Tests) : "") + (wd.Hold > 0 ? " · " + L.F("hold: {0}", wd.Hold) : "") + "   " : "")
                     + (t.Estimate is > 0 ? BoardWindow.Est(t.Estimate.Value) : ""), 11.5, "FgFaint");
                 est.Margin = new Thickness(10, 0, 0, 0);
                 DockPanel.SetDock(est, Dock.Right);
@@ -461,7 +472,7 @@ public sealed class ReportWindow : DarkWindow
             _body.Children.Add(Caption(L.T("CZAS DO ZROBIENIA (ZADANIA WIELODNIOWE)")));
             foreach (var p in r.Projects)
             {
-                var row = new Grid { Margin = new Thickness(0, 2, 0, 2), ToolTip = L.F("{0} zadań · średnio {1} dni pracy: w trakcie {2}, review {3}, testy {4}", p.Tasks, Report.D1(p.Days), Report.D1(p.Started), Report.D1(p.Review), Report.D1(p.Tests)) };
+                var row = new Grid { Margin = new Thickness(0, 2, 0, 2), ToolTip = L.F("{0} zadań · średnio {1} dni: w trakcie {2}, review {3}, testy {4}, hold {5}", p.Tasks, Report.D1(p.Days), Report.D1(p.Started), Report.D1(p.Review), Report.D1(p.Tests), Report.D1(p.Hold)) };
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
@@ -469,7 +480,7 @@ public sealed class ReportWindow : DarkWindow
                 // one bar: the average days, split into the states' colours
                 var bar = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Height = 7 };
                 double scale = 150 / Math.Max(1, r.Projects.Max(x => x.Days));
-                foreach (var (days, color) in new[] { (p.Started, TaskMarks.InProgressOrange), (p.Review, TaskMarks.ReviewViolet), (p.Tests, TaskMarks.TestsTeal) })
+                foreach (var (days, color) in new[] { (p.Started, TaskMarks.InProgressOrange), (p.Review, TaskMarks.ReviewViolet), (p.Tests, TaskMarks.TestsTeal), (p.Hold, TaskMarks.HoldRed) })
                     if (days > 0) bar.Children.Add(new Border { Width = days * scale, Background = new SolidColorBrush(color), CornerRadius = new CornerRadius(2), Margin = new Thickness(0, 0, 1, 0) });
                 Grid.SetColumn(bar, 1);
                 row.Children.Add(bar);
@@ -478,6 +489,22 @@ public sealed class ReportWindow : DarkWindow
                 Grid.SetColumn(avg, 2);
                 row.Children.Add(avg);
                 _body.Children.Add(row);
+            }
+        }
+        if (r.Held.Count > 0)
+        {
+            _body.Children.Add(Caption(L.F("WSTRZYMANE – HOLD ({0})", r.Held.Count)));
+            foreach (var (t, days) in r.Held.Take(12))
+            {
+                var d = new DockPanel { Margin = new Thickness(0, 1, 0, 1) };
+                var what = Label(L.F("czeka {0} dni · potem {1}", days, TaskMarks.StateName(t, t.WorkState)), 11.5, "FgFaint");
+                what.Foreground = new SolidColorBrush(TaskMarks.HoldRed);
+                DockPanel.SetDock(what, Dock.Right);
+                d.Children.Add(what);
+                var text = Label(t.Text, 12, "Fg");
+                text.TextTrimming = TextTrimming.CharacterEllipsis;
+                d.Children.Add(text);
+                _body.Children.Add(d);
             }
         }
         if (r.Stuck.Count > 0)

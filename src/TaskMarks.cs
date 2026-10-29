@@ -22,10 +22,12 @@ static class TaskMarks
     public static readonly Color TestsTeal = Color.FromRgb(0x3F, 0xB6, 0xC4);
     public static readonly Color InProgressOrange = Color.FromRgb(0xF0, 0x8C, 0x3A);
     static readonly Color Low = Color.FromRgb(0x7E, 0x8C, 0x9C);
+    /// <summary>Hold: a raspberry red, apart from the work states and from the priority bar on the other edge; striped.</summary>
+    public static readonly Color HoldRed = Color.FromRgb(0xE0, 0x5A, 0x7A);
 
     /// <summary>Done green, review violet, else the priority colour (no priority = low, grey).</summary>
     public static Color StateColor(TaskItem t, string? state = null) =>
-        (state ?? t.State) switch { "done" => DoneGreen, "review" => ReviewViolet, "tests" => TestsTeal, "started" => InProgressOrange, _ => Low };
+        (state ?? t.State) switch { "done" => DoneGreen, "hold" => HoldRed, "review" => ReviewViolet, "tests" => TestsTeal, "started" => InProgressOrange, _ => Low };
 
     /// <summary>The project's colour, or null for a task without a project.</summary>
     public static Color? ProjectColor(TaskItem t)
@@ -44,11 +46,23 @@ static class TaskMarks
 
     public static string StateName(TaskItem t, string? state = null) => (state ?? t.State) switch
     {
-        "done" => L.T("zrobione"), "review" => L.T("review"), "tests" => L.T("testy"), "started" => L.T("w trakcie"), _ => L.T("do zrobienia"),
+        "done" => L.T("zrobione"), "hold" => "hold", "review" => L.T("review"), "tests" => L.T("testy"), "started" => L.T("w trakcie"), _ => L.T("do zrobienia"),
     };
 
+    /// <summary>Hold's fill: raspberry stripes at 45°.</summary>
+    static readonly Brush Stripes = MakeStripes();
+
+    static Brush MakeStripes()
+    {
+        var pen = new Pen(new SolidColorBrush(HoldRed), 1.6);
+        var g = new GeometryDrawing(null, pen, new LineGeometry(new Point(0, 4), new Point(4, 0)));
+        var b = new DrawingBrush(g) { TileMode = TileMode.Tile, Viewport = new Rect(0, 0, 3, 3), ViewportUnits = BrushMappingMode.Absolute, Stretch = Stretch.None };
+        b.Freeze();
+        return b;
+    }
+
     /// <summary>How full the bar is: to do 0, in progress ¼, review ½, tests ¾, done 1.</summary>
-    public static double Fill(string state) => state switch { "done" => 1, "tests" => 0.75, "review" => 0.5, "started" => 0.25, _ => 0 };
+    public static double Fill(string state) => state switch { "done" => 1, "tests" => 0.75, "review" => 0.5, "started" => 0.25, "hold" => 0.5, _ => 0 };
 
     /// <summary>
     /// The state bar. <paramref name="width"/> is the bar; the element is a little wider so it is easy to hit.
@@ -58,7 +72,9 @@ static class TaskMarks
     {
         state ??= t.State; // a multi-day task's earlier day: the state it had then
         var c = StateColor(t, state);
-        double fill = Fill(state);
+        bool held = state == "hold";
+        // held: as full as the state under it (what it goes back to), the whole bar striped – no work is going on
+        double fill = held && state == t.State ? Math.Max(0.25, Fill(t.WorkState)) : Fill(state);
         var hit = new Grid { Width = width + gap, Background = Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Stretch };
         var bar = new Grid { Width = width, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 1, 0, 1), MinHeight = 8 };
         bar.RowDefinitions.Add(new RowDefinition { Height = new GridLength(Math.Max(0.0001, 1 - fill), GridUnitType.Star) });
@@ -69,7 +85,7 @@ static class TaskMarks
         Grid.SetRowSpan(outline, 2);
         if (fill > 0)
         {
-            var part = new Rectangle { Fill = new SolidColorBrush(c), RadiusX = r, RadiusY = r, Tag = "fill" };
+            var part = new Rectangle { Fill = held ? Stripes : new SolidColorBrush(c), RadiusX = r, RadiusY = r, Tag = "fill" };
             Grid.SetRow(part, 1); // from the bottom up
             bar.Children.Add(part);
         }
@@ -79,7 +95,7 @@ static class TaskMarks
         {
             hit.Cursor = Cursors.Hand;
             hit.ToolTip = StateName(t) + (t.Priority is { Length: > 0 } pr ? "  ·  " + L.F("Priorytet: {0}", pr) : "") + "\n"
-                + (t.Done ? L.T("Kliknij, aby przywrócić") : t.IsTesting ? L.T("Kliknij: zrobione") : t.IsReview ? L.T("Kliknij: testy  ·  Shift+klik: zrobione") : t.IsStarted ? L.T("Kliknij: review  ·  Shift+klik: zrobione") : L.T("Kliknij: w trakcie  ·  Shift+klik: od razu zrobione"));
+                + (t.Done ? L.T("Kliknij, aby przywrócić") : t.IsHold ? L.F("Wstrzymane (hold) – kliknij, żeby wznowić: {0}", StateName(t, t.WorkState)) : t.IsTesting ? L.T("Kliknij: zrobione") : t.IsReview ? L.T("Kliknij: testy  ·  Shift+klik: zrobione") : t.IsStarted ? L.T("Kliknij: review  ·  Shift+klik: zrobione") : L.T("Kliknij: w trakcie  ·  Shift+klik: od razu zrobione"));
             ToolTipService.SetInitialShowDelay(hit, 300);
             hit.MouseEnter += (_, _) => outline.StrokeThickness = 2;
             hit.MouseLeave += (_, _) => outline.StrokeThickness = 1.2;

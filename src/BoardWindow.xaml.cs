@@ -113,20 +113,33 @@ public partial class BoardWindow : GlassWindow
     /// <summary>Weekends on screen: as set – and always on a Saturday or Sunday itself (from Monday the 5-day week is back).</summary>
     static bool Weekends => S.ShowWeekends || IsWeekend(DateTime.Today);
     public static int WeekNo(DateTime d) => ISOWeek.GetWeekOfYear(d);
-    public enum TaskState { Todo, Started, Review, Tests, Done }
+    public enum TaskState { Todo, Started, Review, Tests, Done, Hold }
 
     /// <summary>The next state on a click: to do → in progress → review → tests → done → to do (Shift: straight to done).</summary>
     public static TaskState NextState(TaskItem t, bool shift = false) =>
-        t.Done ? TaskState.Todo : shift ? TaskState.Done : t.IsTesting ? TaskState.Done : t.IsReview ? TaskState.Tests : t.IsStarted ? TaskState.Review : TaskState.Started;
+        t.Done ? TaskState.Todo : t.IsHold ? WorkState(t) /* released: back to where it was */ : shift ? TaskState.Done : t.IsTesting ? TaskState.Done : t.IsReview ? TaskState.Tests : t.IsStarted ? TaskState.Review : TaskState.Started;
+
+    /// <summary>The state under a hold.</summary>
+    static TaskState WorkState(TaskItem t) => t.IsTesting ? TaskState.Tests : t.IsReview ? TaskState.Review : t.IsStarted ? TaskState.Started : TaskState.Todo;
 
     public void SetState(TaskItem t, TaskState state) => Do(() =>
     {
         var real = Store.Materialize(t);
-        real.Done = state == TaskState.Done;
-        if (real.Done && real.IsTracking) Store.StopTracking(real);
-        if (state != TaskState.Done) real.Started = state is TaskState.Started or TaskState.Review or TaskState.Tests;
-        real.Review = state == TaskState.Review ? true : null;
-        real.Testing = state == TaskState.Tests ? true : null;
+        if (state == TaskState.Hold)
+        {
+            // on hold: the state under it stays (it comes back on release), the work timer stops – nothing is done now
+            real.Hold = true;
+            if (real.IsTracking) Store.StopTracking(real);
+        }
+        else
+        {
+            real.Hold = null;
+            real.Done = state == TaskState.Done;
+            if (real.Done && real.IsTracking) Store.StopTracking(real);
+            if (state != TaskState.Done) real.Started = state is TaskState.Started or TaskState.Review or TaskState.Tests;
+            real.Review = state == TaskState.Review ? true : null;
+            real.Testing = state == TaskState.Tests ? true : null;
+        }
         real.NoteState(DayKey(DateTime.Today)); // this day keeps the state it ends with (its history)
         // finished before the planned end: the plan ends today (no future days left hanging)
         var todayKey = DayKey(DateTime.Today);

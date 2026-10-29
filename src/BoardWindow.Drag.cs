@@ -210,7 +210,7 @@ public partial class BoardWindow
             c.TrackStart = null;                      // … with no time measured
             c.TrackedMinutes = 0;
             c.Done = false;
-            c.Review = c.Testing = null; // … in no state of the original
+            c.Review = c.Testing = c.Hold = null; // … in no state of the original
             c.DayStates = null;
             c.PlanEnd = AutoPlanEnd(day, c.Estimate);
             Store.Add(c);
