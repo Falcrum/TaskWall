@@ -605,8 +605,6 @@ public partial class BoardWindow : GlassWindow
             bool on = _view == mode;
             btn.Background = on ? B(Th.Ink(0x26)) : Brushes.Transparent;
             btn.Foreground = on ? Res("Fg") : Res("FgDim");
-            btn.Effect = null;
-            if (on) Glow.Shape(btn, blur: 10, opacity: 0.85); // Poświata: the view that is on (its icon and caption)
         }
         // Poświata: the light from the top of the board, behind everything
         if (_topGlow == null)

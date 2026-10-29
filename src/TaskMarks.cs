@@ -76,20 +76,18 @@ static class TaskMarks
         // held: as full as the state under it (what it goes back to), the whole bar striped – no work is going on
         double fill = held && state == t.State ? Math.Max(0.25, Fill(t.WorkState)) : Fill(state);
         bool round = App.Settings.StateIcon == "circle";
-        var hit = new FreeGrid { Width = (round ? CircleSize : width) + gap, Background = Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Stretch };
+        var hit = new Grid { Width = (round ? CircleSize : width) + gap, Background = Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Stretch };
         Shape outline;
         if (round) outline = Circle(hit, state, c, held, dashed, middle);
         else
         {
-            var bar = new FreeGrid { Width = width, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 1, 0, 1), MinHeight = 8 };
+            var bar = new Grid { Width = width, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 1, 0, 1), MinHeight = 8 };
             bar.RowDefinitions.Add(new RowDefinition { Height = new GridLength(Math.Max(0.0001, 1 - fill), GridUnitType.Star) });
             bar.RowDefinitions.Add(new RowDefinition { Height = new GridLength(Math.Max(0.0001, fill), GridUnitType.Star) });
             double r = Math.Min(1.6, width / 3);
             outline = new Rectangle { Stroke = new SolidColorBrush(c), StrokeThickness = 1.2, RadiusX = r, RadiusY = r };
             if (dashed) outline.StrokeDashArray = new DoubleCollection { 2, 1.5 };
             Grid.SetRowSpan(outline, 2);
-            // Poświata ikon: the bar's light in its state's colour (to do, grey, and the planned days stay plain)
-            if (state != "todo" && !dashed && Glow.Spill(c) is { } light) { Grid.SetRowSpan(light, 2); bar.Children.Add(light); }
             if (fill > 0)
             {
                 var part = new Rectangle { Fill = held ? Stripes : new SolidColorBrush(c), RadiusX = r, RadiusY = r, Tag = "fill" };
@@ -128,26 +126,8 @@ static class TaskMarks
     {
         double d = CircleSize, mid = d / 2;
         // by the first line of text (rows, blocks); in the middle of a one-line bar (the timeline)
-        var box = new FreeGrid { Width = d, Height = d, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = middle ? VerticalAlignment.Center : VerticalAlignment.Top, Margin = new Thickness(0, middle ? 0 : 2.5, 0, 0) };
+        var box = new Grid { Width = d, Height = d, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = middle ? VerticalAlignment.Center : VerticalAlignment.Top, Margin = new Thickness(0, middle ? 0 : 2.5, 0, 0) };
         var brush = new SolidColorBrush(c);
-        // Poświata ikon: a soft disc of light behind the icon (a thin ring alone gives off too little)
-        // (on a canvas: it overflows the icon, and a grid would clip it to a square)
-        if (Glow.IconsEnabled && state != "todo" && !dashed)
-        {
-            var fill = new RadialGradientBrush
-            {
-                GradientStops =
-                {
-                    new GradientStop(Color.FromArgb(0xB0, c.R, c.G, c.B), 0.3),
-                    new GradientStop(Color.FromArgb(0x48, c.R, c.G, c.B), 0.6),
-                    new GradientStop(Color.FromArgb(0, c.R, c.G, c.B), 1),
-                },
-            };
-            var light = new Ellipse { Width = d + 16, Height = d + 16, Fill = fill };
-            Canvas.SetLeft(light, -8);
-            Canvas.SetTop(light, -8);
-            box.Children.Add(new Canvas { IsHitTestVisible = false, Children = { light } });
-        }
         var ring = new Ellipse { Stroke = brush, StrokeThickness = 1.4 };
         if (dashed) ring.StrokeDashArray = new DoubleCollection { 1.6, 1.4 };
         if (state == "done")
@@ -193,12 +173,10 @@ static class TaskMarks
 
     public static FrameworkElement? Right(TaskItem t, double width = BarWidth)
     {
-        var panel = new FreeStack { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Stretch };
-        FrameworkElement Bar(Color c, string tip)
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Stretch };
+        Border Bar(Color c, string tip)
         {
-            var b = new FreeGrid { Width = width, Margin = new Thickness(2, 1, 0, 1), ToolTip = tip };
-            if (Glow.Spill(c) is { } light) b.Children.Add(light); // Poświata ikon: its light round it
-            b.Children.Add(new Border { CornerRadius = new CornerRadius(Math.Min(1.6, width / 3)), Background = new SolidColorBrush(c) });
+            var b = new Border { Width = width, CornerRadius = new CornerRadius(Math.Min(1.6, width / 3)), Margin = new Thickness(2, 1, 0, 1), Background = new SolidColorBrush(c), ToolTip = tip };
             ToolTipService.SetInitialShowDelay(b, 300);
             return b;
         }
@@ -206,22 +184,4 @@ static class TaskMarks
         if (ProjectColor(t) is { } pc) panel.Children.Add(Bar(pc, t.NotionSource!));
         return panel.Children.Count > 0 ? panel : null;
     }
-}
-
-/// <summary>A grid that lets its content spill out (the round icon's light reaches past the icon): no layout clip.</summary>
-sealed class FreeGrid : Grid
-{
-    protected override Geometry? GetLayoutClip(Size layoutSlotSize) => ClipToBounds ? base.GetLayoutClip(layoutSlotSize) : null;
-}
-
-/// <summary>A border that may spill out of its place (a mark's light round it): no layout clip.</summary>
-sealed class FreeBorder : Border
-{
-    protected override Geometry? GetLayoutClip(Size layoutSlotSize) => ClipToBounds ? base.GetLayoutClip(layoutSlotSize) : null;
-}
-
-/// <summary>A stack that lets its marks' light spill out: no layout clip.</summary>
-sealed class FreeStack : StackPanel
-{
-    protected override Geometry? GetLayoutClip(Size layoutSlotSize) => ClipToBounds ? base.GetLayoutClip(layoutSlotSize) : null;
 }

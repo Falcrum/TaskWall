@@ -568,8 +568,6 @@ static partial class L
         ("{0} zadań, zrobione {1}", "{0} tasks, {1} done"),
         // 0.37: the glow
         ("Poświata", "Glow"),
-        ("Miękkie światło w kolorze akcentu: dzisiejszy dzień, zaznaczone zadanie, działający licznik pracy, aktywny widok i łuna u góry tablicy (razem z górnym paskiem).", "A soft light in the accent colour: today, the selected task, the running work timer, the active view and a glow at the top of the board (and in the top bar)."),
-        ("Poświata ikon", "Icon glow"),
-        ("Ikona stanu zadania oraz paski priorytetu i projektu świecą własnym kolorem.", "The task state icon and the priority and project bars glow in their own colour."),
+        ("Miękka łuna w kolorze akcentu u góry tablicy, przechodząca w górny pasek.", "A soft glow in the accent colour at the top of the board, going on up into the top bar."),
     };
 }
