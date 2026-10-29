@@ -151,13 +151,25 @@ public sealed class ClockWindow : GlassWindow
         if (!_narrow)
         {
             if (w.Feels is { } f && Math.Abs(f - w.Temp) >= 1) line.Inlines.Add(new Run("  ·  " + L.F("odczuwalna {0}°", Math.Round(f))) { Foreground = Ui.Res("FgFaint") });
-            if (WeatherService.On(DateTime.Today) is { } today)
-                line.Inlines.Add(new Run($"  ·  {Math.Round(today.Max):0}°/{Math.Round(today.Min):0}°" + (today.Rain is { } r && r > 0 ? $"  ☂ {r}%" : "")) { Foreground = Ui.Res("FgFaint") });
+            var today = WeatherService.On(DateTime.Today);
+            // like the day headers: today's max / min, the chance of rain and how much, the wind now
+            if (today != null)
+                line.Inlines.Add(new Run($"  ·  {Math.Round(today.Max):0}°/{Math.Round(today.Min):0}°"
+                    + (today.Rain is { } r && r > 0 ? $"  ☂ {r}%" + (today.Mm is >= 0.1 and var mm ? " · " + mm.ToString(mm < 10 ? "0.#" : "0", L.Culture) + " mm" : "") : "")) { Foreground = Ui.Res("FgFaint") });
+            if (w.Wind is { } wn)
+            {
+                line.Inlines.Add(new Run("  ·  ") { Foreground = Ui.Res("FgFaint") });
+                line.Inlines.Add(new InlineUIContainer(Icons.Wind(Ui.Res("FgFaint"), 12)) { BaselineAlignment = BaselineAlignment.Center });
+                line.Inlines.Add(new Run($" {Math.Round(wn):0} km/h") { Foreground = Ui.Res("FgFaint") });
+            }
         }
         _weather.Children.Add(line);
+        var day = WeatherService.On(DateTime.Today);
         _weather.ToolTip = $"{App.Settings.Weather.City}\n{desc}, {Math.Round(w.Temp):0}°"
             + (w.Feels is { } ff ? "\n" + L.F("odczuwalna {0}°", Math.Round(ff)) : "")
             + (w.Wind is { } wi ? "\n" + L.F("wiatr {0} km/h", Math.Round(wi)) : "")
+            + (day?.Rain is { } dr ? "\n" + L.F("szansa opadów {0}%", dr) : "")
+            + (day?.Mm is { } dmm ? "\n" + L.F("opady: {0} mm", dmm.ToString("0.#", L.Culture)) : "")
             + (w.Humidity is { } h ? "\n" + L.F("wilgotność {0}%", h) : "")
             + "\n" + L.F("pomiar z {0}", w.At.ToString("HH:mm"));
     }
@@ -203,7 +215,7 @@ public sealed class ClockWindow : GlassWindow
             ["disk"] = (Color.FromRgb(0x5B, 0x9B, 0xFF), L.T("Dysk")),
             ["net"] = (Color.FromRgb(0xB3, 0x82, 0xFF), L.T("Sieć")),
         };
-        const double Size = 26, Thick = 2.6;
+        const double Size = 22, Thick = 2.3;
 
         public readonly FrameworkElement Root;
         readonly System.Windows.Shapes.Path _arc;
@@ -217,15 +229,16 @@ public sealed class ClockWindow : GlassWindow
             ring.Children.Add(new System.Windows.Shapes.Ellipse { Stroke = Ui.Brush(Th.Ink(0x2A)), StrokeThickness = Thick });
             _arc = new System.Windows.Shapes.Path { Stroke = Ui.Brush(color), StrokeThickness = Thick, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round };
             ring.Children.Add(_arc);
-            var icon = Icons.Meter(kind, Ui.Brush(color), 11.5);
+            var icon = Icons.Meter(kind, Ui.Res("Fg"), 10); // a quiet white symbol: only the ring is in colour
+            icon.Opacity = 0.75;
             icon.HorizontalAlignment = HorizontalAlignment.Center;
             icon.VerticalAlignment = VerticalAlignment.Center;
             ring.Children.Add(icon);
-            _text = new TextBlock { Text = "–", FontSize = 11, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0), Width = 30, Foreground = Ui.Res("FgDim") };
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(10, 0, 0, 0), Background = Brushes.Transparent, ToolTip = name };
+            _text = new TextBlock { Text = "–", FontSize = 10.5, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0), Width = 26, Foreground = Ui.Res("FgDim") };
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(6, 0, 0, 0), Background = Brushes.Transparent, ToolTip = name };
             row.Children.Add(ring);
             if (label) row.Children.Add(_text);
-            else row.Margin = new Thickness(8, 0, 0, 0);
+            else row.Margin = new Thickness(5, 0, 0, 0);
             Root = row;
         }
 

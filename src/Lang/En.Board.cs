@@ -482,5 +482,6 @@ static partial class L
         ("{0} wolne {1} z {2} GB", "{0} {1} of {2} GB free"),
         ("{0} wątków", "{0} threads"),
         ("{0} zrobione", "{0} done"),
+        ("upuść tu blok z osi, żeby zdjąć mu godziny", "drop a block from the line here to take its hours off"),
     };
 }

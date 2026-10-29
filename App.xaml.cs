@@ -529,14 +529,15 @@ public partial class App : Application
 
         // the board as set, or (the button next to "hide") the whole screen under the top bar
         bool max = Settings.BoardMax;
-        int edge = P(10);
+        // one gap everywhere: under the bar, above the taskbar, at the sides of a whole-screen board
+        int edge = P(6);
         int bw = max ? wa.Width - 2 * edge : (int)Math.Round(wa.Width * Math.Clamp(Settings.WidthPercent, 30, 100) / 100);
         double weekH = wa.Height / s * Math.Clamp(Settings.WeekHeightPercent, 5, 100) / 100;
         int barH = P(ClockWindow.BarHeight * ui);
-        int minTop = wa.Y + (Settings.ShowClock ? barH + P(10) : P(14));
-        int bh = max ? wa.Y + wa.Height - edge - minTop
-            : Math.Min(P(BoardWindow.ChromeHeight * ui + Board.HeightInWeeks * weekH), wa.Y + wa.Height - minTop - P(14));
-        int maxTop = Math.Max(minTop, wa.Y + wa.Height - bh - P(14));
+        int minTop = wa.Y + (Settings.ShowClock ? barH : 0) + edge;
+        int bh = max || Settings.WeekHeightPercent >= 99 ? wa.Y + wa.Height - edge - minTop // "od zegara do paska zadań": all of it
+            : Math.Min(P(BoardWindow.ChromeHeight * ui + Board.HeightInWeeks * weekH), wa.Y + wa.Height - minTop - edge);
+        int maxTop = Math.Max(minTop, wa.Y + wa.Height - bh - edge);
         int top = max ? minTop : minTop + (int)Math.Round((maxTop - minTop) * Math.Clamp(Settings.VerticalPercent, 0, 100) / 100);
         int left = wa.X + (wa.Width - bw) / 2;
 
@@ -551,7 +552,7 @@ public partial class App : Application
         if (_second != null && SecondScreen() is { } m2)
         {
             // the second screen: the whole of it
-            int e2 = (int)Math.Round(10 * m2.Scale);
+            int e2 = (int)Math.Round(6 * m2.Scale);
             _second.PlacePhysical(m2.Work.X + e2, m2.Work.Y + e2, m2.Work.Width - 2 * e2, m2.Work.Height - 2 * e2, m2.Scale);
         }
 

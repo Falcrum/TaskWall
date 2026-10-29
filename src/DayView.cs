@@ -21,7 +21,8 @@ public sealed record DayViewHost(
     Action<TaskItem, TimeSpan, TimeSpan, bool> SetTime, // the last: the length changed (it becomes the estimate)
     Action<string, DateTime, TimeSpan> DropTask,
     Func<string, DateTime, FrameworkElement> AddRow,
-    Action<Alarm, DateTime> OpenAlarm);
+    Action<Alarm, DateTime> OpenAlarm,
+    Action<TaskItem> ClearTime); // a block dropped back on the "Bez godziny" strip
 
 /// <summary>
 /// The day view: an agenda on a vertical line of hours – meetings and alarms at their times, the working hours
@@ -36,6 +37,7 @@ public sealed class DayView : Grid
     readonly ScrollViewer _scroll = new() { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
     readonly StackPanel _addHost = new() { Margin = new Thickness(56, 0, 8, 6) };
     readonly WrapPanel _loose = new() { Margin = new Thickness(0, 2, 0, 0) };
+    readonly TextBlock _looseHead = new() { FontSize = 9.5, FontWeight = FontWeights.SemiBold, Foreground = Ui.Res("FgFaint") };
     readonly Border _looseBox = new() { Margin = new Thickness(56, 0, 8, 8), Padding = new Thickness(8, 5, 4, 3), CornerRadius = new CornerRadius(6) };
     readonly NotesEditor _notes = new();
     readonly TextBlock _notesTitle = new() { FontSize = 11, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 6) };
@@ -75,7 +77,7 @@ public sealed class DayView : Grid
         left.Children.Add(_addHost);
         var looseScroll = new ScrollViewer { Content = _loose, MaxHeight = 96, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         var looseStack = new DockPanel();
-        var looseHead = new TextBlock { Text = L.Up(L.T("Bez godziny")) + "  ·  " + L.T("przeciągnij na oś, żeby zaplanować"), FontSize = 9.5, FontWeight = FontWeights.SemiBold, Foreground = Res("FgFaint") };
+        var looseHead = _looseHead;
         DockPanel.SetDock(looseHead, Dock.Top);
         looseStack.Children.Add(looseHead);
         looseStack.Children.Add(looseScroll);
@@ -551,7 +553,10 @@ public sealed class DayView : Grid
     {
         _loose.Children.Clear();
         var loose = _host.TasksOf(_date).Where(t => Hm(t.Time) == null).ToList();
-        _looseBox.Visibility = loose.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        // also with no chip in it while blocks have hours: a block dropped on it loses its hours
+        bool timed = _host.TasksOf(_date).Any(t => Hm(t.Time) != null);
+        _looseBox.Visibility = loose.Count > 0 || timed ? Visibility.Visible : Visibility.Collapsed;
+        _looseHead.Text = L.Up(L.T("Bez godziny")) + "  ·  " + (loose.Count > 0 ? L.T("przeciągnij na oś, żeby zaplanować") : L.T("upuść tu blok z osi, żeby zdjąć mu godziny"));
         _looseBox.Background = B(Th.Ink(0x0A));
         foreach (var t in loose)
         {
@@ -605,6 +610,23 @@ public sealed class DayView : Grid
     // ---------- dragging: a block (time / length) or a working-hours edge ----------
 
     sealed record Drag(string Kind, TaskItem? Task, FrameworkElement El, double StartY, TimeSpan From, TimeSpan To);
+
+    bool OverStrip(MouseEventArgs e)
+    {
+        if (!_looseBox.IsVisible) return false;
+        var p = e.GetPosition(_looseBox);
+        return p.X >= 0 && p.Y >= 0 && p.X <= _looseBox.ActualWidth && p.Y <= _looseBox.ActualHeight;
+    }
+
+    bool _stripHot;
+    void StripHot(bool on)
+    {
+        if (on == _stripHot) return;
+        _stripHot = on;
+        _looseBox.Background = B(on ? Th.Ink(0x22) : Th.Ink(0x0A));
+        _looseBox.BorderBrush = on ? Res("AccentBrush") : null;
+        _looseBox.BorderThickness = new Thickness(on ? 1 : 0);
+    }
     Drag? _drag;
 
     void OnMove(object sender, MouseEventArgs e)
@@ -614,7 +636,10 @@ public sealed class DayView : Grid
         double snap = Math.Round(dy / HourH * 4) / 4 * HourH; // quarter hours
         switch (d.Kind)
         {
-            case "move": d.El.RenderTransform = new TranslateTransform(0, snap); break;
+            case "move":
+                d.El.RenderTransform = new TranslateTransform(0, snap);
+                if (d.Task != null) StripHot(OverStrip(e)); // back onto the "Bez godziny" strip: lit while it would land there
+                break;
             case "resize": d.El.Height = Math.Max(HourH / 4 - 2, Y(d.To) - Y(d.From) - 2 + snap); break;
             default: d.El.RenderTransform = new TranslateTransform(0, snap); break;
         }
@@ -625,6 +650,8 @@ public sealed class DayView : Grid
         if (_drag is not { } d) return;
         _drag = null;
         _canvas.ReleaseMouseCapture();
+        StripHot(false);
+        if (d.Kind == "move" && d.Task != null && OverStrip(e)) { _host.ClearTime(d.Task); return; } // no hours any more: a chip again
         double dy = e.GetPosition(_canvas).Y - d.StartY;
         var delta = TimeSpan.FromMinutes(Math.Round(dy / HourH * 4) * 15);
         if (Math.Abs(dy) < 4 || delta == TimeSpan.Zero) { d.El.RenderTransform = null; Render(); return; } // a click (or no change), not a drag

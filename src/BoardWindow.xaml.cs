@@ -458,7 +458,8 @@ public partial class BoardWindow : GlassWindow
                     DaySetTime,
                     DayDropTask,
                     (key, d) => BuildAddRow(key, d),
-                    (a, d) => AlarmWindow.Edit(Store, a, d)));
+                    (a, d) => AlarmWindow.Edit(Store, a, d),
+                    t => Do(() => { var real = Store.Materialize(t); real.Time = null; real.End = null; Store.Changed(real); })));
                 DayHost.Children.Add(_dayView);
             }
             _dayView.Show(_dayDate);
