@@ -151,6 +151,14 @@ public partial class BoardWindow
             inner.BorderThickness = new Thickness(1.2);
         }
         outer.Child = inner;
+        // Poświata: today's frame glows (a frame of its own over the cell's edge, so the tasks in it don't)
+        if (isToday && Glow.Halo(inner.CornerRadius, inner.Margin, blur: 14, opacity: 0.6) is { } halo)
+        {
+            var cell = new Grid();
+            outer.Child = cell;
+            cell.Children.Add(inner);
+            cell.Children.Add(halo);
+        }
 
         var dock = new DockPanel();
         inner.Child = dock;

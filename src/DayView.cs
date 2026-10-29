@@ -387,6 +387,8 @@ public sealed class DayView : Grid
             _nowText = new TextBlock { Text = DateTime.Now.ToString("HH:mm"), FontSize = 10, FontWeight = FontWeights.Bold, Foreground = Brushes.White };
             _nowLabel = At(new Border { CornerRadius = new CornerRadius(4), Background = B(accent), Padding = new Thickness(4, 0, 4, 1), IsHitTestVisible = false, Child = _nowText }, 4, y - 8);
             _canvas.Children.Add(_nowLabel);
+            Glow.Shape(_nowLine, blur: 8);
+            Glow.Shape(_nowLabel, blur: 12, opacity: 0.7);
         }
         else { _nowLine = null; _nowLabel = null; }
 
@@ -516,8 +518,12 @@ public sealed class DayView : Grid
                 foreach (var tag in tags) meta.Children.Add(BoardWindow.TagChip(tag, mfs));
                 meta.Children.Add(new TextBlock { Text = BoardWindow.Hours((b.To - b.From).TotalHours), FontSize = Math.Max(9, App.Settings.FontSize - 2.5), Foreground = Res("FgFaint"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
                 if (t.IsTracking || t.TrackedMinutes > 0)
-                    meta.Children.Add(new TextBlock { Text = (t.IsTracking ? "⏵ " : "⏱ ") + BoardWindow.Duration(t.TrackedNow), FontSize = mfs + 0.5, VerticalAlignment = VerticalAlignment.Center,
-                        Foreground = t.IsTracking ? Res("AccentBrush") : Res("FgFaint"), FontWeight = t.IsTracking ? FontWeights.Bold : FontWeights.Normal });
+                {
+                    var timer = new TextBlock { Text = (t.IsTracking ? "⏵ " : "⏱ ") + BoardWindow.Duration(t.TrackedNow), FontSize = mfs + 0.5, VerticalAlignment = VerticalAlignment.Center,
+                        Foreground = t.IsTracking ? Res("AccentBrush") : Res("FgFaint"), FontWeight = t.IsTracking ? FontWeights.Bold : FontWeights.Normal };
+                    if (t.IsTracking) Glow.Shape(timer, blur: 8);
+                    meta.Children.Add(timer);
+                }
                 if (h >= 34) stack.Children.Add(meta);
                 card.ToolTip = (t.NotionSource != null ? t.NotionSource + " · " : "") + t.Text + "\n" + range + "  ·  " + TaskMarks.StateName(t)
                     + "\n" + L.T("Przeciągnij: zmień godzinę · dolna krawędź: czas trwania (= estymacja) · prawy przycisk: menu");

@@ -762,6 +762,8 @@ public sealed class AppSettings
     public string Meters { get; set; } = "cpu,gpu,ram,disk,net";
     /// <summary>The task state's mark: "bar" (a thin bar that fills up) or "circle" (a round icon like Linear / Jira).</summary>
     public string StateIcon { get; set; } = "bar";
+    /// <summary>A soft light round today, the selected task, the running timer, the active view, tasks in progress and at the top of the board.</summary>
+    public bool Glow { get; set; } = true;
     /// <summary>The board fills the whole screen under the top bar (the button next to "hide").</summary>
     public bool BoardMax { get; set; }
     /// <summary>A second board on another screen (its device name; empty = none) and the view it shows.</summary>

@@ -70,7 +70,7 @@ public partial class BoardWindow
                 ToolTip = t.IsTracking ? L.T("Licznik czasu pracy działa – zatrzymasz go w menu zadania") : L.T("Zmierzony czas pracy") };
             void Show() => tl.Text = (t.IsTracking ? "⏵ " : "⏱ ") + Duration(t.TrackedNow);
             Show();
-            if (t.IsTracking) _trackLabels.Add((tl, Show));
+            if (t.IsTracking) { _trackLabels.Add((tl, Show)); Glow.Shape(tl, blur: 8); }
             meta.Children.Add(tl);
         }
         if (span is { } sp) // a multi-day task on its current day: "↷ 3/3"

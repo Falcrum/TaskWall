@@ -566,5 +566,8 @@ static partial class L
         ("Zwiń spotkania do jednego wiersza", "Fold the meetings to one row"),
         ("przerywana ramka: dni zaplanowane (Potrwa do…)", "dashed frame: planned days (Lasts until…)"),
         ("{0} zadań, zrobione {1}", "{0} tasks, {1} done"),
+        // 0.37: the glow
+        ("Poświata", "Glow"),
+        ("Miękkie światło w kolorze akcentu: dzisiejszy dzień, zaznaczone zadanie, działający licznik pracy, aktywny widok, zadania w trakcie i łuna u góry tablicy.", "A soft light in the accent colour: today, the selected task, the running work timer, the active view, tasks in progress and a glow at the top of the board."),
     };
 }

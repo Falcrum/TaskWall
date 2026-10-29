@@ -589,6 +589,8 @@ public partial class BoardWindow : GlassWindow
         if (_sel != null) Dispatcher.BeginInvoke(ApplySelection, System.Windows.Threading.DispatcherPriority.Loaded); // the selected task, framed again
     }
 
+    Border? _topGlow;
+
     void UpdateTopBar()
     {
         var overdue = Overdue().Count;
@@ -603,7 +605,18 @@ public partial class BoardWindow : GlassWindow
             bool on = _view == mode;
             btn.Background = on ? B(Th.Ink(0x26)) : Brushes.Transparent;
             btn.Foreground = on ? Res("Fg") : Res("FgDim");
+            btn.Effect = null;
+            if (on) Glow.Shape(btn, blur: 10, opacity: 0.85); // Poświata: the view that is on (its icon and caption)
         }
+        // Poświata: the light from the top of the board, behind everything
+        if (_topGlow == null)
+        {
+            _topGlow = new Border { Height = 280, VerticalAlignment = VerticalAlignment.Top, IsHitTestVisible = false };
+            Grid.SetColumnSpan(_topGlow, 2);
+            Panel.SetZIndex(_topGlow, -1);
+            BodyRoot.Children.Insert(0, _topGlow);
+        }
+        _topGlow.Background = Glow.Enabled ? Glow.Top() : null;
         // the layer (account) on the right: icon + its name; the private one tinted green so it's obvious
         if (_barCaptions != S.BarCaptions) SetupBarIcons();
         bool priv = S.Layer == "private";

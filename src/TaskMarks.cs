@@ -97,6 +97,8 @@ static class TaskMarks
             bar.Children.Add(outline);
             hit.Children.Add(bar);
         }
+        // Poświata: a task being worked on glows in its orange (not its planned days)
+        if (state == "started" && !dashed && hit.Children.Count > 0) Glow.Shape(hit.Children[0], c, blur: 8, opacity: 0.9);
         if (click != null)
         {
             hit.Cursor = Cursors.Hand;

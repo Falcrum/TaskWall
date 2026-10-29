@@ -1082,6 +1082,8 @@ public sealed class SettingsWindow : DarkWindow
         stateIcon.SelectionChanged += (_, _) => { if (stateIcon.SelectedItem is ComboBoxItem it) { S.StateIcon = (string)it.Tag; App.Instance.ApplySettings(); } };
         p.Children.Add(Pair(L.T("Znacznik stanu zadania"), stateIcon,
             L.T("Pasek: pusty → ¼ w trakcie → ½ review → ¾ testy → pełny zrobione, hold w paski. Koło: pusty pierścień, ćwiartka, połowa, trzy czwarte, pełne z ✓, hold z ‖ – kształt czytelny także bez kolorów.")));
+        p.Children.Add(Check(L.T("Poświata"), S.Glow, v => S.Glow = v,
+            L.T("Miękkie światło w kolorze akcentu: dzisiejszy dzień, zaznaczone zadanie, działający licznik pracy, aktywny widok, zadania w trakcie i łuna u góry tablicy.")));
         p.Children.Add(SliderRow(L.T("Widoczność wzoru"), 0, 300, S.PatternVisibility * 100, v => S.PatternVisibility = v / 100, v => $"{v:0}%"));
         p.Children.Add(SliderRow(L.T("Skala wzoru"), 25, 100, S.PatternScale * 100, v => S.PatternScale = v / 100, v => $"{v:0}%"));
         p.Children.Add(Check(L.T("Matowe szkło (rozmyta tapeta pod tablicą)"), S.Blur, v => S.Blur = v));

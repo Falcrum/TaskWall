@@ -46,11 +46,24 @@ public partial class BoardWindow
     /// <summary>A frame in the accent round the selected row (again after every build).</summary>
     void ApplySelection()
     {
-        if (_selFrame != null) { _selFrame.BorderThickness = new Thickness(0); _selFrame.Padding = Pad(_selFrame, -1); _selFrame = null; }
+        if (_selFrame != null)
+        {
+            _selFrame.BorderThickness = new Thickness(0);
+            _selFrame.Padding = Pad(_selFrame, -1);
+            if (_selFrame.Child is Grid g && g.Children.OfType<Border>().FirstOrDefault(b => "glow".Equals(b.Tag)) is { } old) g.Children.Remove(old);
+            _selFrame = null;
+        }
         if (SelectedRow() is not Border row) { if (_sel != null && !_panels.ContainsKey(_sel.Value.Day)) _sel = null; return; }
         row.BorderBrush = Res("AccentBrush");
         row.BorderThickness = new Thickness(1);
         row.Padding = Pad(row, 1); // the frame takes the padding's place: nothing moves
+        // Poświata: a glowing frame on the row's edge, laid over its grid (the frame's padding outwards)
+        if (row.Child is Grid grid && Glow.Halo(new CornerRadius(6), new Thickness(-row.Padding.Left - 1, -row.Padding.Top - 1, -row.Padding.Right - 1, -row.Padding.Bottom - 1), blur: 12, opacity: 0.7) is { } halo)
+        {
+            Grid.SetRowSpan(halo, Math.Max(1, grid.RowDefinitions.Count));
+            Grid.SetColumnSpan(halo, Math.Max(1, grid.ColumnDefinitions.Count));
+            grid.Children.Add(halo);
+        }
         _selFrame = row;
         row.BringIntoView();
     }

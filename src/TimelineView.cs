@@ -428,7 +428,11 @@ public sealed class TimelineView : Grid
                     Foreground = today ? Brushes.White : DayOff(d) ? B(A(Color.FromRgb(0xF2, 0x6D, 0x6D), 0xC0)) : Res("FgFaint"),
                 };
                 if (today)
-                    _header.Children.Add(At(new Border { Width = w - 4, Height = 17, CornerRadius = new CornerRadius(8.5), Background = Res("AccentBrush") }, x + 2, 19));
+                {
+                    var todayPill = new Border { Width = w - 4, Height = 17, CornerRadius = new CornerRadius(8.5), Background = Res("AccentBrush") };
+                    Glow.Shape(todayPill, blur: 12, opacity: 0.7);
+                    _header.Children.Add(At(todayPill, x + 2, 19));
+                }
                 _header.Children.Add(At(label, x, 20));
             }
             else if (d.DayOfWeek == DayOfWeek.Monday)
@@ -439,6 +443,7 @@ public sealed class TimelineView : Grid
             var x = X(DateTime.Today) + w / 2;
             var pill = new Border { CornerRadius = new CornerRadius(8.5), Background = Res("AccentBrush"), Padding = new Thickness(7, 1, 7, 2),
                 Child = new TextBlock { Text = L.T("Dziś"), FontSize = 10, FontWeight = FontWeights.Bold, Foreground = Brushes.White } };
+            Glow.Shape(pill, blur: 12, opacity: 0.7);
             pill.Measure(new Size(200, 40));
             _header.Children.Add(At(pill, x - pill.DesiredSize.Width / 2, 19));
         }
