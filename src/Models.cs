@@ -764,6 +764,8 @@ public sealed class AppSettings
     public string StateIcon { get; set; } = "bar";
     /// <summary>A soft light round today, the selected task, the running timer, the active view, tasks in progress and at the top of the board.</summary>
     public bool Glow { get; set; } = true;
+    /// <summary>The state icon and the priority / project bars glow in their own colour.</summary>
+    public bool GlowIcons { get; set; } = true;
     /// <summary>The board fills the whole screen under the top bar (the button next to "hide").</summary>
     public bool BoardMax { get; set; }
     /// <summary>A second board on another screen (its device name; empty = none) and the view it shows.</summary>

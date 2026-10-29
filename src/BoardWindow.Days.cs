@@ -111,6 +111,9 @@ public partial class BoardWindow
         return sum;
     }
 
+    /// <summary>How far the day's list reaches past the cell's padding on each side, so the marks' light isn't cut off.</summary>
+    const double GlowRoom = 6;
+
     FrameworkElement BuildDay(DateTime date, List<TaskItem> tasks, int archivedDone, bool firstCol, bool firstRow, bool compact, bool outside, int week = 0)
     {
         var key = DayKey(date);
@@ -425,7 +428,10 @@ public partial class BoardWindow
             VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             Content = panel,
+            // room for the marks' light (Poświata ikon): the list reaches past the cell's padding (sides, top), its rows don't
+            Margin = new Thickness(-GlowRoom, -GlowRoom, -GlowRoom, 0),
         };
+        panel.Margin = new Thickness(panel.Margin.Left + GlowRoom, panel.Margin.Top + GlowRoom, panel.Margin.Right + GlowRoom, panel.Margin.Bottom);
         sv.ScrollChanged += (_, _) => UpdateFade(sv);
         sv.SizeChanged += (_, _) => UpdateFade(sv);
         if (_scrollOffsets.TryGetValue(key, out var off)) sv.Loaded += (_, _) => sv.ScrollToVerticalOffset(off);

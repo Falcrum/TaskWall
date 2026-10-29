@@ -56,4 +56,47 @@ static class Glow
         b.Freeze();
         return b;
     }
+
+    /// <summary>The same light in the top bar, rising from its bottom edge: the board's glow goes on up into it.</summary>
+    public static Brush Bottom()
+    {
+        var c = Accent;
+        var b = new RadialGradientBrush
+        {
+            Center = new Point(0.5, 1), GradientOrigin = new Point(0.5, 1), RadiusX = 0.6, RadiusY = 7,
+            GradientStops =
+            {
+                new GradientStop(Color.FromArgb(0x30, c.R, c.G, c.B), 0),
+                new GradientStop(Color.FromArgb(0x10, c.R, c.G, c.B), 0.55),
+                new GradientStop(Color.FromArgb(0x00, c.R, c.G, c.B), 1),
+            },
+        };
+        b.Freeze();
+        return b;
+    }
+
+    /// <summary>Settings → Wygląd → Poświata ikon: the state icon and the priority / project bars glow in their own colour.</summary>
+    public static bool IconsEnabled => App.Settings.GlowIcons;
+
+    /// <summary>
+    /// A mark's light (a thin priority / project / state bar): a soft oval in its colour, spilling past the mark on
+    /// every side. A gradient, not a blur effect: free to draw on every row of the board. Null when it is off.
+    /// </summary>
+    public static FrameworkElement? Spill(Color c)
+    {
+        if (!IconsEnabled) return null;
+        return new FreeBorder
+        {
+            Margin = new Thickness(-8, -6, -8, -6), IsHitTestVisible = false,
+            Background = new RadialGradientBrush
+            {
+                GradientStops =
+                {
+                    new GradientStop(Color.FromArgb(0xA0, c.R, c.G, c.B), 0.25),
+                    new GradientStop(Color.FromArgb(0x48, c.R, c.G, c.B), 0.6),
+                    new GradientStop(Color.FromArgb(0, c.R, c.G, c.B), 1),
+                },
+            },
+        };
+    }
 }

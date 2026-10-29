@@ -100,13 +100,16 @@ public sealed class ClockWindow : GlassWindow
         grid.Children.Add(_meters);
         grid.MouseRightButtonUp += (_, e) => { e.Handled = true; App.Instance.ShowSettings(); };
         grid.SizeChanged += (_, e) => { bool narrow = e.NewSize.Width < 820; if (narrow != _narrow) { _narrow = narrow; UpdateWeather(); BuildMeters(true); } };
-        Body = grid;
+        // Poświata: the board's light from its top goes on up into the bar (from its bottom edge), so the two read as one
+        _glow.Child = grid;
+        Body = _glow;
 
         _timer.Tick += (_, _) => UpdateText();
         _timer.Start();
         SysMeters.Updated += r => Dispatcher.BeginInvoke(() => ShowMeters(r));
         WeatherService.Changed += UpdateWeather;
         IsVisibleChanged += (_, _) => BuildMeters(false);
+        ApplyGlow();
         UpdateText();
         UpdateWeather();
     }
@@ -197,7 +200,11 @@ public sealed class ClockWindow : GlassWindow
         if (IsVisible && kinds.Count > 0) SysMeters.Start(); else SysMeters.Stop();
     }
 
-    public void ApplySettings() { BuildMeters(false); UpdateWeather(); _shown = ""; UpdateText(); }
+    readonly Border _glow = new();
+
+    void ApplyGlow() => _glow.Background = Glow.Enabled ? Glow.Bottom() : null;
+
+    public void ApplySettings() { ApplyGlow(); BuildMeters(false); UpdateWeather(); _shown = ""; UpdateText(); }
 
     void ShowMeters(Dictionary<string, MeterValue> values)
     {
