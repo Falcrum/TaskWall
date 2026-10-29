@@ -66,6 +66,7 @@ static class Dev
         else if (open == "expand") App.Current.Dispatcher.BeginInvoke(() => App.Board?.DevExpandAll(), DispatcherPriority.ApplicationIdle);
         else if (open == "timeline") App.Current.Dispatcher.BeginInvoke(() => App.Board?.ShowTimeline(), DispatcherPriority.ApplicationIdle);
         else if (open == "drawer") App.Current.Dispatcher.BeginInvoke(() => App.Board?.RevealBacklog(), DispatcherPriority.ApplicationIdle);
+        else if (open?.StartsWith("palette") == true) App.Current.Dispatcher.BeginInvoke(() => App.Board?.DevPalette(open.Length > 8 ? open[8..] : ""), DispatcherPriority.ApplicationIdle);
         else if (open == "calendar") App.Current.Dispatcher.BeginInvoke(() => App.Clock?.Open(), DispatcherPriority.ApplicationIdle);
         else if (open?.StartsWith("import=") == true)
             App.Current.Dispatcher.BeginInvoke(() => App.Instance.ImportNotion(open["import=".Length..]));

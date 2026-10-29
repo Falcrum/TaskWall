@@ -1132,6 +1132,8 @@ public partial class BoardWindow
             return;
         }
         if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control) { e.Handled = true; OpenSearch(); return; }
+        if (e.Key == Key.K && Keyboard.Modifiers == ModifierKeys.Control) { e.Handled = true; OpenPalette(); return; }
+        if (_palette?.IsVisible == true) return; // the palette's own keys
         if (Keyboard.Modifiers == ModifierKeys.Control && e.Key is Key.D1 or Key.D2 && Keyboard.FocusedElement is not TextBox) // not while typing (the notebook uses Ctrl+1/2 for headings)
         {
             e.Handled = true;
@@ -1145,7 +1147,16 @@ public partial class BoardWindow
         if (Keyboard.FocusedElement is TextBox) return;
         // the task under the mouse: Space = next state (○ → ◐ → ✓), Shift+1/2/3 = priority (! !! !!!), Shift+0 = none,
         // F2 = edit, Delete = to the bin
-        if (_hover is { } h && h.Row.IsMouseOver && (h.Task.IsVirtual ? h.Task : Store.Find(h.Task.Id)) is { } ht)
+        // the arrows: a task picked with ↑ ↓ (then ← → go to the next day, Ctrl+← → takes it along)
+        if (e.Key is Key.Up or Key.Down or Key.Left or Key.Right && Keyboard.Modifiers is ModifierKeys.None or ModifierKeys.Control
+            && IsWeekView && _view != ViewMode.Day && Arrow(e.Key, Keyboard.Modifiers == ModifierKeys.Control)) { e.Handled = true; return; }
+        if (e.Key == Key.Escape && _sel != null) { e.Handled = true; Select("", null); return; }
+        // the keys below work on the task under the mouse, or else the selected one
+        var target = _hover is { } hv && hv.Row.IsMouseOver ? ((TaskItem Task, StackPanel? Content, TextBlock? Text, FrameworkElement Row)?)(hv.Task, hv.Content, hv.Text, hv.Row)
+            : SelectedRow() is { } sr ? ((TaskItem)sr.Tag, null, null, sr) : null;
+        if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None && target is { } te && SelectedRow() == te.Row && Store.Find(te.Task.Id) is { } et)
+        { e.Handled = true; EditSomewhere(et, null, null); return; }
+        if (target is { } h && (h.Task.IsVirtual ? h.Task : Store.Find(h.Task.Id)) is { } ht)
         {
             Action? act = (e.Key, Keyboard.Modifiers) switch
             {

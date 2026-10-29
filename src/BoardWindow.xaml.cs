@@ -505,6 +505,8 @@ public partial class BoardWindow : GlassWindow
         _justAdded = _justToggled = null;
         _flashId = null;
         _editOnBuild = null; // not used by this build (e.g. the row is folded away): never later, by surprise
+        _selFrame = null; // the old rows are gone
+        if (_sel != null) Dispatcher.BeginInvoke(ApplySelection, System.Windows.Threading.DispatcherPriority.Loaded); // the selected task, framed again
     }
 
     void UpdateTopBar()
@@ -1973,34 +1975,8 @@ public partial class BoardWindow : GlassWindow
             if (finished) return;
             finished = true;
             _editors.Remove(cancel);
-            var parsed = SmartAdd.Parse(box.Text, Store.Categories);
-            var v = parsed.Text;
-            bool empty = v.Length == 0 || TaskItem.Tags(v, out var rest) is { Count: > 0 } && rest.Length == 0;
+            var change = AddChange(box.Text, key, out bool empty);
             if (_addingKey == key) _addingKey = keepOpen && !empty ? key : null; // another "+" may have taken over meanwhile
-            Action? change = null;
-            // "[Meeting] 14-15:30 Sprint" / "#meeting o 10 daily 30 min" → a meeting (with its hours), not a task
-            var tags = TaskItem.Tags(v, out var withoutTags);
-            if (!empty && tags.Contains(TaskItem.MeetingTag) && AlarmService.ParseMeeting(withoutTags, parsed.Estimate, out var from, out var to, out var title))
-            {
-                var day = parsed.Day ?? (key == BacklogKey ? DateTime.Today : DateTime.ParseExact(key, "yyyy-MM-dd", CultureInfo.InvariantCulture));
-                var meeting = new Alarm { Kind = "meeting", Text = title, Day = DayKey(day), Time = from.ToString(@"hh\:mm"), End = to.ToString(@"hh\:mm"), Remind = 5 };
-                change = () => { Store.AddAlarm(meeting); Dispatcher.BeginInvoke(AlarmService.Reschedule); };
-                empty = true;
-            }
-            if (!empty)
-            {
-                string? day = parsed.Day is { } pd ? DayKey(pd) : key == BacklogKey ? null : key;
-                var siblings = Store.Data.Tasks.Where(x => x.Day == day && !x.Archived);
-                var t = new TaskItem { Text = v, Day = day, Estimate = parsed.Estimate, Time = parsed.Time?.ToString(@"hh\:mm"), End = parsed.End?.ToString(@"hh\:mm"), Priority = parsed.Priority, NotionSource = parsed.Project, PlanEnd = parsed.Days is { } nd && day != null ? PlanEndAfter(day, nd) : AutoPlanEnd(day, parsed.Estimate), Order = siblings.Any() ? siblings.Max(x => x.Order) + 1 : 0 };
-                _justAdded = t.Id;
-                change = () => Store.Add(t);
-                if (parsed.Day != null && day != key) // went to another day: say where, and show that week if it's off-screen
-                {
-                    SyncText.Text = L.F("dodano: {0}", parsed.Day.Value.ToString("ddd d MMM", Pl));
-                    _syncFlash.Stop();
-                    _syncFlash.Start();
-                }
-            }
             Commit(change, host);
         }
 
@@ -2018,6 +1994,42 @@ public partial class BoardWindow : GlassWindow
         box.LostKeyboardFocus += (_, _) => Finish(keepOpen: false);
         FocusBox(box);
         return host;
+    }
+
+    /// <summary>
+    /// What typing <paramref name="text"/> into a day's (or the backlog's) add box does – a new task or a meeting, parsed
+    /// like there ("jutro 2h #art", "[Meeting] 14-15 Sprint"); null when there is nothing to add.
+    /// </summary>
+    Action? AddChange(string text, string key, out bool empty)
+    {
+        var parsed = SmartAdd.Parse(text, Store.Categories);
+        var v = parsed.Text;
+        empty = v.Length == 0 || TaskItem.Tags(v, out var rest) is { Count: > 0 } && rest.Length == 0;
+        Action? change = null;
+        // "[Meeting] 14-15:30 Sprint" / "#meeting o 10 daily 30 min" → a meeting (with its hours), not a task
+        var tags = TaskItem.Tags(v, out var withoutTags);
+        if (!empty && tags.Contains(TaskItem.MeetingTag) && AlarmService.ParseMeeting(withoutTags, parsed.Estimate, out var from, out var to, out var title))
+        {
+            var day = parsed.Day ?? (key == BacklogKey ? DateTime.Today : DateTime.ParseExact(key, "yyyy-MM-dd", CultureInfo.InvariantCulture));
+            var meeting = new Alarm { Kind = "meeting", Text = title, Day = DayKey(day), Time = from.ToString(@"hh\:mm"), End = to.ToString(@"hh\:mm"), Remind = 5 };
+            change = () => { Store.AddAlarm(meeting); Dispatcher.BeginInvoke(AlarmService.Reschedule); };
+            return change; // a meeting, not a task
+        }
+        if (!empty)
+        {
+            string? day = parsed.Day is { } pd ? DayKey(pd) : key == BacklogKey ? null : key;
+            var siblings = Store.Data.Tasks.Where(x => x.Day == day && !x.Archived);
+            var t = new TaskItem { Text = v, Day = day, Estimate = parsed.Estimate, Time = parsed.Time?.ToString(@"hh\:mm"), End = parsed.End?.ToString(@"hh\:mm"), Priority = parsed.Priority, NotionSource = parsed.Project, PlanEnd = parsed.Days is { } nd && day != null ? PlanEndAfter(day, nd) : AutoPlanEnd(day, parsed.Estimate), Order = siblings.Any() ? siblings.Max(x => x.Order) + 1 : 0 };
+            _justAdded = t.Id;
+            change = () => Store.Add(t);
+            if (parsed.Day != null && day != key) // went to another day: say where, and show that week if it's off-screen
+            {
+                SyncText.Text = L.F("dodano: {0}", parsed.Day.Value.ToString("ddd d MMM", Pl));
+                _syncFlash.Stop();
+                _syncFlash.Start();
+            }
+        }
+        return change;
     }
 
     /// <summary>
