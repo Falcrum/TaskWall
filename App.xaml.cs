@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -143,7 +144,8 @@ public partial class App : Application
             _dirtyAt = default;
         };
         _folderRetry.Tick += (_, _) => RetryPendingFolders();
-        _trimTimer.Tick += (_, _) => { _trimTimer.Stop(); TrimMemory(); };
+        // not in the middle of a drag (the timer ticks again and tries later)
+        _trimTimer.Tick += (_, _) => { if (Mouse.LeftButton == MouseButtonState.Pressed || Mouse.RightButton == MouseButtonState.Pressed) return; _trimTimer.Stop(); TrimMemory(); };
         _calendarTimer.Tick += (_, _) => RefreshCalendars();
         _calendarTimer.Start();
 
@@ -688,6 +690,10 @@ public partial class App : Application
 
     static void TrimMemory()
     {
+        // the system short of memory: no full collection and no emptying of the working set – every page pushed out now
+        // would have to come back from a pagefile that is already busy, and the board would stall on each move
+        var info = GC.GetGCMemoryInfo();
+        if (info.HighMemoryLoadThresholdBytes > 0 && info.MemoryLoadBytes >= info.HighMemoryLoadThresholdBytes) return;
         GC.Collect(2, GCCollectionMode.Forced, true, true);
         GC.WaitForPendingFinalizers();
         GC.Collect();

@@ -977,7 +977,7 @@ public sealed class BoardStore
     public RecurringRule? MarkRuleOn(DateTime date) => Data.MarkRules.FirstOrDefault(r => r.Occurs(date));
 
     /// <summary>
-    /// Changes one part of a day ("mark", "hours" or "overtime"): only that part gets the new time, so another computer's
+    /// Changes one part of a day ("mark", "hours", "overtime" or "afk"): only that part gets the new time, so another computer's
     /// edit of a different part of the same day isn't outweighed by it.
     /// </summary>
     void EditDay(string day, string part, Action<DayInfo> change)
@@ -988,10 +988,12 @@ public sealed class BoardStore
         n.MarkAt = d?.MarkTime ?? DateTime.MinValue;
         n.HoursAt = d?.HoursTime ?? DateTime.MinValue;
         n.OvertimeAt = d?.OvertimeTime ?? DateTime.MinValue;
+        n.AfkAt = d?.AfkTime ?? DateTime.MinValue;
         change(n);
         n.Modified = Stamp.After(d?.Modified ?? DateTime.MinValue);
         if (part == "mark") n.MarkAt = n.Modified;
         else if (part == "hours") n.HoursAt = n.Modified;
+        else if (part == "afk") n.AfkAt = n.Modified;
         else n.OvertimeAt = n.Modified;
         Data.Days[day] = n;
     }
@@ -1012,10 +1014,13 @@ public sealed class BoardStore
     public (string Start, string End) WorkHours(string day, string defStart, string defEnd) =>
         Data.Days.TryGetValue(day, out var d) && d.WorkStart != null && d.WorkEnd != null ? (d.WorkStart, d.WorkEnd) : (defStart, defEnd);
 
-    public void SetWorkHours(string day, string? start, string? end)
+    /// <summary>
+    /// The day's working hours (null, null = back to the defaults). <paramref name="endSet"/>: the end was set by hand
+    /// (true), follows the start (false), or stays as it was (null).
+    /// </summary>
+    public void SetWorkHours(string day, string? start, string? end, bool? endSet = null)
     {
-        Data.Days.TryGetValue(day, out var d);
-        EditDay(day, "hours", x => { x.WorkStart = start; x.WorkEnd = end; });
+        EditDay(day, "hours", x => { x.WorkStart = start; x.WorkEnd = end; x.EndSet = start == null ? null : endSet ?? x.EndSet; });
         MarkDirty();
     }
 
@@ -1045,14 +1050,46 @@ public sealed class BoardStore
     /// <summary>Replaces the day's extra periods (overlapping ones are joined).</summary>
     public void SetOvertime(string day, IEnumerable<(TimeSpan Start, TimeSpan End)> periods)
     {
+        var merged = Join(periods);
+        EditDay(day, "overtime", x => x.Overtime = merged.Count > 0 ? merged.Select(p => Period(p.Start, p.End)).ToList() : null);
+        MarkDirty();
+    }
+
+    /// <summary>The end of work on this day was set by hand (moving the start doesn't move it).</summary>
+    public bool EndSet(string day) => Data.Days.TryGetValue(day, out var d) && d.EndSet == true;
+
+    // ---------- AFK: breaks away from the computer within the day ----------
+
+    /// <summary>The day's AFK breaks (start, end), by start.</summary>
+    public List<(TimeSpan Start, TimeSpan End)> Afk(string day)
+    {
+        var list = new List<(TimeSpan, TimeSpan)>();
+        if (!Data.Days.TryGetValue(day, out var d) || d.Afk == null) return list;
+        foreach (var p in d.Afk)
+            if (ParsePeriod(p) is { } x) list.Add(x);
+        return list.OrderBy(x => x.Item1).ToList();
+    }
+
+    /// <summary>Replaces the day's AFK breaks (overlapping ones are joined).</summary>
+    public void SetAfk(string day, IEnumerable<(TimeSpan Start, TimeSpan End)> periods)
+    {
+        var merged = Join(periods);
+        EditDay(day, "afk", x => x.Afk = merged.Count > 0 ? merged.Select(p => Period(p.Start, p.End)).ToList() : null);
+        MarkDirty();
+    }
+
+    /// <summary>Hours away from the computer on a day.</summary>
+    public double AfkHours(string day) => Afk(day).Sum(p => (p.End - p.Start).TotalHours);
+
+    static List<(TimeSpan Start, TimeSpan End)> Join(IEnumerable<(TimeSpan Start, TimeSpan End)> periods)
+    {
         var merged = new List<(TimeSpan Start, TimeSpan End)>();
         foreach (var p in periods.Where(p => p.End > p.Start).OrderBy(p => p.Start))
         {
             if (merged.Count > 0 && p.Start <= merged[^1].End) merged[^1] = (merged[^1].Start, p.End > merged[^1].End ? p.End : merged[^1].End);
             else merged.Add(p);
         }
-        EditDay(day, "overtime", x => x.Overtime = merged.Count > 0 ? merged.Select(p => Period(p.Start, p.End)).ToList() : null);
-        MarkDirty();
+        return merged;
     }
 
     /// <summary>Hours of overtime on a day.</summary>
@@ -1185,10 +1222,11 @@ public sealed class BoardStore
             var was = snap.Days.TryGetValue(key, out var a) ? a.Mark : null;
             var now = Data.Days.TryGetValue(key, out var b) ? b.Mark : null;
             var wasStart = a?.WorkStart; var wasEnd = a?.WorkEnd;
-            if (was != now || wasStart != b?.WorkStart || wasEnd != b?.WorkEnd || string.Join(",", a?.Overtime ?? new()) != string.Join(",", b?.Overtime ?? new()))
+            if (was != now || wasStart != b?.WorkStart || wasEnd != b?.WorkEnd || string.Join(",", a?.Overtime ?? new()) != string.Join(",", b?.Overtime ?? new())
+                || string.Join(",", a?.Afk ?? new()) != string.Join(",", b?.Afk ?? new()) || a?.EndSet != b?.EndSet)
             {
                 var at = Stamp.After(b?.Modified ?? DateTime.MinValue); // undone: every part as a new change
-                Data.Days[key] = new DayInfo { Extra = b?.Extra, Mark = was, WorkStart = wasStart, WorkEnd = wasEnd, Overtime = a?.Overtime, Modified = at, MarkAt = at, HoursAt = at, OvertimeAt = at };
+                Data.Days[key] = new DayInfo { Extra = b?.Extra, Mark = was, WorkStart = wasStart, WorkEnd = wasEnd, EndSet = a?.EndSet, Overtime = a?.Overtime, Afk = a?.Afk, Modified = at, MarkAt = at, HoursAt = at, OvertimeAt = at, AfkAt = at };
             }
         }
         MarkDirty();
@@ -1363,6 +1401,9 @@ public sealed class BoardStore
     static readonly System.Text.RegularExpressions.Regex ConflictName = new(
         @"^board(-[A-Za-z0-9_\-]+| \(\d+\)| \([^)]*conflict[^)]*\))\.json$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
+    /// <summary>Conflict copies merged already (path and time): one that couldn't be moved away isn't merged again.</summary>
+    readonly HashSet<string> _mergedCopies = new();
+
     /// <summary>Merges conflict copies in, then moves them to backup\ (nothing is deleted).</summary>
     void MergeConflictCopies()
     {
@@ -1373,6 +1414,9 @@ public sealed class BoardStore
             if (!ConflictName.IsMatch(Path.GetFileName(f))) continue;
             var copy = TryRead(f);
             if (copy.Data == null) continue;
+            // a copy that couldn't be moved away (locked): merged once, not again on every poll
+            var stamp = $"{f}|{File.GetLastWriteTimeUtc(f).Ticks}";
+            if (!_mergedCopies.Add(stamp)) continue;
             Data = Merge(Data, copy.Data);
             any = true;
             try
@@ -1535,7 +1579,7 @@ public sealed class BoardStore
         foreach (var id in Data.Deleted.Where(kv => kv.Value < cutoff).Select(kv => kv.Key).ToList())
             Data.Deleted.Remove(id);
         Data.Trash = null;
-        foreach (var key in Data.Days.Where(kv => kv.Value.Mark == null && kv.Value.WorkStart == null && kv.Value.WorkEnd == null && kv.Value.Overtime == null && kv.Value.Modified < cutoff).Select(kv => kv.Key).ToList())
+        foreach (var key in Data.Days.Where(kv => kv.Value.Mark == null && kv.Value.WorkStart == null && kv.Value.WorkEnd == null && kv.Value.Overtime == null && kv.Value.Afk == null && kv.Value.Modified < cutoff).Select(kv => kv.Key).ToList())
             Data.Days.Remove(key);
         Data.Alarms.RemoveAll(x => x.Deleted && x.Modified < cutoff);
         Data.Bin?.RemoveAll(e => e.Deleted < DateTime.UtcNow.AddDays(-BinDays));

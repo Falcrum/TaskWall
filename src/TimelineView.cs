@@ -82,6 +82,9 @@ public sealed class TimelineView : Grid
     double MaxW => Math.Max(160, ActualWidth / 3);
     double RowHeight => Math.Round(S.Compact ? App.Settings.FontSize * 1.9 + 4 : App.Settings.FontSize * 2.5 + 6);
 
+    /// <summary>The board closed: no more ticks.</summary>
+    public void StopTimers() { _clock.Stop(); _saveZoom.Stop(); _renderSoon.Stop(); }
+
     public TimelineView(Func<BoardStore> store, Func<TaskItem, FrameworkElement, ContextMenu> menu, Action<DateTime> open, Action<TaskItem, int> moveBy, Action<TaskItem, DateTime> setEnd)
     {
         _store = store;

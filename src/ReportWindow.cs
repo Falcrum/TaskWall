@@ -15,7 +15,7 @@ namespace TaskWall;
 /// <summary>Numbers of one period (week or month) of one account – shown in <see cref="ReportWindow"/>, saved as HTML or CSV.</summary>
 public sealed class Report
 {
-    public sealed record Day(DateTime Date, int Tasks, int Done, double Hours, double DoneHours, double Meetings, string? Mark, int Continued, double Overtime = 0);
+    public sealed record Day(DateTime Date, int Tasks, int Done, double Hours, double DoneHours, double Meetings, string? Mark, int Continued, double Overtime = 0, double Afk = 0);
     public sealed record Category(string Name, string Color, int Tasks, int Done, double Hours, double DoneHours);
 
     public string Account = "";
@@ -42,6 +42,7 @@ public sealed class Report
     public double Meetings => Days.Sum(d => d.Meetings);
     /// <summary>Hours of overtime (the day view's extra working periods).</summary>
     public double Overtime => Days.Sum(d => d.Overtime);
+    public double Afk => Days.Sum(d => d.Afk);
     /// <summary>Time measured with the tasks' timers (hours).</summary>
     public double Tracked => All.Select(x => x.Task).Distinct().Sum(t => t.TrackedNow) / 60;
     public IEnumerable<(DateTime Day, TaskItem Task)> Open => All.Where(x => !x.Task.Done && !x.Task.Archived);
@@ -88,7 +89,7 @@ public sealed class Report
                 r.Marks[mark] = (cur.Item1, cur.Item2, cur.Item3 + 1);
             }
             r.Days.Add(new Day(d, tasks.Count, tasks.Count(t => t.Done), tasks.Sum(t => t.Estimate ?? 0), tasks.Where(t => t.Done).Sum(t => t.Estimate ?? 0), meet, mark,
-                store.Data.Tasks.Count(t => t.WorkedDays?.Contains(key) == true), store.OvertimeHours(key)));
+                store.Data.Tasks.Count(t => t.WorkedDays?.Contains(key) == true), store.OvertimeHours(key), store.AfkHours(key)));
         }
         r.Carried = store.Data.Tasks.Where(t => !t.Done && t.WorkedDays?.Any(keys.Contains) == true && t.Day != null && !keys.Contains(t.Day)).ToList();
         r.Projects = Insights.ByProject(Insights.Cycles(store.Data.Tasks, r.From, r.To));
@@ -152,6 +153,7 @@ public sealed class Report
         Tile(H(DoneHours), L.F("z {0} zaplanowanych", H(Hours)));
         Tile(H(Meetings), L.T("spotkań"));
         if (Overtime > 0) Tile(H(Math.Round(Overtime, 2)), L.T("nadgodzin"));
+        if (Afk > 0) Tile(H(Math.Round(Afk, 2)), L.T("przerw AFK"));
         if (Tracked > 0) Tile(H(Math.Round(Tracked, 1)), L.T("zmierzonego czasu pracy (łącznie na tych zadaniach)"));
         Tile((Open.Count() + Carried.Count).ToString(), L.T("przeszło dalej / otwarte"));
         foreach (var (code, m) in Marks) Tile(m.Days.ToString(), $"{MarkType.Show(code)} · {MarkType.ShowLabel(code, m.Label)}");
@@ -375,6 +377,7 @@ public sealed class ReportWindow : DarkWindow
         Stat(BoardWindow.Hours(r.DoneHours), L.F("z {0} zaplanowanych", BoardWindow.Hours(r.Hours)));
         Stat(BoardWindow.Hours(r.Meetings), L.T("spotkań"));
         if (r.Overtime > 0) Stat(BoardWindow.Hours(Math.Round(r.Overtime, 2)), L.T("nadgodzin"));
+        if (r.Afk > 0) Stat(BoardWindow.Hours(Math.Round(r.Afk, 2)), L.T("przerw AFK"));
         if (r.Tracked > 0) Stat(BoardWindow.Hours(Math.Round(r.Tracked, 1)), L.T("zmierzonego czasu pracy (łącznie na tych zadaniach)"));
         Stat((r.Open.Count() + r.Carried.Count).ToString(), L.T("przeszło dalej / otwarte"));
         foreach (var (code, m) in r.Marks) Stat(m.Days.ToString(), $"{MarkType.Show(code)} · {MarkType.ShowLabel(code, m.Label)}");

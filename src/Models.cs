@@ -521,23 +521,29 @@ public sealed class DayInfo
     public string? WorkEnd { get; set; }
     /// <summary>Extra working periods of the day (overtime), "20:00-22:00" each, besides the regular hours.</summary>
     public List<string>? Overtime { get; set; }
+    /// <summary>The end of work was set by hand: moving the start no longer drags it along (8 hours on).</summary>
+    public bool? EndSet { get; set; }
+    /// <summary>Breaks away from the computer (AFK), "12:00-12:30" each: not working time.</summary>
+    public List<string>? Afk { get; set; }
     public DateTime Modified { get; set; } = DateTime.UtcNow;
     /// <summary>
-    /// When each part last changed (the mark, the working hours, the overtime): two computers editing different parts
+    /// When each part last changed (the mark, the working hours, the overtime, the AFK breaks): two computers editing different parts
     /// of the same day keep both. Missing (older files) = <see cref="Modified"/>.
     /// </summary>
     public DateTime? MarkAt { get; set; }
     public DateTime? HoursAt { get; set; }
     public DateTime? OvertimeAt { get; set; }
+    public DateTime? AfkAt { get; set; }
 
     [JsonIgnore] public DateTime MarkTime => MarkAt ?? Modified;
     [JsonIgnore] public DateTime HoursTime => HoursAt ?? Modified;
     [JsonIgnore] public DateTime OvertimeTime => OvertimeAt ?? Modified;
+    [JsonIgnore] public DateTime AfkTime => AfkAt ?? Modified;
 
     public DayInfo Copy() => new()
     {
-        Extra = Extra, Mark = Mark, WorkStart = WorkStart, WorkEnd = WorkEnd, Overtime = Overtime, Modified = Modified,
-        MarkAt = MarkAt, HoursAt = HoursAt, OvertimeAt = OvertimeAt,
+        Extra = Extra, Mark = Mark, WorkStart = WorkStart, WorkEnd = WorkEnd, EndSet = EndSet, Overtime = Overtime, Afk = Afk, Modified = Modified,
+        MarkAt = MarkAt, HoursAt = HoursAt, OvertimeAt = OvertimeAt, AfkAt = AfkAt,
     };
 
     /// <summary>Two copies of one day: each part from the copy that changed it last.</summary>
@@ -548,9 +554,11 @@ public sealed class DayInfo
         var mark = b.MarkTime > a.MarkTime ? b : a;
         var hours = b.HoursTime > a.HoursTime ? b : a;
         var ot = b.OvertimeTime > a.OvertimeTime ? b : a;
+        var afk = b.AfkTime > a.AfkTime ? b : a;
         m.Mark = mark.Mark; m.MarkAt = mark.MarkTime;
-        m.WorkStart = hours.WorkStart; m.WorkEnd = hours.WorkEnd; m.HoursAt = hours.HoursTime;
+        m.WorkStart = hours.WorkStart; m.WorkEnd = hours.WorkEnd; m.EndSet = hours.EndSet; m.HoursAt = hours.HoursTime;
         m.Overtime = ot.Overtime; m.OvertimeAt = ot.OvertimeTime;
+        m.Afk = afk.Afk; m.AfkAt = afk.AfkTime;
         m.Modified = a.Modified > b.Modified ? a.Modified : b.Modified;
         return m;
     }

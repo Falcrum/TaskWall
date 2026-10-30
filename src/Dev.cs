@@ -651,6 +651,25 @@ static class Dev
             Check("overtime: overlapping periods join, a day mark keeps them, the report counts their hours",
                 otStore.Overtime("2026-10-21").Count == 1 && otStore.OvertimeHours("2026-10-21") == 3 && otStore.WorkHours("2026-10-21", "09:00", "17:00") == ("08:00", "16:00")
                 && Report.Build(otStore, "work", new DateTime(2026, 10, 19), new DateTime(2026, 10, 25), month: false).Overtime == 3);
+            // AFK breaks: overlapping ones join, the report counts them, undo takes one back; the end of work set by hand stays
+            otStore.SetAfk("2026-10-21", new[] { (TimeSpan.FromHours(12), TimeSpan.FromHours(12.5)), (TimeSpan.FromHours(12.25), TimeSpan.FromHours(13)) });
+            otStore.Checkpoint(); // as the day view does before each change
+            otStore.SetAfk("2026-10-21", otStore.Afk("2026-10-21").Append((TimeSpan.FromHours(15), TimeSpan.FromHours(15.25))));
+            bool afkJoined = otStore.Afk("2026-10-21").Count == 2 && otStore.AfkHours("2026-10-21") == 1.25
+                && Report.Build(otStore, "work", new DateTime(2026, 10, 19), new DateTime(2026, 10, 25), month: false).Afk == 1.25;
+            otStore.Undo();
+            bool afkUndone = otStore.Afk("2026-10-21").Count == 1 && otStore.AfkHours("2026-10-21") == 1;
+            otStore.SetWorkHours("2026-10-21", "08:00", "15:00", endSet: true);
+            otStore.SetWorkHours("2026-10-21", "07:00", "15:00");
+            bool endKept = otStore.EndSet("2026-10-21") && otStore.WorkHours("2026-10-21", "09:00", "17:00") == ("07:00", "15:00");
+            otStore.SetWorkHours("2026-10-21", null, null);
+            Check("AFK: overlapping breaks join, the report counts them, undo takes the last one back; an end set by hand stays set, the defaults clear it",
+                afkJoined && afkUndone && endKept && !otStore.EndSet("2026-10-21"), $"{afkJoined} {afkUndone} {endKept}");
+            var dayA = new DayInfo { Afk = new() { "10:00-10:30" }, AfkAt = new DateTime(2026, 10, 1), WorkStart = "08:00", WorkEnd = "16:00", HoursAt = new DateTime(2026, 10, 2) };
+            var dayB = new DayInfo { Afk = new() { "11:00-11:15" }, AfkAt = new DateTime(2026, 10, 3), WorkStart = "09:00", WorkEnd = "17:00", HoursAt = new DateTime(2026, 10, 1) };
+            var mergedDay = DayInfo.Merge(dayA, dayB);
+            Check("AFK: two computers – the breaks from the newer edit of the breaks, the hours from the newer edit of the hours",
+                mergedDay.Afk?.SequenceEqual(new[] { "11:00-11:15" }) == true && mergedDay.WorkStart == "08:00");
             try { Directory.Delete(otDir, true); } catch { }
 
             // ----- two computers on one cloud folder: each works on its own copy of the drive, and the drive copies the

@@ -569,5 +569,17 @@ static partial class L
         // 0.37: the glow
         ("Poświata", "Glow"),
         ("Miękka łuna w kolorze akcentu u góry tablicy, przechodząca w górny pasek.", "A soft glow in the accent colour at the top of the board, going on up into the top bar."),
+        // 0.38: the day view – both edges, AFK breaks, the working day from its start
+        ("Przeciągnij: zmień godzinę · górna / dolna krawędź: początek / czas trwania (= estymacja) · prawy przycisk: menu", "Drag: change the time · upper / lower edge: the start / how long (= estimate) · right click: menu"),
+        ("AFK – przerwa od komputera {0}", "AFK – away from the computer {0}"),
+        ("Przeciągnij: przesuń · krawędzie: początek / koniec · prawy przycisk: usuń", "Drag: move · edges: start / end · right click: remove"),
+        ("Usuń tę przerwę AFK", "Remove this AFK break"),
+        ("Godziny pracy · prawy przycisk: dodaj przerwę AFK", "Working hours · right click: add an AFK break"),
+        ("AFK od {0} · {1}", "AFK from {0} · {1}"),
+        ("AFK teraz ({0}) · {1}", "AFK now ({0}) · {1}"),
+        ("Przeciągnij, żeby zmienić dla tego dnia (koniec ustawiony ręcznie zostaje) · dwuklik: domyślne godziny", "Drag to change it for this day (the end set by hand stays) · double-click: the default hours"),
+        ("Przeciągnij, żeby zmienić dla tego dnia – koniec przesunie się z nim ({0} pracy), dopóki nie ustawisz go sam · dwuklik: domyślne godziny", "Drag to change it for this day – the end moves with it ({0} of work) until you set it yourself · double-click: the default hours"),
+        ("Przeciągnij, żeby ustawić go dla tego dnia (początek go już nie przesunie) · dwuklik: domyślne godziny", "Drag to set it for this day (the start won't move it any more) · double-click: the default hours"),
+        ("przerw AFK", "of AFK breaks"),
     };
 }

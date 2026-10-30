@@ -94,6 +94,8 @@ public partial class BoardWindow : GlassWindow
             Rebuild();
         };
         _dayTimer.Start();
+        // a board closed (the second screen gone): its timers stop with it, or it would go on ticking and rebuilding unseen
+        Closed += (_, _) => { _dayTimer.Stop(); _trackTimer?.Stop(); _dayView?.StopTimers(); _timeline?.StopTimers(); };
         _syncFlash.Tick += (_, _) => { _syncFlash.Stop(); SyncText.Text = ""; };
         InitFeatures();
     }
@@ -676,6 +678,7 @@ public partial class BoardWindow : GlassWindow
     public static string PlanEndAfter(string day, int workdays)
     {
         var d = ParseKey(day);
+        workdays = Math.Min(workdays, 520); // two years at most: a wild estimate (seconds, a typo from Notion) must not walk to the year 9999
         for (int n = 1; n < workdays;)
         {
             d = d.AddDays(1);

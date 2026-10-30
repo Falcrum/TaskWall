@@ -113,6 +113,9 @@ public sealed class DayView : Grid
         _clock.Start();
     }
 
+    /// <summary>The board closed: no more ticks.</summary>
+    public void StopTimers() => _clock.Stop();
+
     static UIElement At2(UIElement el, int col) { SetColumn(el, col); return el; }
     static T At<T>(T el, double x, double y) where T : UIElement { Canvas.SetLeft(el, x); Canvas.SetTop(el, y); return el; }
 
@@ -219,6 +222,13 @@ public sealed class DayView : Grid
         return we > ws ? (ws, we) : (ws, ws + TimeSpan.FromHours(8));
     }
 
+    /// <summary>A working day's length from the settings' default hours (8 hours when they make no sense).</summary>
+    static TimeSpan DayLength()
+    {
+        var len = (Hm(App.Settings.WorkEnd) ?? TimeSpan.FromHours(17)) - (Hm(App.Settings.WorkStart) ?? TimeSpan.FromHours(9));
+        return len > TimeSpan.FromMinutes(30) ? len : TimeSpan.FromHours(8);
+    }
+
     List<Block> Blocks()
     {
         var store = _host.Store();
@@ -252,6 +262,10 @@ public sealed class DayView : Grid
             if (to > TimeSpan.FromHours(24)) to = TimeSpan.FromHours(24);
             list.Add(new Block(from, to, "task", t, false));
         }
+
+        // the AFK breaks: like blocks, side by side with the tasks they interrupted
+        var afk = store.Afk(Key(_date));
+        for (int i = 0; i < afk.Count; i++) list.Add(new Block(afk[i].Start, afk[i].End, "afk", i, false));
 
         // side by side where they overlap
         var sorted = list.OrderBy(b => b.From).ThenByDescending(b => b.To).ToList();
@@ -305,7 +319,17 @@ public sealed class DayView : Grid
             if (b > cursor) cursor = b;
         }
         if (cursor < TimeSpan.FromHours(24)) HatchRect(cursor, TimeSpan.FromHours(24));
-        if (regular) _canvas.Children.Add(At(new Rectangle { Width = area + 4, Height = Y(we) - Y(ws), Fill = B(Th.Ink(0x06)) }, Gutter - 2, Y(ws)));
+        if (regular)
+        {
+            // the working hours stand apart from the hatched rest: a lighter field, an accent strip down its left edge and
+            // a line at its start and end; right-click: an AFK break from there
+            var work = new Rectangle { Width = area + 4, Height = Y(we) - Y(ws), Fill = B(Th.Ink(0x0C)), ToolTip = L.T("Godziny pracy · prawy przycisk: dodaj przerwę AFK") };
+            work.MouseRightButtonUp += (_, e) => { e.Handled = true; AfkMenu(work, T(e.GetPosition(_canvas).Y)); };
+            _canvas.Children.Add(At(work, Gutter - 2, Y(ws)));
+            _canvas.Children.Add(At(new Rectangle { Width = 3, Height = Y(we) - Y(ws), Fill = B(A(accentC, 0x90)), IsHitTestVisible = false }, Gutter - 5, Y(ws)));
+            foreach (var edge in new[] { ws, we })
+                _canvas.Children.Add(At(new Rectangle { Width = area + 4, Height = 1, Fill = B(A(accentC, 0x60)), IsHitTestVisible = false }, Gutter - 2, Y(edge)));
+        }
         for (int i = 0; i < overtime.Count; i++)
         {
             var (a, b) = overtime[i];
@@ -320,7 +344,7 @@ public sealed class DayView : Grid
                 e.Handled = true;
                 var menu = new ContextMenu();
                 var del = new MenuItem { Header = L.T("Usuń te nadgodziny") };
-                del.Click += (_, _) => { store.SetOvertime(Key(_date), store.Overtime(Key(_date)).Where((_, k) => k != index)); Render(); };
+                del.Click += (_, _) => { store.Checkpoint(); store.SetOvertime(Key(_date), store.Overtime(Key(_date)).Where((_, k) => k != index)); Render(); };
                 menu.Items.Add(del);
                 menu.PlacementTarget = slot;
                 menu.IsOpen = true;
@@ -335,6 +359,8 @@ public sealed class DayView : Grid
 
         void HatchRect(TimeSpan from, TimeSpan to)
         {
+            // outside work: darker under the hatch, so it doesn't run into the working hours
+            _canvas.Children.Add(At(new Rectangle { Width = area + 4, Height = Math.Max(0, Y(to) - Y(from)), Fill = B(Th.Light ? Color.FromArgb(0x10, 0, 0, 0) : Color.FromArgb(0x40, 0, 0, 0)), IsHitTestVisible = false }, Gutter - 2, Y(from)));
             var r = new Rectangle { Width = area + 4, Height = Math.Max(0, Y(to) - Y(from)), Fill = hatch, ToolTip = L.T("Poza godzinami pracy · prawy przycisk: dodaj tu nadgodziny") };
             r.MouseRightButtonUp += (_, e) =>
             {
@@ -346,7 +372,7 @@ public sealed class DayView : Grid
                 if (end - at < TimeSpan.FromMinutes(15)) return;
                 var menu = new ContextMenu();
                 var add = new MenuItem { Header = L.F("Dodaj nadgodziny {0}–{1}", at.ToString(@"hh\:mm"), Hhmm(end)) };
-                add.Click += (_, _) => { store.SetOvertime(Key(_date), store.Overtime(Key(_date)).Append((at, end))); Render(); };
+                add.Click += (_, _) => { store.Checkpoint(); store.SetOvertime(Key(_date), store.Overtime(Key(_date)).Append((at, end))); Render(); };
                 menu.Items.Add(add);
                 menu.PlacementTarget = r;
                 menu.IsOpen = true;
@@ -431,6 +457,41 @@ public sealed class DayView : Grid
     static Brush? _hatch;
     static bool _hatchLight;
 
+    /// <summary>"  ·  7h 30m (AFK 30m)": the day's working time without its AFK breaks (on the end-of-work handle).</summary>
+    string WorkSummary()
+    {
+        var (ws, we) = WorkHours();
+        // only the part of each break inside the working hours takes time off them
+        var afk = _host.Store().Afk(Key(_date)).Sum(p => Math.Max(0, ((p.End < we ? p.End : we) - (p.Start > ws ? p.Start : ws)).TotalHours));
+        return "  ·  " + BoardWindow.Duration(((we - ws).TotalHours - afk) * 60) + (afk > 0 ? "  (AFK " + BoardWindow.Duration(afk * 60) + ")" : "");
+    }
+
+    /// <summary>Right-click on the working hours: an AFK break from the quarter clicked (or from now), for a chosen time.</summary>
+    void AfkMenu(FrameworkElement target, TimeSpan at)
+    {
+        var store = _host.Store();
+        var menu = new ContextMenu { PlacementTarget = target };
+        void Item(TimeSpan from, TimeSpan len, string header)
+        {
+            var to = from + len > TimeSpan.FromHours(24) ? TimeSpan.FromHours(24) : from + len;
+            var mi = new MenuItem { Header = header };
+            mi.Click += (_, _) => { store.Checkpoint(); store.SetAfk(Key(_date), store.Afk(Key(_date)).Append((from, to))); Render(); };
+            menu.Items.Add(mi);
+        }
+        foreach (var min in new[] { 15, 30, 60 })
+            Item(at, TimeSpan.FromMinutes(min), L.F("AFK od {0} · {1}", Hhmm(at), BoardWindow.Hours(min / 60.0)));
+        if (_date == DateTime.Today)
+        {
+            // from now, to the quarter: "I'm off for a while"
+            var now = TimeSpan.FromMinutes(Math.Floor(DateTime.Now.TimeOfDay.TotalMinutes / 15) * 15);
+            menu.Items.Add(new Separator());
+            Item(now, TimeSpan.FromMinutes(30), L.F("AFK teraz ({0}) · {1}", Hhmm(now), BoardWindow.Hours(0.5)));
+        }
+        _menuOpen = true;
+        menu.Closed += (_, _) => _menuOpen = false;
+        menu.IsOpen = true;
+    }
+
     void WorkHandle(TimeSpan at, bool start, double area, int? overtime = null)
     {
         var pill = new Border
@@ -438,8 +499,11 @@ public sealed class DayView : Grid
             CornerRadius = new CornerRadius(4), Padding = new Thickness(5, 0, 5, 1), Background = B(Th.Ink(0x26)), Cursor = Cursors.SizeNS,
             ToolTip = overtime != null
                 ? (start ? L.T("Początek nadgodzin") : L.T("Koniec nadgodzin")) + "\n" + L.T("Przeciągnij, żeby zmienić · dwuklik: usuń te nadgodziny")
-                : (start ? L.T("Początek pracy") : L.T("Koniec pracy")) + "\n" + L.T("Przeciągnij, żeby zmienić dla tego dnia · dwuklik: domyślne godziny"),
-            Child = new TextBlock { Text = (start ? "▸ " : "◂ ") + Hhmm(at), FontSize = 9.5, FontWeight = FontWeights.SemiBold, Foreground = Res("FgDim") },
+                : start ? L.T("Początek pracy") + "\n" + (_host.Store().EndSet(Key(_date))
+                    ? L.T("Przeciągnij, żeby zmienić dla tego dnia (koniec ustawiony ręcznie zostaje) · dwuklik: domyślne godziny")
+                    : L.F("Przeciągnij, żeby zmienić dla tego dnia – koniec przesunie się z nim ({0} pracy), dopóki nie ustawisz go sam · dwuklik: domyślne godziny", BoardWindow.Hours(DayLength().TotalHours)))
+                : L.T("Koniec pracy") + "\n" + L.T("Przeciągnij, żeby ustawić go dla tego dnia (początek go już nie przesunie) · dwuklik: domyślne godziny"),
+            Child = new TextBlock { Text = (start ? "▸ " : "◂ ") + Hhmm(at) + (start || overtime != null ? "" : WorkSummary()), FontSize = 9.5, FontWeight = FontWeights.SemiBold, Foreground = Res("FgDim") },
         };
         pill.MouseLeftButtonDown += (_, e) =>
         {
@@ -447,6 +511,7 @@ public sealed class DayView : Grid
             var store = _host.Store();
             if (e.ClickCount == 2)
             {
+                store.Checkpoint(); // Ctrl+Z takes it back
                 if (overtime is { } oi) store.SetOvertime(Key(_date), store.Overtime(Key(_date)).Where((_, k) => k != oi));
                 else store.SetWorkHours(Key(_date), null, null);
                 Render();
@@ -457,7 +522,8 @@ public sealed class DayView : Grid
             _canvas.CaptureMouse();
         };
         Panel.SetZIndex(pill, 10); // above the task blocks: always grabbable
-        _canvas.Children.Add(At(pill, Gutter + area - 70, Y(at) - (start ? 0 : 16)));
+        pill.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity)); // right-aligned: the end shows the hours worked too
+        _canvas.Children.Add(At(pill, Gutter + area - Math.Max(66, pill.DesiredSize.Width + 4), Y(at) - (start ? 0 : 16)));
     }
 
     void DrawBlock(Block b, double area)
@@ -520,17 +586,15 @@ public sealed class DayView : Grid
                         Foreground = t.IsTracking ? Res("AccentBrush") : Res("FgFaint"), FontWeight = t.IsTracking ? FontWeights.Bold : FontWeights.Normal });
                 if (h >= 34) stack.Children.Add(meta);
                 card.ToolTip = (t.NotionSource != null ? t.NotionSource + " · " : "") + t.Text + "\n" + range + "  ·  " + TaskMarks.StateName(t)
-                    + "\n" + L.T("Przeciągnij: zmień godzinę · dolna krawędź: czas trwania (= estymacja) · prawy przycisk: menu");
+                    + "\n" + L.T("Przeciągnij: zmień godzinę · górna / dolna krawędź: początek / czas trwania (= estymacja) · prawy przycisk: menu");
                 card.Cursor = Cursors.SizeAll;
-                // the lower edge: how long
-                var grip = new Border { Height = 7, VerticalAlignment = VerticalAlignment.Bottom, Background = Brushes.Transparent, Cursor = Cursors.SizeNS };
-                grid.Children.Add(grip);
+                // both edges: the upper one moves the start, the lower one the end (the length becomes the estimate)
+                var (top, bottom) = Grips(card, grid);
                 card.MouseLeftButtonDown += (_, e) =>
                 {
                     if (e.ClickCount > 1) return;
                     e.Handled = true;
-                    bool resize = ReferenceEquals(e.OriginalSource, grip) || IsInside(e.OriginalSource as DependencyObject, grip);
-                    _drag = new Drag(resize ? "resize" : "move", t, card, e.GetPosition(_canvas).Y, b.From, b.To);
+                    _drag = new Drag(EdgeOf(e, top, bottom), t, card, e.GetPosition(_canvas).Y, b.From, b.To);
                     _canvas.CaptureMouse();
                 };
                 card.MouseRightButtonUp += (_, e) =>
@@ -538,6 +602,38 @@ public sealed class DayView : Grid
                     e.Handled = true;
                     var menu = _host.Menu(t, card);
                     menu.PlacementTarget = card;
+                    _menuOpen = true;
+                    menu.Closed += (_, _) => _menuOpen = false;
+                    menu.IsOpen = true;
+                };
+                break;
+            case int afkIndex:
+                // away from the computer: grey and striped, a break in the work rather than a task
+                card.Background = AfkFill();
+                card.BorderBrush = B(Th.Ink(0x40));
+                card.BorderThickness = new Thickness(1);
+                // a short break: one line in the middle ("AFK  11:00–11:30"); a longer one: its length under it
+                title.Inlines.Add(new Run("AFK") { FontWeight = FontWeights.Bold });
+                if (h < 34) { title.Inlines.Add(new Run("   " + range) { FontSize = App.Settings.FontSize - 2.5 }); stack.Margin = new Thickness(8, 0, 6, 0); stack.VerticalAlignment = VerticalAlignment.Center; }
+                title.Foreground = Res("FgDim");
+                sub.Text = range + "  ·  " + BoardWindow.Hours((b.To - b.From).TotalHours);
+                card.ToolTip = L.F("AFK – przerwa od komputera {0}", range) + "\n" + L.T("Przeciągnij: przesuń · krawędzie: początek / koniec · prawy przycisk: usuń");
+                card.Cursor = Cursors.SizeAll;
+                var (afkTop, afkBottom) = Grips(card, grid);
+                card.MouseLeftButtonDown += (_, e) =>
+                {
+                    e.Handled = true;
+                    if (e.ClickCount > 1) return;
+                    _drag = new Drag(EdgeOf(e, afkTop, afkBottom), null, card, e.GetPosition(_canvas).Y, b.From, b.To, afkIndex);
+                    _canvas.CaptureMouse();
+                };
+                card.MouseRightButtonUp += (_, e) =>
+                {
+                    e.Handled = true;
+                    var menu = new ContextMenu { PlacementTarget = card };
+                    var del = new MenuItem { Header = L.T("Usuń tę przerwę AFK") };
+                    del.Click += (_, _) => { store.Checkpoint(); store.SetAfk(Key(_date), store.Afk(Key(_date)).Where((_, k) => k != afkIndex)); Render(); };
+                    menu.Items.Add(del);
                     _menuOpen = true;
                     menu.Closed += (_, _) => _menuOpen = false;
                     menu.IsOpen = true;
@@ -553,6 +649,63 @@ public sealed class DayView : Grid
         _canvas.Children.Add(At(card, x + 2, y + 1));
         if (_enter) Anim.Enter(card, 0, 6, 260, Math.Min(400, _enterIndex++ * 30)); // a new day: its blocks come in one after another
     }
+
+    /// <summary>
+    /// A block's edges to drag (a strip at the top and the bottom). Over the block a short bar shows on each edge; over
+    /// an edge itself its bar and a line along it light up in the accent, so it's clear which edge will move.
+    /// </summary>
+    (Border Top, Border Bottom) Grips(Border card, Grid grid)
+    {
+        var accent = ((SolidColorBrush)Res("AccentBrush")).Color;
+        var bars = new List<Border>();
+        Border Edge(VerticalAlignment at)
+        {
+            var bar = new Border
+            {
+                Width = 26, Height = 3, CornerRadius = new CornerRadius(1.5), Background = B(Th.Ink(0x90)), Opacity = 0, IsHitTestVisible = false,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = at, Margin = new Thickness(0, 2, 0, 2),
+            };
+            var line = new Border { Height = 2, VerticalAlignment = at, Background = B(accent), Opacity = 0, IsHitTestVisible = false };
+            var edge = new Border
+            {
+                Height = Math.Clamp(card.Height / 3, 4, 8), VerticalAlignment = at, Background = Brushes.Transparent, Cursor = Cursors.SizeNS,
+                Child = new Grid { Children = { line, bar } },
+            };
+            edge.MouseEnter += (_, _) => { bar.Opacity = 1; bar.Background = B(accent); line.Opacity = 1; };
+            edge.MouseLeave += (_, _) => { bar.Opacity = card.IsMouseOver ? 0.7 : 0; bar.Background = B(Th.Ink(0x90)); line.Opacity = 0; };
+            bars.Add(bar);
+            grid.Children.Add(edge);
+            return edge;
+        }
+        var top = Edge(VerticalAlignment.Top);
+        var bottom = Edge(VerticalAlignment.Bottom);
+        card.MouseEnter += (_, _) => { foreach (var b in bars) if (b.Opacity < 1) b.Opacity = 0.7; };
+        card.MouseLeave += (_, _) => { if (_drag == null) foreach (var b in bars) b.Opacity = 0; };
+        return (top, bottom);
+    }
+
+    /// <summary>Which part of a block the mouse went down on: its upper edge, its lower edge, or the block (move).</summary>
+    static string EdgeOf(MouseButtonEventArgs e, Border top, Border bottom)
+    {
+        var src = e.OriginalSource as DependencyObject;
+        return IsInside(src, top) ? "resizeTop" : IsInside(src, bottom) ? "resize" : "move";
+    }
+
+    /// <summary>An AFK break's fill: grey stripes on a dim card (one frozen brush per theme).</summary>
+    static Brush AfkFill()
+    {
+        if (_afk != null && _afkLight == Th.Light) return _afk;
+        var group = new DrawingGroup();
+        group.Children.Add(new GeometryDrawing(Ui.Brush(Th.Ink(0x10)), null, new RectangleGeometry(new Rect(0, 0, 8, 8))));
+        group.Children.Add(new GeometryDrawing(null, new Pen(Ui.Brush(Th.Ink(0x24)), 1.4), Geometry.Parse("M0,8 L8,0 M-2,2 L2,-2 M6,10 L10,6")));
+        var b = new DrawingBrush(group) { TileMode = TileMode.Tile, Viewport = new Rect(0, 0, 8, 8), ViewportUnits = BrushMappingMode.Absolute, Viewbox = new Rect(0, 0, 8, 8), ViewboxUnits = BrushMappingMode.Absolute, Stretch = Stretch.None };
+        b.Freeze();
+        _afkLight = Th.Light;
+        return _afk = b;
+    }
+
+    static Brush? _afk;
+    static bool _afkLight;
 
     /// <summary>The day's tasks without an hour, as small chips: drag one onto the line to give it its time.</summary>
     void RenderLoose()
@@ -615,7 +768,8 @@ public sealed class DayView : Grid
 
     // ---------- dragging: a block (time / length) or a working-hours edge ----------
 
-    sealed record Drag(string Kind, TaskItem? Task, FrameworkElement El, double StartY, TimeSpan From, TimeSpan To);
+    /// <summary>What is being dragged; <paramref name="Afk"/>: the index of an AFK break (-1: a task or an edge).</summary>
+    sealed record Drag(string Kind, TaskItem? Task, FrameworkElement El, double StartY, TimeSpan From, TimeSpan To, int Afk = -1);
 
     bool OverStrip(MouseEventArgs e)
     {
@@ -647,6 +801,13 @@ public sealed class DayView : Grid
                 if (d.Task != null) StripHot(OverStrip(e)); // back onto the "Bez godziny" strip: lit while it would land there
                 break;
             case "resize": d.El.Height = Math.Max(HourH / 4 - 2, Y(d.To) - Y(d.From) - 2 + snap); break;
+            case "resizeTop":
+                // the upper edge: the block's top follows the mouse, its bottom stays (a quarter of an hour at least, not before 00:00)
+                double full = Y(d.To) - Y(d.From);
+                double top = Math.Max(Math.Min(snap, full - HourH / 4), Y(TimeSpan.Zero) - Y(d.From));
+                d.El.RenderTransform = new TranslateTransform(0, top);
+                d.El.Height = Math.Max(HourH / 4 - 2, full - 2 - top);
+                break;
             default: d.El.RenderTransform = new TranslateTransform(0, snap); break;
         }
     }
@@ -672,14 +833,45 @@ public sealed class DayView : Grid
                 var to = Clamp(d.To + delta, d.From + TimeSpan.FromMinutes(15), TimeSpan.FromHours(24));
                 _host.SetTime(d.Task, d.From, to, true);
                 break;
+            case "resizeTop" when d.Task != null:
+                var start = Clamp(d.From + delta, TimeSpan.Zero, d.To - TimeSpan.FromMinutes(15));
+                _host.SetTime(d.Task, start, d.To, true);
+                break;
+            case "move" or "resize" or "resizeTop" when d.Afk >= 0:
+                // an AFK break: moved whole, or one of its edges (a quarter of an hour at least, within the day)
+                var breaks = store.Afk(Key(_date));
+                if (d.Afk < breaks.Count)
+                {
+                    var len = d.To - d.From;
+                    var (ba, bb) = d.Kind switch
+                    {
+                        "move" => (Clamp(d.From + delta, TimeSpan.Zero, TimeSpan.FromHours(24) - len), Clamp(d.From + delta, TimeSpan.Zero, TimeSpan.FromHours(24) - len) + len),
+                        "resizeTop" => (Clamp(d.From + delta, TimeSpan.Zero, d.To - TimeSpan.FromMinutes(15)), d.To),
+                        _ => (d.From, Clamp(d.To + delta, d.From + TimeSpan.FromMinutes(15), TimeSpan.FromHours(24))),
+                    };
+                    breaks[d.Afk] = (ba, bb);
+                    store.Checkpoint();
+                    store.SetAfk(Key(_date), breaks);
+                }
+                Render();
+                break;
             case "workStart":
             case "workEnd":
                 var (ws, we) = WorkHours();
                 var at = Clamp(d.From + delta, TimeSpan.Zero, TimeSpan.FromHours(24));
-                if (d.Kind == "workStart") ws = Clamp(at < we ? at : we - TimeSpan.FromMinutes(30), TimeSpan.Zero, TimeSpan.FromHours(23.5));
-                else we = Clamp(at > ws ? at : ws + TimeSpan.FromMinutes(30), TimeSpan.FromMinutes(30), TimeSpan.FromHours(24));
+                bool? endSet = null;
+                if (d.Kind == "workStart" && !store.EndSet(Key(_date)))
+                {
+                    // the start moved and the end wasn't set by hand: a whole working day from the new start (8 hours by default)
+                    ws = Clamp(at, TimeSpan.Zero, TimeSpan.FromHours(23.5));
+                    we = ws + DayLength() > TimeSpan.FromHours(24) ? TimeSpan.FromHours(24) : ws + DayLength();
+                    endSet = false;
+                }
+                else if (d.Kind == "workStart") ws = Clamp(at < we ? at : we - TimeSpan.FromMinutes(30), TimeSpan.Zero, TimeSpan.FromHours(23.5));
+                else { we = Clamp(at > ws ? at : ws + TimeSpan.FromMinutes(30), TimeSpan.FromMinutes(30), TimeSpan.FromHours(24)); endSet = true; } // set by hand: it stays
                 // midnight is kept as 23:59 ("24:00" isn't a time of day)
-                store.SetWorkHours(Key(_date), ws.ToString(@"hh\:mm"), we >= TimeSpan.FromHours(24) ? "23:59" : we.ToString(@"hh\:mm"));
+                store.Checkpoint();
+                store.SetWorkHours(Key(_date), ws.ToString(@"hh\:mm"), we >= TimeSpan.FromHours(24) ? "23:59" : we.ToString(@"hh\:mm"), endSet);
                 Render();
                 break;
             case { } k when k.StartsWith("ot:"):
@@ -693,6 +885,7 @@ public sealed class DayView : Grid
                     if (parts[2] == "s") pa = to2 < pb - TimeSpan.FromMinutes(15) ? to2 : pb - TimeSpan.FromMinutes(15);
                     else pb = to2 > pa + TimeSpan.FromMinutes(15) ? to2 : pa + TimeSpan.FromMinutes(15);
                     periods[oi] = (pa, pb);
+                    store.Checkpoint();
                     store.SetOvertime(Key(_date), periods);
                 }
                 Render();

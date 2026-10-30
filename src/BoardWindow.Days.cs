@@ -42,7 +42,7 @@ public partial class BoardWindow
         var all = new List<string>(t.WorkedDays ?? new()) { t.Day };
         // planned days ahead: the workdays after its day up to the planned end
         if (t.PlanEnd != null && DateTime.TryParseExact(t.PlanEnd, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var end))
-            for (var d = ParseKey(t.Day).AddDays(1); d <= end; d = d.AddDays(1))
+            for (var d = ParseKey(t.Day).AddDays(1); d <= end && d < ParseKey(t.Day).AddYears(2); d = d.AddDays(1)) // two years at most, like the timeline
                 if (!IsWeekend(d) && DaysOff.Name(d) == null) all.Add(DayKey(d));
         all = all.Distinct().ToList();
         all.Sort(StringComparer.Ordinal);
