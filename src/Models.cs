@@ -774,6 +774,10 @@ public sealed class AppSettings
     public string Lunch { get; set; } = "";
     /// <summary>A soft light in the accent at the top of the board and the bottom of the top bar.</summary>
     public bool Glow { get; set; } = true;
+    /// <summary>The report view's task list: "date", "category", "priority" or "name"; "all", "done" or "open"; grouped by project.</summary>
+    public string ReportSort { get; set; } = "date";
+    public string ReportFilter { get; set; } = "all";
+    public bool ReportGroup { get; set; } = true;
     /// <summary>The board fills the whole screen under the top bar (the button next to "hide").</summary>
     public bool BoardMax { get; set; }
     /// <summary>A second board on another screen (its device name; empty = none) and the view it shows.</summary>

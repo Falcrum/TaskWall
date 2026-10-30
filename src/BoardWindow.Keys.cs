@@ -274,6 +274,7 @@ public partial class BoardWindow
             new(L.T("Miesiąc"), go, () => SetView(ViewMode.Month), "4"),
             new(L.T("Rok"), go, () => SetView(ViewMode.Year), "5"),
             new("Timeline", go, () => SetView(ViewMode.Timeline), "6"),
+            new(L.T("Raport"), go, () => SetView(ViewMode.Report), "7"),
             new(L.T("Poprzedni okres"), go, () => Step(-1), "←"),
             new(L.T("Następny okres"), go, () => Step(1), "→"),
         };
@@ -298,8 +299,8 @@ public partial class BoardWindow
         list.Add(new(L.T("Szukaj wszędzie…"), act, OpenSearch, "Ctrl+F"));
         list.Add(new("Backlog", act, () => TogglePanel(archive: false), "B"));
         list.Add(new(L.T("Archiwum"), act, () => TogglePanel(archive: true), "A"));
-        list.Add(new(L.T("Raport tygodniowy"), act, () => ReportWindow.Show(Store, S.Layer, ReportDay(), month: false), "R"));
-        list.Add(new(L.T("Raport miesięczny"), act, () => ReportWindow.Show(Store, S.Layer, ReportDay(), month: true)));
+        list.Add(new(L.T("Raport tygodniowy"), act, () => ShowReport(ReportDay(), month: false), "R"));
+        list.Add(new(L.T("Raport miesięczny"), act, () => ShowReport(ReportDay(), month: true)));
         list.Add(new(L.T("Synchronizuj teraz"), act, () => Sync_Click(this, new RoutedEventArgs())));
         foreach (var a in S.Accounts.Where(a => a.Id != S.Layer)) { var id = a.Id; list.Add(new(L.F("Konto: {0}", App.AccountName(id)), act, () => App.Instance.SwitchLayer(id), id == "work" ? "Ctrl+1" : "Ctrl+2")); }
         if (!IsSecond) list.Add(new(S.BoardMax ? L.T("Tablica w swoim rozmiarze") : L.T("Tablica na cały ekran"), act, ToggleMax, "F11"));

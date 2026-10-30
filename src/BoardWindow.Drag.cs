@@ -46,7 +46,7 @@ public partial class BoardWindow
 
     void EdgeScroll(object sender, DragEventArgs e)
     {
-        if (!e.Data.GetDataPresent(DragFormat) || _view is ViewMode.Year or ViewMode.Timeline || WeeksGrid.ActualWidth <= 0) { StopEdge(); return; }
+        if (!e.Data.GetDataPresent(DragFormat) || _view is ViewMode.Year or ViewMode.Timeline or ViewMode.Report || WeeksGrid.ActualWidth <= 0) { StopEdge(); return; }
         var p = e.GetPosition(WeeksGrid);
         double edge = Math.Min(36, WeeksGrid.ActualWidth / 20);
         int dir = p.Y >= 0 && p.Y <= WeeksGrid.ActualHeight ? (p.X < edge ? -1 : p.X > WeeksGrid.ActualWidth - edge ? 1 : 0) : 0;

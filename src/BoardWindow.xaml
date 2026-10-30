@@ -35,6 +35,7 @@
                             <Button x:Name="MonthViewButton" Style="{StaticResource BarIcon}" Click="MonthView_Click" ToolTip="Miesiąc"/>
                             <Button x:Name="YearButton" Style="{StaticResource BarIcon}" Click="Year_Click" ToolTip="Rok"/>
                             <Button x:Name="TimelineButton" Style="{StaticResource BarIcon}" Click="Timeline_Click" ToolTip="Timeline (6)"/>
+                            <Button x:Name="ReportButton" Style="{StaticResource BarIcon}" Click="Report_Click" ToolTip="Raport (7)"/>
                         </StackPanel>
                     </Border>
                     <Button x:Name="OverdueButton" Style="{StaticResource BarButton}" Click="Overdue_Click" Margin="8,0,0,0"
@@ -60,6 +61,7 @@
                 <Grid x:Name="WeeksGrid"/>
                 <Grid x:Name="YearHost" Visibility="Collapsed"/>
                 <Grid x:Name="TimelineHost" Visibility="Collapsed"/>
+                <Grid x:Name="ReportHost" Visibility="Collapsed"/>
                 <Grid x:Name="DayHost" Visibility="Collapsed"/>
             </Grid>
         </DockPanel>

@@ -44,6 +44,7 @@ public partial class BoardWindow
         MonthViewButton.Content = Icons.Labeled(Icons.Month(), L.T("MIESIĄC"), cap);
         YearButton.Content = Icons.Labeled(Icons.Year(), L.T("ROK"), cap);
         TimelineButton.Content = Icons.Labeled(Icons.Timeline(), "TIMELINE", cap);
+        ReportButton.Content = Icons.Labeled(Icons.Report(), L.T("RAPORT"), cap);
         // one set of icons: the font glyphs of ‹ › ⋯ ⚙ and "hide" replaced by the same vector style as the rest
         PrevButton.Content = Icons.Chevron(false);
         NextButton.Content = Icons.Chevron(true);
@@ -245,6 +246,7 @@ public partial class BoardWindow
     {
         ViewMode.Year => (new DateTime(_year, 1, 1), new DateTime(_year, 12, 31), _year.ToString()),
         ViewMode.Timeline => (_timeline?.Visible.From ?? DateTime.Today, _timeline?.Visible.To ?? DateTime.Today, "timeline"),
+        ViewMode.Report when _reportView is { } rv => (rv.From, rv.Month ? rv.From.AddMonths(1).AddDays(-1) : rv.From.AddDays(6), rv.Month ? rv.From.ToString("yyyy-MM") : $"T{WeekNo(rv.From)}-{rv.From.Year}"),
         ViewMode.Month => (_monthFirst, _monthFirst.AddMonths(1).AddDays(-1), _monthFirst.ToString("yyyy-MM")),
         ViewMode.Day => (_dayDate, _dayDate, DayKey(_dayDate)),
         _ => (FirstMonday, FirstMonday.AddDays(7 * WeekCount - 1), WeekCount == 1 ? $"T{WeekNo(FirstMonday)}-{FirstMonday.Year}" : $"T{WeekNo(FirstMonday)}-{WeekNo(FirstMonday.AddDays(7))}-{FirstMonday.Year}"),
@@ -301,7 +303,7 @@ public partial class BoardWindow
         SearchBox.Text = "";
         CloseSearch();
         Rebuild();
-        Anim.Enter(_view == ViewMode.Year ? YearHost : _view == ViewMode.Timeline ? TimelineHost : WeeksGrid, 0, 12, 320);
+        Anim.Enter(_view == ViewMode.Year ? YearHost : _view == ViewMode.Timeline ? TimelineHost : _view == ViewMode.Report ? ReportHost : WeeksGrid, 0, 12, 320);
     }
 
     public void ShowSearch(string q)
@@ -1189,8 +1191,9 @@ public partial class BoardWindow
                 Key.D4 or Key.NumPad4 => () => SetView(ViewMode.Month),
                 Key.D5 or Key.NumPad5 => () => SetView(ViewMode.Year),
                 Key.D6 or Key.NumPad6 => () => SetView(ViewMode.Timeline),
+                Key.D7 or Key.NumPad7 => () => SetView(ViewMode.Report),
                 Key.B => () => TogglePanel(archive: false),
-                Key.R => () => ReportWindow.Show(Store, S.Layer, ReportDay(), month: _view == ViewMode.Month),
+                Key.R => () => ShowReport(ReportDay(), month: _view is ViewMode.Month or ViewMode.Year),
                 Key.A => () => TogglePanel(archive: true),
                 _ => null,
             };
@@ -1226,6 +1229,7 @@ public partial class BoardWindow
         switch (_view)
         {
             case ViewMode.Timeline: _timeline?.Step(dir); UpdateTimelineRange(); return;
+            case ViewMode.Report: _reportView?.Step(dir); return;
             case ViewMode.Year: _year += dir; break;
             case ViewMode.Day: _dayDate = _dayDate.AddDays(dir); break;
             case ViewMode.Month:
@@ -1244,6 +1248,7 @@ public partial class BoardWindow
         switch (_view)
         {
             case ViewMode.Timeline: _timeline?.ScrollToToday(); UpdateTimelineRange(); return;
+            case ViewMode.Report: _reportView?.ThisPeriod(); return;
             case ViewMode.Year: _slideDir = Math.Sign(DateTime.Today.Year - _year); _year = DateTime.Today.Year; break;
             case ViewMode.Day: _slideDir = Math.Sign((DateTime.Today - _dayDate).TotalDays); _dayDate = DateTime.Today; break;
             case ViewMode.Month:
@@ -1283,6 +1288,7 @@ public partial class BoardWindow
     void MonthView_Click(object sender, RoutedEventArgs e) => SetView(ViewMode.Month);
     void Year_Click(object sender, RoutedEventArgs e) => SetView(ViewMode.Year);
     void Timeline_Click(object sender, RoutedEventArgs e) => SetView(ViewMode.Timeline);
+    void Report_Click(object sender, RoutedEventArgs e) => SetView(ViewMode.Report);
     void Search_Click(object sender, RoutedEventArgs e) { if (SearchPanel.Visibility == Visibility.Visible) CloseSearch(); else OpenSearch(); }
     void Settings_Click(object sender, RoutedEventArgs e) => App.Instance.ShowSettings();
     void Bar_RightClick(object sender, MouseButtonEventArgs e) => App.Instance.ShowSettings();
@@ -1300,14 +1306,14 @@ public partial class BoardWindow
         }
         Add(L.T("Szukaj…  (Ctrl+F)"), OpenSearch);
         Add(L.T("Cofnij  (Ctrl+Z)"), Undo, Store.CanUndo);
-        Add(L.T("Wyczyść zrobione → archiwum"), () => ClearDone_Click(this, new RoutedEventArgs()), _view is not (ViewMode.Year or ViewMode.Timeline));
+        Add(L.T("Wyczyść zrobione → archiwum"), () => ClearDone_Click(this, new RoutedEventArgs()), _view is not (ViewMode.Year or ViewMode.Timeline or ViewMode.Report));
         Add(L.T("Komendy i skróty…  (F1, Ctrl+/)"), HelpWindow.ShowHelp);
         menu.Items.Add(new Separator());
         if (S.AccountFor(S.Layer).Notion.Configured)
             Add(L.T("Synchronizuj Notion teraz"), async () => { var r = await NotionSync.Run(S.Layer); SyncText.Text = r.Error ?? L.F("Notion: nowe {0}, zmienione {1}", r.Added, r.Updated); _syncFlash.Stop(); _syncFlash.Start(); });
         Add(L.T("Importuj z Notion…"), () => App.Instance.ImportNotion());
-        Add(L.T("Raport tygodnia…  (R)"), () => ReportWindow.Show(Store, S.Layer, ReportDay(), month: false));
-        Add(L.T("Raport miesiąca…"), () => ReportWindow.Show(Store, S.Layer, ReportDay(), month: true));
+        Add(L.T("Raport tygodnia…  (R)"), () => ShowReport(ReportDay(), month: false));
+        Add(L.T("Raport miesiąca…"), () => ShowReport(ReportDay(), month: true));
         Add(L.T("Odśwież kalendarze"), () => App.Instance.RefreshCalendars());
         Add(L.T("Otwórz folder danych"), () => OpenUrl(Store.Folder));
         Add(L.T("Ustawienia…"), () => App.Instance.ShowSettings());

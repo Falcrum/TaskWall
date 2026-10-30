@@ -375,7 +375,7 @@ public sealed class CalendarWindow : GlassWindow
             Put(new TextBlock { Text = names[i], FontSize = 10, FontWeight = FontWeights.SemiBold, Foreground = i >= 5 ? weekendRed : Ui.Res("FgFaint"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }, 0, i + 1);
 
         var accent = ((SolidColorBrush)Ui.Res("AccentBrush")).Color;
-        bool showRange = App.Board?.View is not (ViewMode.Year or ViewMode.Timeline);
+        bool showRange = App.Board?.View is not (ViewMode.Year or ViewMode.Timeline or ViewMode.Report);
         var shownFrom = App.Board?.FirstMonday ?? BoardWindow.Monday(DateTime.Today);
         var shownTo = shownFrom.AddDays(7 * (App.Board?.WeekCount ?? 2) - 1);
         int r0 = -1, r1 = -1;

@@ -13,7 +13,7 @@ using System.Windows.Threading;
 
 namespace TaskWall;
 
-public enum ViewMode { Day, Week1, Week2, Month, Year, Timeline }
+public enum ViewMode { Day, Week1, Week2, Month, Year, Timeline, Report }
 
 /// <summary>The board: views, task rows, editing and drag &amp; drop. The day cells live in BoardWindow.Days.cs,
 /// backlog, search and the top bar in BoardWindow.Features.cs, the arrows and the palette in BoardWindow.Keys.cs.</summary>
@@ -33,8 +33,8 @@ public partial class BoardWindow : GlassWindow
     DateTime _dayDate = DateTime.Today; // the day of the DZIEŃ view
     readonly Dictionary<string, double> _progress = new(); // last shown progress per day (animate only real changes)
 
-    static ViewMode ParseView(string v) => v switch { "day" => ViewMode.Day, "week1" => ViewMode.Week1, "month" => ViewMode.Month, "year" => ViewMode.Year, "timeline" => ViewMode.Timeline, _ => ViewMode.Week2 };
-    static string ViewKey(ViewMode v) => v switch { ViewMode.Day => "day", ViewMode.Week1 => "week1", ViewMode.Month => "month", ViewMode.Year => "year", ViewMode.Timeline => "timeline", _ => "week2" };
+    static ViewMode ParseView(string v) => v switch { "day" => ViewMode.Day, "week1" => ViewMode.Week1, "month" => ViewMode.Month, "year" => ViewMode.Year, "timeline" => ViewMode.Timeline, "report" => ViewMode.Report, _ => ViewMode.Week2 };
+    static string ViewKey(ViewMode v) => v switch { ViewMode.Day => "day", ViewMode.Week1 => "week1", ViewMode.Month => "month", ViewMode.Year => "year", ViewMode.Timeline => "timeline", ViewMode.Report => "report", _ => "week2" };
     /// <summary>The view comes back on the next start – each board its own.</summary>
     void SaveView(ViewMode v) { if (IsSecond) S.SecondView = ViewKey(v); else S.View = ViewKey(v); }
     int _weekOffset;
@@ -188,6 +188,7 @@ public partial class BoardWindow : GlassWindow
         ViewMode.Timeline => 2,
         ViewMode.Week1 => 1,
         ViewMode.Day => 3.6, // the agenda: as tall as the screen allows
+        ViewMode.Report => 3.6,
         _ => 2,
     };
 
@@ -343,6 +344,28 @@ public partial class BoardWindow : GlassWindow
         if (viewChanged) { Anim.Enter(WeeksGrid, 0, 10, 300); App.Instance.LayoutWindows(); }
     }
 
+    ReportView? _reportView;
+    bool _reportChosen;
+
+    ReportView ReportPane()
+    {
+        if (_reportView == null)
+        {
+            _reportView = new ReportView(() => Store, d => JumpTo(d), () => { if (_view == ViewMode.Report) UpdateTopBar(); });
+            ReportHost.Children.Add(_reportView);
+        }
+        return _reportView;
+    }
+
+    /// <summary>The report view on the week (or the month) of <paramref name="day"/> – R, the palette, the menu, the year view.</summary>
+    public void ShowReport(DateTime day, bool month)
+    {
+        ReportPane().Set(day, month);
+        if (_view == ViewMode.Report) { Rebuild(); return; }
+        _reportChosen = true;
+        SetView(ViewMode.Report);
+    }
+
     void SetView(ViewMode v)
     {
         if (_view == v) return;
@@ -353,9 +376,13 @@ public partial class BoardWindow : GlassWindow
             ViewMode.Timeline => _timeline?.Visible is { } tv && DateTime.Today >= tv.From && DateTime.Today <= tv.To ? DateTime.Today : _timeline?.Visible.From.AddDays(3) ?? DateTime.Today,
             ViewMode.Month => _monthFirst.Year == DateTime.Today.Year && _monthFirst.Month == DateTime.Today.Month ? DateTime.Today : _monthFirst,
             ViewMode.Day => _dayDate,
-            // into the day view: today when it's on screen
-            _ => v == ViewMode.Day && DateTime.Today >= FirstMonday && DateTime.Today < FirstMonday.AddDays(7 * WeekCount) ? DateTime.Today : FirstMonday.AddDays(3),
+            ViewMode.Report => _reportView is { } rv && DateTime.Today >= rv.From && DateTime.Today < (rv.Month ? rv.From.AddMonths(1) : rv.From.AddDays(7)) ? DateTime.Today : _reportView?.From ?? DateTime.Today,
+            // into the day view and the report: today when it's on screen
+            _ => v is ViewMode.Day or ViewMode.Report && DateTime.Today >= FirstMonday && DateTime.Today < FirstMonday.AddDays(7 * WeekCount) ? DateTime.Today : FirstMonday.AddDays(3),
         };
+        // the report opens on the week (from the month and the year views: the month) on screen, unless ShowReport chose it
+        if (v == ViewMode.Report && !_reportChosen) ReportPane().Set(anchor, _view is ViewMode.Month or ViewMode.Year);
+        _reportChosen = false;
         _dayDate = anchor.Date;
         _view = v;
         if (IsWeekView) _lastWeekView = v;
@@ -365,7 +392,7 @@ public partial class BoardWindow : GlassWindow
         _monthFirst = new DateTime(anchor.Year, anchor.Month, 1);
         _year = anchor.Year;
         Rebuild();
-        Anim.Enter(v == ViewMode.Year ? YearHost : v == ViewMode.Timeline ? TimelineHost : WeeksGrid, 0, 10, 300);
+        Anim.Enter(v == ViewMode.Year ? YearHost : v == ViewMode.Timeline ? TimelineHost : v == ViewMode.Report ? ReportHost : WeeksGrid, 0, 10, 300);
         App.Instance.LayoutWindows();
         App.Instance.ScheduleTrim();
     }
@@ -529,6 +556,7 @@ public partial class BoardWindow : GlassWindow
         _dropLine = null;
 
         if (_view != ViewMode.Day) DayHost.Visibility = Visibility.Collapsed;
+        if (_view != ViewMode.Report) ReportHost.Visibility = Visibility.Collapsed;
         if (_view == ViewMode.Day)
         {
             WeeksGrid.Visibility = Visibility.Collapsed;
@@ -567,6 +595,16 @@ public partial class BoardWindow : GlassWindow
             else _timeline.BuildToolbar();
             _timeline.Refresh();
         }
+        else if (_view == ViewMode.Report)
+        {
+            TimelineHost.Visibility = Visibility.Collapsed;
+            WeeksGrid.Visibility = Visibility.Collapsed;
+            YearHost.Visibility = Visibility.Collapsed;
+            YearHost.Children.Clear();
+            ReportHost.Visibility = Visibility.Visible;
+            ReportPane().Refresh();
+            if (_slideDir != 0) Anim.Enter(ReportHost, 50 * _slideDir, 0, 280);
+        }
         else if (_view == ViewMode.Year)
         {
             TimelineHost.Visibility = Visibility.Collapsed;
@@ -602,13 +640,13 @@ public partial class BoardWindow : GlassWindow
     void UpdateTopBar()
     {
         var overdue = Overdue().Count;
-        OverdueButton.Visibility = overdue > 0 && _view is not (ViewMode.Year or ViewMode.Timeline) ? Visibility.Visible : Visibility.Collapsed;
+        OverdueButton.Visibility = overdue > 0 && _view is not (ViewMode.Year or ViewMode.Timeline or ViewMode.Report) ? Visibility.Visible : Visibility.Collapsed;
         OverdueButton.Content = L.F("↷ NA DZIŚ ({0})", overdue);
         OverdueButton.ToolTip = L.F("Niezrobione zadania z minionych dni ({0}) przejdą na dziś. Zadania w trakcie (◐) zostają też w dniach, w których były, jako „↷ 1/3”; nierozpoczęte (○) po prostu się przenoszą.", overdue);
         OverdueButton.Foreground = Tx(Color.FromRgb(0xF2, 0xA6, 0x5A));
 
         YearButton.Visibility = S.ShowYearButton ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var (btn, mode) in new[] { (DayViewButton, ViewMode.Day), (OneWeekButton, ViewMode.Week1), (WeekViewButton, ViewMode.Week2), (MonthViewButton, ViewMode.Month), (YearButton, ViewMode.Year), (TimelineButton, ViewMode.Timeline) })
+        foreach (var (btn, mode) in new[] { (DayViewButton, ViewMode.Day), (OneWeekButton, ViewMode.Week1), (WeekViewButton, ViewMode.Week2), (MonthViewButton, ViewMode.Month), (YearButton, ViewMode.Year), (TimelineButton, ViewMode.Timeline), (ReportButton, ViewMode.Report) })
         {
             bool on = _view == mode;
             btn.Background = on ? B(Th.Ink(0x26)) : Brushes.Transparent;
@@ -639,6 +677,13 @@ public partial class BoardWindow : GlassWindow
                 break;
             case ViewMode.Timeline:
                 AddTimelineRange();
+                break;
+            case ViewMode.Report when _reportView is { } rv:
+                // T 44 | 26 paź – 1 lis   or   T 40–44 | PAŹDZIERNIK 2026
+                var rto = rv.Month ? rv.From.AddMonths(1).AddDays(-1) : rv.From.AddDays(6);
+                RangeText.Inlines.Add(new Run(rv.Month ? L.F("T {0}–{1}", WeekNo(rv.From), WeekNo(rto)) : L.F("T {0}", WeekNo(rv.From))) { FontWeight = FontWeights.Bold });
+                RangeText.Inlines.Add(new Run("   |   ") { Foreground = Res("FgFaint") });
+                RangeText.Inlines.Add(new Run(rv.Month ? rv.From.ToString("MMMM yyyy", Pl).ToUpper(Pl) : $"{rv.From.ToString("d MMM", Pl)} – {rto.ToString("d MMM", Pl)}") { FontWeight = FontWeights.SemiBold, Foreground = Res("FgDim") });
                 break;
             case ViewMode.Day:
                 RangeText.Inlines.Add(new Run(L.F("T {0}", WeekNo(_dayDate))) { FontWeight = FontWeights.Bold });

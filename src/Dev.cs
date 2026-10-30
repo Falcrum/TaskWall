@@ -61,8 +61,8 @@ static class Dev
             }, DispatcherPriority.ApplicationIdle);
         else if (open == "ring")App.Current.Dispatcher.BeginInvoke(() => AlarmToast.Ring(new Alarm { Text = "Telefon do Ani w sprawie budżetu", Day = DateTime.Today.ToString("yyyy-MM-dd"), Time = DateTime.Now.ToString("HH:mm") }, App.Settings.Layer, DateTime.Now.AddMinutes(-7)), DispatcherPriority.ApplicationIdle);
         else if (open == "menu") { var mt = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) }; mt.Tick += (_, _) => { mt.Stop(); App.Board?.DevOpenMenu?.Invoke(); }; mt.Start(); }
-        else if (open == "report-month") App.Current.Dispatcher.BeginInvoke(() => ReportWindow.Show(App.Store, App.Settings.Layer, DateTime.Today, month: true), DispatcherPriority.ApplicationIdle);
-        else if (open == "summary") App.Current.Dispatcher.BeginInvoke(() => ReportWindow.Show(App.Store, App.Settings.Layer, DateTime.Today, month: false), DispatcherPriority.ApplicationIdle);
+        else if (open == "report-month") App.Current.Dispatcher.BeginInvoke(() => App.Board?.ShowReport(DateTime.Today, month: true), DispatcherPriority.ApplicationIdle);
+        else if (open == "summary") App.Current.Dispatcher.BeginInvoke(() => App.Board?.ShowReport(DateTime.Today, month: false), DispatcherPriority.ApplicationIdle);
         else if (open == "expand") App.Current.Dispatcher.BeginInvoke(() => App.Board?.DevExpandAll(), DispatcherPriority.ApplicationIdle);
         else if (open == "hang") { var ht = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) }; ht.Tick += (_, _) => { ht.Stop(); using var w = Watchdog.Step("a test hang (--open hang)"); System.Threading.Thread.Sleep(3500); }; ht.Start(); } // the watchdog notices it
         else if (open == "timeline") App.Current.Dispatcher.BeginInvoke(() => App.Board?.ShowTimeline(), DispatcherPriority.ApplicationIdle);

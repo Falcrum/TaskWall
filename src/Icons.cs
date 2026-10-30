@@ -116,6 +116,11 @@ static class Icons
         Line("M3.5,4.5 V19.5 M3.5,19.5 H21", 1.4),
         Fill("M6,6 H13.5 A1.2,1.2 0 0 1 13.5,8.4 H6 A1.2,1.2 0 0 1 6,6 Z M9.5,10.4 H19 A1.2,1.2 0 0 1 19,12.8 H9.5 A1.2,1.2 0 0 1 9.5,10.4 Z M7.5,14.8 H14.5 A1.2,1.2 0 0 1 14.5,17.2 H7.5 A1.2,1.2 0 0 1 7.5,14.8 Z"));
 
+    /// <summary>Report: a page with three columns of a chart and lines of text.</summary>
+    public static FrameworkElement Report(double s = 19) => Box(s,
+        Line("M6.5,3 H17.5 A2.5,2.5 0 0 1 20,5.5 V18.5 A2.5,2.5 0 0 1 17.5,21 H6.5 A2.5,2.5 0 0 1 4,18.5 V5.5 A2.5,2.5 0 0 1 6.5,3 Z M8,17.5 H16", 1.5),
+        Fill("M7.8,10 h2.2 v5 h-2.2 Z M10.9,7 h2.2 v8 h-2.2 Z M14,11.5 h2.2 v3.5 h-2.2 Z"));
+
     public static FrameworkElement Search(double s = 18) => Box(s, Line("M10.5,4 a6.5,6.5 0 1 0 0.01,0 Z M15.3,15.3 L21,21", 1.9));
 
     /// <summary>Eraser over a line (like the reference).</summary>

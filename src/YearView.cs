@@ -556,7 +556,7 @@ static class YearView
         var head = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
         DockPanel.SetDock(head, Dock.Top);
         var open = new TextBlock { Text = L.T("Raport…"), FontSize = 11, Foreground = Ui.Res("AccentBrush"), Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center, ToolTip = month ? L.T("Pełny raport tego miesiąca") : L.T("Pełny raport tego tygodnia") };
-        open.MouseLeftButtonUp += (_, _) => ReportWindow.Show(store, App.Settings.Layer, from, month);
+        open.MouseLeftButtonUp += (_, _) => App.Board?.ShowReport(from, month);
         DockPanel.SetDock(open, Dock.Right);
         head.Children.Add(open);
         TextBlock Arrow(string s, int dir, bool on)
