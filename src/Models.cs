@@ -770,6 +770,8 @@ public sealed class AppSettings
     public string Meters { get; set; } = "cpu,gpu,ram,disk,net";
     /// <summary>The task state's mark: "bar" (a thin bar that fills up) or "circle" (a round icon like Linear / Jira).</summary>
     public string StateIcon { get; set; } = "bar";
+    /// <summary>A lunch break on every working day ("12:00-12:30"; empty = none): a day can move or remove its own.</summary>
+    public string Lunch { get; set; } = "";
     /// <summary>A soft light in the accent at the top of the board and the bottom of the top bar.</summary>
     public bool Glow { get; set; } = true;
     /// <summary>The board fills the whole screen under the top bar (the button next to "hide").</summary>

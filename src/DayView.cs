@@ -9,6 +9,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
+using WKey = System.Windows.Input.Key; // "Key" is the day key here
 
 namespace TaskWall;
 
@@ -18,7 +19,7 @@ public sealed record DayViewHost(
     Func<DateTime, List<TaskItem>> TasksOf,
     Func<TaskItem, FrameworkElement, ContextMenu> Menu,
     Action<TaskItem> CycleState,
-    Action<TaskItem, TimeSpan, TimeSpan, bool> SetTime, // the last: the length changed (it becomes the estimate)
+    Action<IReadOnlyList<(TaskItem T, TimeSpan From, TimeSpan To, bool Length)>> SetTimes, // all at once (one Ctrl+Z); Length: it becomes the estimate
     Action<string, DateTime, TimeSpan> DropTask,
     Func<string, DateTime, FrameworkElement> AddRow,
     Action<Alarm, DateTime> OpenAlarm,
@@ -144,7 +145,7 @@ public sealed class DayView : Grid
         _notes.Load(_noteStore.Note(_noteKey), force: newDay || newStore);
         _addHost.Children.Clear();
         _addHost.Children.Add(_host.AddRow(Key(_date), _date));
-        if (newDay) { _scrolled = false; _enter = true; _enterIndex = 0; }
+        if (newDay) { _scrolled = false; _enter = true; _enterIndex = 0; _selKey = null; }
         Render();
     }
 
@@ -263,9 +264,9 @@ public sealed class DayView : Grid
             list.Add(new Block(from, to, "task", t, false));
         }
 
-        // the AFK breaks: like blocks, side by side with the tasks they interrupted
-        var afk = store.Afk(Key(_date));
-        for (int i = 0; i < afk.Count; i++) list.Add(new Block(afk[i].Start, afk[i].End, "afk", i, false));
+        // the breaks (AFK, lunch, private): like blocks, side by side with the tasks they interrupted
+        var breaks = store.Breaks(Key(_date));
+        for (int i = 0; i < breaks.Count; i++) list.Add(new Block(breaks[i].Start, breaks[i].End, "break", new BreakRef(i, breaks[i]), false));
 
         // side by side where they overlap
         var sorted = list.OrderBy(b => b.From).ThenByDescending(b => b.To).ToList();
@@ -297,6 +298,7 @@ public sealed class DayView : Grid
 
     void Render()
     {
+        using var watch = Watchdog.Step("drawing the day view");
         RenderLoose();
         double w = _canvas.ActualWidth;
         if (w <= 0) { _canvas.Height = 24 * HourH + 16; return; }
@@ -324,7 +326,7 @@ public sealed class DayView : Grid
             // the working hours stand apart from the hatched rest: a lighter field, an accent strip down its left edge and
             // a line at its start and end; right-click: an AFK break from there
             var work = new Rectangle { Width = area + 4, Height = Y(we) - Y(ws), Fill = B(Th.Ink(0x0C)), ToolTip = L.T("Godziny pracy · prawy przycisk: dodaj przerwę AFK") };
-            work.MouseRightButtonUp += (_, e) => { e.Handled = true; AfkMenu(work, T(e.GetPosition(_canvas).Y)); };
+            work.MouseRightButtonUp += (_, e) => { e.Handled = true; BreakMenu(work, T(e.GetPosition(_canvas).Y)); };
             _canvas.Children.Add(At(work, Gutter - 2, Y(ws)));
             _canvas.Children.Add(At(new Rectangle { Width = 3, Height = Y(we) - Y(ws), Fill = B(A(accentC, 0x90)), IsHitTestVisible = false }, Gutter - 5, Y(ws)));
             foreach (var edge in new[] { ws, we })
@@ -457,39 +459,59 @@ public sealed class DayView : Grid
     static Brush? _hatch;
     static bool _hatchLight;
 
-    /// <summary>"  ·  7h 30m (AFK 30m)": the day's working time without its AFK breaks (on the end-of-work handle).</summary>
+    /// <summary>"  ·  7h 30m (przerwy 30 min)": the day's working time without its breaks (on the end-of-work handle).</summary>
     string WorkSummary()
     {
         var (ws, we) = WorkHours();
         // only the part of each break inside the working hours takes time off them
-        var afk = _host.Store().Afk(Key(_date)).Sum(p => Math.Max(0, ((p.End < we ? p.End : we) - (p.Start > ws ? p.Start : ws)).TotalHours));
-        return "  ·  " + BoardWindow.Duration(((we - ws).TotalHours - afk) * 60) + (afk > 0 ? "  (AFK " + BoardWindow.Duration(afk * 60) + ")" : "");
+        var afk = _host.Store().Breaks(Key(_date)).Sum(p => Math.Max(0, ((p.End < we ? p.End : we) - (p.Start > ws ? p.Start : ws)).TotalHours));
+        return "  ·  " + BoardWindow.Duration(((we - ws).TotalHours - afk) * 60) + (afk > 0 ? "  (" + L.F("przerwy {0}", BoardWindow.Duration(afk * 60)) + ")" : "");
     }
 
-    /// <summary>Right-click on the working hours: an AFK break from the quarter clicked (or from now), for a chosen time.</summary>
-    void AfkMenu(FrameworkElement target, TimeSpan at)
+    /// <summary>A break's kind as the day view names it.</summary>
+    static string BreakName(string kind) => kind switch { "lunch" => L.T("Lunch"), "private" => L.T("Prywatne"), _ => "AFK" };
+
+    /// <summary>
+    /// Right-click on the working hours: a break from the quarter clicked – AFK (15 min / 30 min / 1 h), lunch, something
+    /// private – or AFK from now; a day whose breaks were changed can go back to the default lunch.
+    /// </summary>
+    void BreakMenu(FrameworkElement target, TimeSpan at)
     {
         var store = _host.Store();
         var menu = new ContextMenu { PlacementTarget = target };
-        void Item(TimeSpan from, TimeSpan len, string header)
+        void Item(TimeSpan from, TimeSpan len, string kind, string header)
         {
             var to = from + len > TimeSpan.FromHours(24) ? TimeSpan.FromHours(24) : from + len;
             var mi = new MenuItem { Header = header };
-            mi.Click += (_, _) => { store.Checkpoint(); store.SetAfk(Key(_date), store.Afk(Key(_date)).Append((from, to))); Render(); };
+            mi.Click += (_, _) => { store.Checkpoint(); store.SetBreaks(Key(_date), store.Breaks(Key(_date)).Append(new Break(from, to, kind))); Render(); };
             menu.Items.Add(mi);
         }
         foreach (var min in new[] { 15, 30, 60 })
-            Item(at, TimeSpan.FromMinutes(min), L.F("AFK od {0} · {1}", Hhmm(at), BoardWindow.Hours(min / 60.0)));
+            Item(at, TimeSpan.FromMinutes(min), "afk", L.F("AFK od {0} · {1}", Hhmm(at), BoardWindow.Hours(min / 60.0)));
+        Item(at, TimeSpan.FromMinutes(30), "lunch", L.F("Lunch od {0} · {1}", Hhmm(at), BoardWindow.Hours(0.5)));
+        Item(at, TimeSpan.FromHours(1), "private", L.F("Prywatne od {0} · {1}", Hhmm(at), BoardWindow.Hours(1)));
         if (_date == DateTime.Today)
         {
             // from now, to the quarter: "I'm off for a while"
             var now = TimeSpan.FromMinutes(Math.Floor(DateTime.Now.TimeOfDay.TotalMinutes / 15) * 15);
             menu.Items.Add(new Separator());
-            Item(now, TimeSpan.FromMinutes(30), L.F("AFK teraz ({0}) · {1}", Hhmm(now), BoardWindow.Hours(0.5)));
+            Item(now, TimeSpan.FromMinutes(30), "afk", L.F("AFK teraz ({0}) · {1}", Hhmm(now), BoardWindow.Hours(0.5)));
         }
+        ResetBreaksItem(menu);
         _menuOpen = true;
         menu.Closed += (_, _) => _menuOpen = false;
         menu.IsOpen = true;
+    }
+
+    /// <summary>"Przywróć domyślne przerwy": on a day whose breaks were changed, while a default lunch is set.</summary>
+    void ResetBreaksItem(ContextMenu menu)
+    {
+        var store = _host.Store();
+        if (!store.OwnBreaks(Key(_date)) || App.Settings.Lunch.Length == 0) return;
+        menu.Items.Add(new Separator());
+        var reset = new MenuItem { Header = L.F("Przywróć domyślne przerwy (lunch {0})", App.Settings.Lunch) };
+        reset.Click += (_, _) => { store.Checkpoint(); store.ResetBreaks(Key(_date)); Render(); };
+        menu.Items.Add(reset);
     }
 
     void WorkHandle(TimeSpan at, bool start, double area, int? overtime = null)
@@ -607,38 +629,61 @@ public sealed class DayView : Grid
                     menu.IsOpen = true;
                 };
                 break;
-            case int afkIndex:
-                // away from the computer: grey and striped, a break in the work rather than a task
-                card.Background = AfkFill();
-                card.BorderBrush = B(Th.Ink(0x40));
+            case BreakRef br:
+                // a break in the work rather than a task: AFK grey and striped, lunch green, private sand
+                var kindColor = BreakColor(br.B.Kind);
+                card.Background = br.B.Kind == "afk" ? AfkFill() : B(A(kindColor, 0x26));
+                card.BorderBrush = br.B.Kind == "afk" ? B(Th.Ink(0x40)) : B(A(kindColor, 0x70));
                 card.BorderThickness = new Thickness(1);
                 // a short break: one line in the middle ("AFK  11:00–11:30"); a longer one: its length under it
-                title.Inlines.Add(new Run("AFK") { FontWeight = FontWeights.Bold });
+                title.Inlines.Add(new Run(BreakName(br.B.Kind)) { FontWeight = FontWeights.Bold });
                 if (h < 34) { title.Inlines.Add(new Run("   " + range) { FontSize = App.Settings.FontSize - 2.5 }); stack.Margin = new Thickness(8, 0, 6, 0); stack.VerticalAlignment = VerticalAlignment.Center; }
-                title.Foreground = Res("FgDim");
+                title.Foreground = br.B.Kind == "afk" ? Res("FgDim") : Tx(kindColor);
                 sub.Text = range + "  ·  " + BoardWindow.Hours((b.To - b.From).TotalHours);
-                card.ToolTip = L.F("AFK – przerwa od komputera {0}", range) + "\n" + L.T("Przeciągnij: przesuń · krawędzie: początek / koniec · prawy przycisk: usuń");
+                card.ToolTip = (br.B.Kind == "afk" ? L.F("AFK – przerwa od komputera {0}", range) : $"{BreakName(br.B.Kind)} {range}")
+                    + "\n" + L.T("Przeciągnij: przesuń · krawędzie: początek / koniec · prawy przycisk: rodzaj, usuń") + "\n" + L.T("Nie liczy się do czasu pracy");
                 card.Cursor = Cursors.SizeAll;
-                var (afkTop, afkBottom) = Grips(card, grid);
+                var (breakTop, breakBottom) = Grips(card, grid);
                 card.MouseLeftButtonDown += (_, e) =>
                 {
                     e.Handled = true;
                     if (e.ClickCount > 1) return;
-                    _drag = new Drag(EdgeOf(e, afkTop, afkBottom), null, card, e.GetPosition(_canvas).Y, b.From, b.To, afkIndex);
+                    _drag = new Drag(EdgeOf(e, breakTop, breakBottom), null, card, e.GetPosition(_canvas).Y, b.From, b.To, br.Index);
                     _canvas.CaptureMouse();
                 };
                 card.MouseRightButtonUp += (_, e) =>
                 {
                     e.Handled = true;
                     var menu = new ContextMenu { PlacementTarget = card };
-                    var del = new MenuItem { Header = L.T("Usuń tę przerwę AFK") };
-                    del.Click += (_, _) => { store.Checkpoint(); store.SetAfk(Key(_date), store.Afk(Key(_date)).Where((_, k) => k != afkIndex)); Render(); };
+                    void Change(Func<List<Break>, IEnumerable<Break>> how)
+                    {
+                        store.Checkpoint();
+                        store.SetBreaks(Key(_date), how(store.Breaks(Key(_date))));
+                        Render();
+                    }
+                    // another kind: AFK ↔ lunch ↔ private
+                    foreach (var kind in Break.Kinds.Where(k => k != br.B.Kind))
+                    {
+                        var to = new MenuItem { Header = L.F("Zmień na: {0}", BreakName(kind)) };
+                        to.Click += (_, _) => Change(list => list.Select((x, k) => k == br.Index ? x with { Kind = kind } : x));
+                        menu.Items.Add(to);
+                    }
+                    menu.Items.Add(new Separator());
+                    var del = new MenuItem { Header = L.T("Usuń tę przerwę") };
+                    del.Click += (_, _) => Change(list => list.Where((_, k) => k != br.Index));
                     menu.Items.Add(del);
+                    ResetBreaksItem(menu);
                     _menuOpen = true;
                     menu.Closed += (_, _) => _menuOpen = false;
                     menu.IsOpen = true;
                 };
                 break;
+        }
+        // the block picked (a click, or ↑ ↓): a frame in the accent – Alt+↑ ↓ moves it, Alt+Shift+↑ ↓ changes its length
+        if (SelKey(b.Source) is { } sk && sk == _selKey)
+        {
+            card.BorderBrush = Res("AccentBrush");
+            card.BorderThickness = new Thickness(1.6);
         }
         if (b.Source is not TaskItem)
         {
@@ -768,8 +813,11 @@ public sealed class DayView : Grid
 
     // ---------- dragging: a block (time / length) or a working-hours edge ----------
 
-    /// <summary>What is being dragged; <paramref name="Afk"/>: the index of an AFK break (-1: a task or an edge).</summary>
+    /// <summary>What is being dragged; <paramref name="Afk"/>: the index of a break (AFK, lunch, private) (-1: a task or an edge).</summary>
     sealed record Drag(string Kind, TaskItem? Task, FrameworkElement El, double StartY, TimeSpan From, TimeSpan To, int Afk = -1);
+
+    /// <summary>A break on the day's line: its place in the day's list and what it is.</summary>
+    sealed record BreakRef(int Index, Break B);
 
     bool OverStrip(MouseEventArgs e)
     {
@@ -793,22 +841,17 @@ public sealed class DayView : Grid
     {
         if (_drag is not { } d || e.LeftButton != MouseButtonState.Pressed) return;
         double dy = e.GetPosition(_canvas).Y - d.StartY;
-        double snap = Math.Round(dy / HourH * 4) / 4 * HourH; // quarter hours
         switch (d.Kind)
         {
-            case "move":
-                d.El.RenderTransform = new TranslateTransform(0, snap);
-                if (d.Task != null) StripHot(OverStrip(e)); // back onto the "Bez godziny" strip: lit while it would land there
+            case "move" or "resize" or "resizeTop":
+                // a block (moved, or one of its edges): where it would land – a quarter hour or the edge of a block next to it
+                var (from, to) = Target(d, dy);
+                double shift = Y(from) - Y(d.From);
+                d.El.RenderTransform = shift != 0 ? new TranslateTransform(0, shift) : null;
+                d.El.Height = Math.Max(HourH / 4 - 2, Y(to) - Y(from) - 2);
+                if (d.Kind == "move" && d.Task != null) StripHot(OverStrip(e)); // back onto the "Bez godziny" strip: lit while it would land there
                 break;
-            case "resize": d.El.Height = Math.Max(HourH / 4 - 2, Y(d.To) - Y(d.From) - 2 + snap); break;
-            case "resizeTop":
-                // the upper edge: the block's top follows the mouse, its bottom stays (a quarter of an hour at least, not before 00:00)
-                double full = Y(d.To) - Y(d.From);
-                double top = Math.Max(Math.Min(snap, full - HourH / 4), Y(TimeSpan.Zero) - Y(d.From));
-                d.El.RenderTransform = new TranslateTransform(0, top);
-                d.El.Height = Math.Max(HourH / 4 - 2, full - 2 - top);
-                break;
-            default: d.El.RenderTransform = new TranslateTransform(0, snap); break;
+            default: d.El.RenderTransform = new TranslateTransform(0, Math.Round(dy / HourH * 4) / 4 * HourH); break; // the working hours' edges: quarter hours
         }
     }
 
@@ -818,43 +861,25 @@ public sealed class DayView : Grid
         _drag = null;
         _canvas.ReleaseMouseCapture();
         StripHot(false);
-        if (d.Kind == "move" && d.Task != null && OverStrip(e)) { _host.ClearTime(d.Task); return; } // no hours any more: a chip again
+        if (d.Kind == "move" && d.Task != null && OverStrip(e)) { _edges = null; _host.ClearTime(d.Task); return; } // no hours any more: a chip again
         double dy = e.GetPosition(_canvas).Y - d.StartY;
+        var store = _host.Store();
+        if (d.Kind is "move" or "resize" or "resizeTop")
+        {
+            var (from, to) = Math.Abs(dy) < 4 ? (d.From, d.To) : Target(d, dy);
+            _edges = null;
+            // a click (or no change): it picks the block (the keys work on it)
+            _selKey = d.Task != null ? SelKey(d.Task) : d.Afk >= 0 ? "b:" + d.Afk : _selKey;
+            if (from == d.From && to == d.To) { d.El.RenderTransform = null; Render(); return; }
+            // Alt held: the tasks after it stay where they are
+            if (d.Task != null) Retime(d.Task, d.From, d.To, from, to, d.Kind != "move", push: !Keyboard.Modifiers.HasFlag(ModifierKeys.Alt));
+            else if (d.Afk >= 0) MoveBreak(d.Afk, from, to);
+            return;
+        }
         var delta = TimeSpan.FromMinutes(Math.Round(dy / HourH * 4) * 15);
         if (Math.Abs(dy) < 4 || delta == TimeSpan.Zero) { d.El.RenderTransform = null; Render(); return; } // a click (or no change), not a drag
-        var store = _host.Store();
         switch (d.Kind)
         {
-            case "move" when d.Task != null:
-                var from = Clamp(d.From + delta, TimeSpan.Zero, TimeSpan.FromHours(24) - (d.To - d.From));
-                _host.SetTime(d.Task, from, from + (d.To - d.From), false); // moved: the estimate stays
-                break;
-            case "resize" when d.Task != null:
-                var to = Clamp(d.To + delta, d.From + TimeSpan.FromMinutes(15), TimeSpan.FromHours(24));
-                _host.SetTime(d.Task, d.From, to, true);
-                break;
-            case "resizeTop" when d.Task != null:
-                var start = Clamp(d.From + delta, TimeSpan.Zero, d.To - TimeSpan.FromMinutes(15));
-                _host.SetTime(d.Task, start, d.To, true);
-                break;
-            case "move" or "resize" or "resizeTop" when d.Afk >= 0:
-                // an AFK break: moved whole, or one of its edges (a quarter of an hour at least, within the day)
-                var breaks = store.Afk(Key(_date));
-                if (d.Afk < breaks.Count)
-                {
-                    var len = d.To - d.From;
-                    var (ba, bb) = d.Kind switch
-                    {
-                        "move" => (Clamp(d.From + delta, TimeSpan.Zero, TimeSpan.FromHours(24) - len), Clamp(d.From + delta, TimeSpan.Zero, TimeSpan.FromHours(24) - len) + len),
-                        "resizeTop" => (Clamp(d.From + delta, TimeSpan.Zero, d.To - TimeSpan.FromMinutes(15)), d.To),
-                        _ => (d.From, Clamp(d.To + delta, d.From + TimeSpan.FromMinutes(15), TimeSpan.FromHours(24))),
-                    };
-                    breaks[d.Afk] = (ba, bb);
-                    store.Checkpoint();
-                    store.SetAfk(Key(_date), breaks);
-                }
-                Render();
-                break;
             case "workStart":
             case "workEnd":
                 var (ws, we) = WorkHours();
@@ -893,9 +918,148 @@ public sealed class DayView : Grid
         }
     }
 
+    // ---------- where blocks land: quarter hours, the edges next to them, the tasks after them ----------
+
+    /// <summary>
+    /// Where a dragged block lands: to the quarter hour, or onto the edge of another block or of the working hours when
+    /// within 7 minutes of it (after a meeting ending 10:50 the task starts at 10:50).
+    /// </summary>
+    (TimeSpan From, TimeSpan To) Target(Drag d, double dy)
+    {
+        var raw = TimeSpan.FromMinutes(dy / HourH * 60);
+        var len = d.To - d.From;
+        var day = TimeSpan.FromHours(24);
+        var min = TimeSpan.FromMinutes(15);
+        switch (d.Kind)
+        {
+            case "move":
+                var (f, onEdge) = Place(d.From + raw, d);
+                if (!onEdge && Place(d.To + raw, d) is (var end, true)) f = end - len; // or its end onto an edge
+                f = Clamp(f, TimeSpan.Zero, day - len);
+                return (f, f + len);
+            case "resize": return (d.From, Clamp(Place(d.To + raw, d).At, d.From + min, day));
+            case "resizeTop": return (Clamp(Place(d.From + raw, d).At, TimeSpan.Zero, d.To - min), d.To);
+            default: return (d.From, d.To);
+        }
+    }
+
+    (TimeSpan At, bool OnEdge) Place(TimeSpan t, Drag d)
+    {
+        var near = Edges(d).Select(x => (At: x, Off: Math.Abs((x - t).TotalMinutes))).Where(x => x.Off <= 7).OrderBy(x => x.Off).ToList();
+        return near.Count > 0 ? (near[0].At, true) : (TimeSpan.FromMinutes(Math.Round(t.TotalMinutes / 15) * 15), false);
+    }
+
+    /// <summary>What a dragged block snaps to: the other blocks' starts and ends and the working hours' (once per drag).</summary>
+    List<TimeSpan> Edges(Drag d)
+    {
+        if (_edges != null) return _edges;
+        var list = new List<TimeSpan>();
+        foreach (var b in Blocks())
+        {
+            if (d.Task != null && b.Source is TaskItem t && t.Id == d.Task.Id) continue;
+            if (d.Afk >= 0 && b.Source is BreakRef r && r.Index == d.Afk) continue;
+            list.Add(b.From);
+            list.Add(b.To);
+        }
+        if (HasRegularHours()) { var (ws, we) = WorkHours(); list.Add(ws); list.Add(we); }
+        return _edges = list;
+    }
+
+    List<TimeSpan>? _edges;
+
+    /// <summary>
+    /// A task's new hours. With <paramref name="push"/> the tasks after it that it now runs into move on, one after
+    /// another, as far as needed (meetings and breaks stay where they are) – all of it one Ctrl+Z.
+    /// </summary>
+    void Retime(TaskItem task, TimeSpan oldFrom, TimeSpan oldTo, TimeSpan from, TimeSpan to, bool length, bool push = true)
+    {
+        var changes = new List<(TaskItem, TimeSpan, TimeSpan, bool)> { (task, from, to, length) };
+        if (push)
+        {
+            // after it: what started at or after its end (stretched), or at or after its new start (moved)
+            var after = length ? oldTo : from;
+            var cursor = to;
+            foreach (var b in Blocks().Where(b => b.Source is TaskItem t && t.Id != task.Id && b.From >= after).OrderBy(b => b.From))
+            {
+                if (b.From >= cursor) break; // a gap: the rest is free
+                var nt = cursor + (b.To - b.From);
+                if (nt > TimeSpan.FromHours(24)) break; // no room left in the day
+                changes.Add(((TaskItem)b.Source, cursor, nt, false));
+                cursor = nt;
+            }
+        }
+        _selKey = SelKey(task);
+        _host.SetTimes(changes);
+    }
+
+    /// <summary>A break moved or stretched (it stays picked).</summary>
+    void MoveBreak(int index, TimeSpan from, TimeSpan to)
+    {
+        var store = _host.Store();
+        var breaks = store.Breaks(Key(_date));
+        if (index >= breaks.Count) { Render(); return; }
+        var moved = breaks[index] with { Start = from, End = to };
+        breaks[index] = moved;
+        store.Checkpoint();
+        store.SetBreaks(Key(_date), breaks);
+        int now = store.Breaks(Key(_date)).FindIndex(b => b.Kind == moved.Kind && b.Start <= moved.Start && b.End >= moved.End);
+        _selKey = now >= 0 ? "b:" + now : null;
+        Render();
+    }
+
+    // ---------- the keys: up / down pick a block, Alt moves it, Alt+Shift changes its length ----------
+
+    string? _selKey;
+
+    static string? SelKey(object source) => source switch { TaskItem t => "t:" + t.Id, BreakRef r => "b:" + r.Index, _ => null };
+
+    /// <summary>
+    /// The day view's keys (the board passes them on): up / down pick the previous / next block (a task or a break),
+    /// Alt+up / down move it by a quarter of an hour (the tasks after it make room), Alt+Shift+up / down make it a
+    /// quarter shorter / longer, Esc lets it go. False: not a key for the day view.
+    /// </summary>
+    public bool HandleKey(KeyEventArgs e)
+    {
+        var key = e.Key == WKey.System ? e.SystemKey : e.Key;
+        var mods = Keyboard.Modifiers;
+        if (key == WKey.Escape && _selKey != null) { _selKey = null; Render(); return true; }
+        if (key is not (WKey.Up or WKey.Down) || mods.HasFlag(ModifierKeys.Control)) return false;
+        var blocks = Blocks().Where(b => b.Source is TaskItem or BreakRef).OrderBy(b => b.From).ThenBy(b => b.Lane).ToList();
+        if (blocks.Count == 0) return false;
+        int i = blocks.FindIndex(b => SelKey(b.Source) == _selKey);
+        int dir = key == WKey.Up ? -1 : 1;
+        if (mods == ModifierKeys.None || i < 0)
+        {
+            var next = blocks[i < 0 ? (dir > 0 ? 0 : blocks.Count - 1) : Math.Clamp(i + dir, 0, blocks.Count - 1)];
+            _selKey = SelKey(next.Source);
+            Render();
+            double y = Y(next.From);
+            if (y < _scroll.VerticalOffset || y > _scroll.VerticalOffset + _scroll.ViewportHeight - HourH) _scroll.ScrollToVerticalOffset(Math.Max(0, y - HourH));
+            return true;
+        }
+        var b = blocks[i];
+        var q = TimeSpan.FromMinutes(15 * dir);
+        var day = TimeSpan.FromHours(24);
+        TimeSpan from, to;
+        bool length;
+        if (mods == ModifierKeys.Alt) { from = Clamp(b.From + q, TimeSpan.Zero, day - (b.To - b.From)); to = from + (b.To - b.From); length = false; }
+        else if (mods == (ModifierKeys.Alt | ModifierKeys.Shift)) { from = b.From; to = Clamp(b.To + q, b.From + TimeSpan.FromMinutes(15), day); length = true; }
+        else return false;
+        if (from == b.From && to == b.To) return true;
+        if (b.Source is TaskItem t) Retime(t, b.From, b.To, from, to, length);
+        else if (b.Source is BreakRef r) MoveBreak(r.Index, from, to);
+        return true;
+    }
+
+    /// <summary>A break's colour: AFK grey, lunch green, private sand.</summary>
+    static Color BreakColor(string kind) => kind switch
+    {
+        "lunch" => Color.FromRgb(0x5F, 0xB8, 0x7A), "private" => Color.FromRgb(0xC9, 0xA2, 0x6B), _ => Color.FromRgb(0x9A, 0xA1, 0xB2),
+    };
+
     void CancelDrag()
     {
-        if (_drag is { } d) { d.El.RenderTransform = null; _drag = null; Render(); }
+        if (_drag is { } d) { d.El.RenderTransform = null; _drag = null; _edges = null; Render(); }
     }
 
     static TimeSpan Clamp(TimeSpan t, TimeSpan min, TimeSpan max) => t < min ? min : t > max ? max : t;
@@ -910,7 +1074,7 @@ public sealed class DayView : Grid
         {
             var dur = TimeSpan.FromHours(Math.Clamp(own.Estimate ?? 0.5, 0.25, 8));
             if (at + dur > TimeSpan.FromHours(24)) at = TimeSpan.FromHours(24) - dur;
-            _host.SetTime(own, at, at + dur, false);
+            _host.SetTimes(new[] { (own, at, at + dur, false) });
             return;
         }
         // from another day or the backlog: never past the end of the day (24:00 would be read as 00:00)

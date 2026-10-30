@@ -581,5 +581,20 @@ static partial class L
         ("Przeciągnij, żeby zmienić dla tego dnia – koniec przesunie się z nim ({0} pracy), dopóki nie ustawisz go sam · dwuklik: domyślne godziny", "Drag to change it for this day – the end moves with it ({0} of work) until you set it yourself · double-click: the default hours"),
         ("Przeciągnij, żeby ustawić go dla tego dnia (początek go już nie przesunie) · dwuklik: domyślne godziny", "Drag to set it for this day (the start won't move it any more) · double-click: the default hours"),
         ("przerw AFK", "of AFK breaks"),
+        // 0.39: breaks of three kinds, the default lunch, the keys and the push in the day view
+        ("Lunch", "Lunch"),
+        ("Prywatne", "Private"),
+        ("przerwy {0}", "breaks {0}"),
+        ("Lunch od {0} · {1}", "Lunch from {0} · {1}"),
+        ("Prywatne od {0} · {1}", "Private from {0} · {1}"),
+        ("Przywróć domyślne przerwy (lunch {0})", "Back to the default breaks (lunch {0})"),
+        ("Przeciągnij: przesuń · krawędzie: początek / koniec · prawy przycisk: rodzaj, usuń", "Drag: move · edges: start / end · right click: kind, remove"),
+        ("Nie liczy się do czasu pracy", "Not counted as working time"),
+        ("Zmień na: {0}", "Change to: {0}"),
+        ("Usuń tę przerwę", "Remove this break"),
+        ("przerw (AFK, lunch, prywatne)", "of breaks (AFK, lunch, private)"),
+        ("Przerwa na lunch", "Lunch break"),
+        ("Np. 12:00-12:30 – pojawia się co dzień roboczy na osi dnia i nie liczy się do czasu pracy. Pusto: bez lunchu. Dany dzień może ją przesunąć albo usunąć (prawy przycisk na niej).", "E.g. 12:00-12:30 – it shows on every working day's line and isn't counted as working time. Empty: no lunch. A day can move or remove its own (right click on it)."),
+        ("widok dnia: ↑ ↓ zaznacza blok (zadanie, przerwę), Alt+↑ ↓ przesuwa go o kwadrans (kolejne zadania robią miejsce), Alt+Shift+↑ ↓ skraca / wydłuża; przy przeciąganiu Alt: bez przesuwania kolejnych", "day view: ↑ ↓ pick a block (a task, a break), Alt+↑ ↓ move it by a quarter of an hour (the tasks after it make room), Alt+Shift+↑ ↓ shorter / longer; Alt while dragging: the tasks after it stay"),
     };
 }

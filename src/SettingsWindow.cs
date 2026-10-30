@@ -1031,6 +1031,17 @@ public sealed class SettingsWindow : DarkWindow
         hours.Children.Add(new TextBlock { Text = "  –  ", VerticalAlignment = VerticalAlignment.Center, Foreground = Ui.Res("FgDim") });
         hours.Children.Add(HourBox(() => S.WorkEnd, v => S.WorkEnd = v, true));
         p.Children.Add(Pair(L.T("Godziny pracy"), hours, L.T("Domyślne godziny w widoku dnia. Każdy dzień może mieć własne – przeciągnij ich krawędzie na osi. Weekendy i święta nie mają godzin pracy: dodaj nadgodziny prawym przyciskiem na osi.")));
+        // a lunch break on every working day ("12:00-12:30"; empty: none)
+        var lunch = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Width = 120, Text = S.Lunch, HorizontalAlignment = HorizontalAlignment.Left };
+        lunch.LostKeyboardFocus += (_, _) =>
+        {
+            var text = lunch.Text.Trim().Replace("–", "-").Replace(" ", "");
+            if (text.Length == 0) { S.Lunch = ""; App.Instance.ApplySettings(); }
+            else if (BoardStore.ParsePeriod(text) is { } p && p.End - p.Start <= TimeSpan.FromHours(3))
+            { S.Lunch = $"{p.Start:hh\\:mm}-{p.End:hh\\:mm}"; lunch.Text = S.Lunch; App.Instance.ApplySettings(); }
+            else lunch.Text = S.Lunch; // not a time range: back to what is set
+        };
+        p.Children.Add(Pair(L.T("Przerwa na lunch"), lunch, L.T("Np. 12:00-12:30 – pojawia się co dzień roboczy na osi dnia i nie liczy się do czasu pracy. Pusto: bez lunchu. Dany dzień może ją przesunąć albo usunąć (prawy przycisk na niej).")));
         p.Children.Add(Check(L.T("Widok dnia: notatnik po lewej, oś godzin po prawej"), S.DayNotesLeft, v => S.DayNotesLeft = v));
         p.Children.Add(Check(L.T("Podsumowanie poprzedniego tygodnia przy pierwszym uruchomieniu w tygodniu"), S.WeeklySummary, v => S.WeeklySummary = v));
         p.Children.Add(Check(L.T("Przycisk widoku roku (365 dni)"), S.ShowYearButton, v => S.ShowYearButton = v));

@@ -416,10 +416,15 @@ public partial class BoardWindow : GlassWindow
     DayView? _dayView;
 
     /// <summary>
-    /// A task block moved / stretched on the day view: its hours; stretched (<paramref name="length"/>), their length
-    /// becomes its estimate – a move keeps the estimate (a 2-day task drawn as 8 h stays 2 days).
+    /// Task blocks moved / stretched on the day view (one, or with the tasks after it that made room – one Ctrl+Z): their
+    /// hours; stretched (Length), the length becomes the estimate – a move keeps it (a 2-day task drawn as 8 h stays 2 days).
     /// </summary>
-    void DaySetTime(TaskItem t, TimeSpan from, TimeSpan to, bool length) => Do(() =>
+    void DaySetTimes(IReadOnlyList<(TaskItem T, TimeSpan From, TimeSpan To, bool Length)> changes) => Do(() =>
+    {
+        foreach (var (t, from, to, length) in changes) SetBlockTime(t, from, to, length);
+    });
+
+    void SetBlockTime(TaskItem t, TimeSpan from, TimeSpan to, bool length)
     {
         var real = Store.Materialize(t);
         real.Time = from.ToString(@"hh\:mm");
@@ -431,7 +436,7 @@ public partial class BoardWindow : GlassWindow
             ApplyAutoPlan(real, real.Day, old);
         }
         Store.Changed(real);
-    });
+    }
 
     /// <summary>A task dropped on the day view (from the backlog or another day): that day, at that hour.</summary>
     void DayDropTask(string id, DateTime day, TimeSpan at)
@@ -497,6 +502,7 @@ public partial class BoardWindow : GlassWindow
 
     public void Rebuild()
     {
+        using var watch = Watchdog.Step("rebuilding the board (" + _view + ")");
         BuiltAt = DateTime.UtcNow;
         // editors in the old visuals are gone after this: make sure their late focus events do nothing
         foreach (var cancel in _editors.ToList()) cancel();
@@ -537,7 +543,7 @@ public partial class BoardWindow : GlassWindow
                     d => Store.Data.Tasks.Where(t => t.Day == DayKey(d) && !t.Archived).Concat(Store.VirtualTasks(d)).OrderBy(t => t.Order).ToList(),
                     (t, el) => BuildMenu(t, null, null, el),
                     t => SetState(t, NextState(t, Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))),
-                    DaySetTime,
+                    DaySetTimes,
                     DayDropTask,
                     (key, d) => BuildAddRow(key, d),
                     (a, d) => AlarmWindow.Edit(Store, a, d),

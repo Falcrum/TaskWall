@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Threading;
 
 namespace TaskWall;
@@ -349,15 +350,15 @@ public sealed class BoardStore
     /// <summary>Merges the computers' files that changed since they were last read. True = something new came in.</summary>
     bool MergeDevices()
     {
-        if (string.IsNullOrEmpty(Folder) || !Directory.Exists(DeviceFolder)) return false;
+        if (string.IsNullOrEmpty(Folder) || (_pre?.DeviceFiles == null && !Directory.Exists(DeviceFolder))) return false;
         string? before = null;
         bool read = false;
-        foreach (var f in Directory.GetFiles(DeviceFolder, "board-*.json"))
+        foreach (var f in _pre?.DeviceFiles ?? Directory.GetFiles(DeviceFolder, "board-*.json"))
         {
             // a computer silent for half a year: its data went into the others long ago (and its old tombstones are pruned)
-            if (!string.Equals(f, DeviceFile, StringComparison.OrdinalIgnoreCase) && File.GetLastWriteTimeUtc(f) < DateTime.UtcNow.AddDays(-180)) continue;
+            if (!string.Equals(f, DeviceFile, StringComparison.OrdinalIgnoreCase) && WriteTimeUtc(f) < DateTime.UtcNow.AddDays(-180)) continue;
             DiskState d;
-            try { d = TryRead(f, _seenDevices.GetValueOrDefault(f)); }
+            try { d = Read(f, _seenDevices.GetValueOrDefault(f)); }
             catch (Exception ex) { Log.Error("device file " + Path.GetFileName(f), ex); continue; } // held by the sync client: next time
             if (d.Data == null || d.Hash == null) continue;
             if (_seenDevices.TryGetValue(f, out var seen) && seen == d.Hash) continue;
@@ -470,11 +471,11 @@ public sealed class BoardStore
     {
         Layer = "work";
         _saveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
-        _saveTimer.Tick += (_, _) => SaveNow();
+        _saveTimer.Tick += (_, _) => SaveInBackground();
         _reloadTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
-        _reloadTimer.Tick += (_, _) => { _reloadTimer.Stop(); CheckDisk(); };
+        _reloadTimer.Tick += (_, _) => { _reloadTimer.Stop(); CheckInBackground(); };
         _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) }; // backup for missed file events
-        _pollTimer.Tick += (_, _) => CheckDisk();
+        _pollTimer.Tick += (_, _) => CheckInBackground();
     }
 
     public void Open(string folder)
@@ -1058,28 +1059,62 @@ public sealed class BoardStore
     /// <summary>The end of work on this day was set by hand (moving the start doesn't move it).</summary>
     public bool EndSet(string day) => Data.Days.TryGetValue(day, out var d) && d.EndSet == true;
 
-    // ---------- AFK: breaks away from the computer within the day ----------
+    // ---------- breaks within the day: AFK, lunch, private ----------
 
-    /// <summary>The day's AFK breaks (start, end), by start.</summary>
-    public List<(TimeSpan Start, TimeSpan End)> Afk(string day)
+    /// <summary>
+    /// The day's breaks, by start. A day that has its own (any break added, moved or removed there – even none left)
+    /// shows those; any other working day shows the default lunch from the settings, if there is one.
+    /// </summary>
+    public List<Break> Breaks(string day)
     {
-        var list = new List<(TimeSpan, TimeSpan)>();
-        if (!Data.Days.TryGetValue(day, out var d) || d.Afk == null) return list;
-        foreach (var p in d.Afk)
-            if (ParsePeriod(p) is { } x) list.Add(x);
-        return list.OrderBy(x => x.Item1).ToList();
+        if (Data.Days.TryGetValue(day, out var d) && d.Afk != null)
+            return d.Afk.Select(ParseBreak).Where(b => b != null).Select(b => b!).OrderBy(b => b.Start).ToList();
+        return DefaultLunch(day) is { } lunch ? new() { lunch } : new();
     }
 
-    /// <summary>Replaces the day's AFK breaks (overlapping ones are joined).</summary>
-    public void SetAfk(string day, IEnumerable<(TimeSpan Start, TimeSpan End)> periods)
+    /// <summary>The breaks of this day were changed on it (the default lunch no longer applies to it).</summary>
+    public bool OwnBreaks(string day) => Data.Days.TryGetValue(day, out var d) && d.Afk != null;
+
+    /// <summary>The default lunch (Settings → Tablica) on a working day; none on weekends, holidays and leave.</summary>
+    static Break? DefaultLunch(string day)
     {
-        var merged = Join(periods);
-        EditDay(day, "afk", x => x.Afk = merged.Count > 0 ? merged.Select(p => Period(p.Start, p.End)).ToList() : null);
+        if (App.Settings?.Lunch is not { Length: > 0 } s || ParsePeriod(s) is not { } p) return null;
+        if (!Days.TryParse(day, out var date) || date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday || DaysOff.Is(date)) return null;
+        return new Break(p.Start, p.End, "lunch");
+    }
+
+    /// <summary>"12:00-12:30" (AFK) or "12:00-12:30 lunch" / "… private".</summary>
+    static Break? ParseBreak(string s)
+    {
+        var parts = s.Trim().Split(' ', 2);
+        if (ParsePeriod(parts[0]) is not { } p) return null;
+        var kind = parts.Length > 1 ? parts[1].Trim() : "afk";
+        return new Break(p.Start, p.End, Break.Kinds.Contains(kind) ? kind : "afk");
+    }
+
+    /// <summary>Replaces the day's breaks (overlapping ones of one kind are joined); kept as the day's own even when none are left.</summary>
+    public void SetBreaks(string day, IEnumerable<Break> breaks)
+    {
+        var joined = new List<Break>();
+        foreach (var b in breaks.Where(b => b.End > b.Start).OrderBy(b => b.Start))
+        {
+            int same = joined.FindLastIndex(x => x.Kind == b.Kind);
+            if (same >= 0 && b.Start <= joined[same].End) joined[same] = joined[same] with { End = b.End > joined[same].End ? b.End : joined[same].End };
+            else joined.Add(b);
+        }
+        EditDay(day, "afk", x => x.Afk = joined.Select(b => Period(b.Start, b.End) + (b.Kind == "afk" ? "" : " " + b.Kind)).ToList());
         MarkDirty();
     }
 
-    /// <summary>Hours away from the computer on a day.</summary>
-    public double AfkHours(string day) => Afk(day).Sum(p => (p.End - p.Start).TotalHours);
+    /// <summary>The day's breaks back to the default (the lunch from the settings).</summary>
+    public void ResetBreaks(string day)
+    {
+        EditDay(day, "afk", x => x.Afk = null);
+        MarkDirty();
+    }
+
+    /// <summary>Hours of breaks on a day (AFK, lunch, private).</summary>
+    public double BreakHours(string day) => Breaks(day).Sum(b => (b.End - b.Start).TotalHours);
 
     static List<(TimeSpan Start, TimeSpan End)> Join(IEnumerable<(TimeSpan Start, TimeSpan End)> periods)
     {
@@ -1263,14 +1298,96 @@ public sealed class BoardStore
 
     // ---------- persistence ----------
 
+    // Reading the cloud folder can block: a Google Drive file that isn't on this computer yet is fetched while it's read,
+    // a busy disk makes every read wait. So the timers first read what a save or a check needs (board.json, the
+    // computers' files, the folder's listing) on a background thread; the merging and writing then run as before on
+    // the UI thread, from those reads – the same code the self-tests drive. SaveNow / CheckDisk called directly (on exit,
+    // a backup, the tests) read for themselves.
+
+    /// <summary>What was read in the background for one save or check: files by (path, the hash it may skip), listings, times.</summary>
+    sealed record Prefetch(Dictionary<(string Path, string? Unless), DiskState> Files, string[]? DeviceFiles, string[]? BoardFiles, Dictionary<string, DateTime> Times);
+
+    Prefetch? _pre;
+    bool _prefetching;
+
+    /// <summary>A file as read in the background (once), or read now.</summary>
+    DiskState Read(string path, string? unlessHash = null)
+    {
+        if (_pre != null && _pre.Files.Remove((path, unlessHash), out var state)) return state;
+        return TryRead(path, unlessHash);
+    }
+
+    DateTime WriteTimeUtc(string path) => _pre != null && _pre.Times.TryGetValue(path, out var t) ? t : File.GetLastWriteTimeUtc(path);
+
+    /// <summary>The background part: only files and listings (nothing of this store is touched off the UI thread).</summary>
+    static Prefetch Load(string folder, string boardPath, string? boardUnless, string deviceFolder, Dictionary<string, string> seen)
+    {
+        var files = new Dictionary<(string, string?), DiskState>();
+        var times = new Dictionary<string, DateTime>();
+        try { files[(boardPath, boardUnless)] = TryRead(boardPath, boardUnless); } catch { } // held: read again (and reported) on the UI thread
+        string[]? devices = null, boards = null;
+        try
+        {
+            devices = Directory.Exists(deviceFolder) ? Directory.GetFiles(deviceFolder, "board-*.json") : Array.Empty<string>();
+            foreach (var f in devices)
+            {
+                times[f] = File.GetLastWriteTimeUtc(f);
+                var unless = seen.GetValueOrDefault(f);
+                try { files[(f, unless)] = TryRead(f, unless); } catch { }
+            }
+        }
+        catch { devices = null; }
+        try { boards = Directory.Exists(folder) ? Directory.GetFiles(folder, "board*.json") : null; } catch { }
+        return new Prefetch(files, devices, boards, times);
+    }
+
+    /// <summary>The self-test: a save / check from reads done the way the background does them (on this thread).</summary>
+    internal void SaveFromPrefetch() { _pre = Load(Folder, FilePath, null, DeviceFolder, new(_seenDevices, StringComparer.OrdinalIgnoreCase)); try { SaveNow(); } finally { _pre = null; } }
+    internal void CheckFromPrefetch() { _pre = Load(Folder, FilePath, _lastHash, DeviceFolder, new(_seenDevices, StringComparer.OrdinalIgnoreCase)); try { CheckDisk(); } finally { _pre = null; } }
+
+    /// <summary>The save timer: read in the background, then save from that.</summary>
+    async void SaveInBackground()
+    {
+        _saveTimer.Stop();
+        if (string.IsNullOrEmpty(Folder)) return;
+        if (_prefetching) { _saveTimer.Start(); return; } // a read is under way: once it's done
+        if (await Prefetched(null)) SaveNow();
+    }
+
+    /// <summary>The watcher / poll: read in the background, then merge what changed.</summary>
+    async void CheckInBackground()
+    {
+        if (string.IsNullOrEmpty(Folder) || _prefetching) return; // the next poll or file event comes anyway
+        if (await Prefetched(_lastHash)) CheckDisk();
+    }
+
+    /// <summary>Reads in the background; true: the reads are in <see cref="_pre"/> for the step that follows (it clears them).</summary>
+    async Task<bool> Prefetched(string? boardUnless)
+    {
+        _prefetching = true;
+        string folder = Folder, board = FilePath, devices = DeviceFolder;
+        var seen = new Dictionary<string, string>(_seenDevices, StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var pre = await Task.Run(() => Load(folder, board, boardUnless, devices, seen));
+            if (folder != Folder) return false; // another folder opened meanwhile
+            _pre = pre;
+            Dispatcher.CurrentDispatcher.BeginInvoke(() => _pre = null, DispatcherPriority.Background); // whatever the step didn't use
+            return true;
+        }
+        catch (Exception ex) { Log.Error("background read", ex); return false; }
+        finally { _prefetching = false; }
+    }
+
     public void SaveNow()
     {
+        using var watch = Watchdog.Step("saving " + Layer);
         _saveTimer.Stop();
         if (string.IsNullOrEmpty(Folder)) return;
         try
         {
             bool merged = false;
-            var disk = TryRead(FilePath);
+            var disk = Read(FilePath);
             if (disk.Unreadable)
             {
                 // Possibly a half-synced file; give the sync client about a minute before giving up on it.
@@ -1359,9 +1476,10 @@ public sealed class BoardStore
 
     internal void CheckDisk()
     {
+        using var watch = Watchdog.Step("reading the folder of " + Layer);
         try
         {
-            var disk = TryRead(FilePath, _lastHash); // the same file as last time: not parsed again
+            var disk = Read(FilePath, _lastHash); // the same file as last time: not parsed again
             if (disk.Data != null && disk.Hash != _lastHash)
             {
                 var diskCanon = Canon(disk.Data);
@@ -1407,9 +1525,9 @@ public sealed class BoardStore
     /// <summary>Merges conflict copies in, then moves them to backup\ (nothing is deleted).</summary>
     void MergeConflictCopies()
     {
-        if (!Directory.Exists(Folder)) return;
+        if (_pre?.BoardFiles == null && !Directory.Exists(Folder)) return;
         bool any = false;
-        foreach (var f in Directory.GetFiles(Folder, "board*.json"))
+        foreach (var f in _pre?.BoardFiles ?? Directory.GetFiles(Folder, "board*.json"))
         {
             if (!ConflictName.IsMatch(Path.GetFileName(f))) continue;
             var copy = TryRead(f);
@@ -1687,4 +1805,10 @@ public sealed class BoardStore
         _watcher?.Dispose();
         _watcher = null;
     }
+}
+
+/// <summary>A break within a day: away from the computer ("afk"), lunch, or something private.</summary>
+public sealed record Break(TimeSpan Start, TimeSpan End, string Kind = "afk")
+{
+    public static readonly string[] Kinds = { "afk", "lunch", "private" };
 }

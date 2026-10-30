@@ -64,6 +64,7 @@ static class Dev
         else if (open == "report-month") App.Current.Dispatcher.BeginInvoke(() => ReportWindow.Show(App.Store, App.Settings.Layer, DateTime.Today, month: true), DispatcherPriority.ApplicationIdle);
         else if (open == "summary") App.Current.Dispatcher.BeginInvoke(() => ReportWindow.Show(App.Store, App.Settings.Layer, DateTime.Today, month: false), DispatcherPriority.ApplicationIdle);
         else if (open == "expand") App.Current.Dispatcher.BeginInvoke(() => App.Board?.DevExpandAll(), DispatcherPriority.ApplicationIdle);
+        else if (open == "hang") { var ht = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) }; ht.Tick += (_, _) => { ht.Stop(); using var w = Watchdog.Step("a test hang (--open hang)"); System.Threading.Thread.Sleep(3500); }; ht.Start(); } // the watchdog notices it
         else if (open == "timeline") App.Current.Dispatcher.BeginInvoke(() => App.Board?.ShowTimeline(), DispatcherPriority.ApplicationIdle);
         else if (open == "drawer") App.Current.Dispatcher.BeginInvoke(() => App.Board?.RevealBacklog(), DispatcherPriority.ApplicationIdle);
         else if (open?.StartsWith("palette") == true) App.Current.Dispatcher.BeginInvoke(() => App.Board?.DevPalette(open.Length > 8 ? open[8..] : ""), DispatcherPriority.ApplicationIdle);
@@ -652,19 +653,27 @@ static class Dev
                 otStore.Overtime("2026-10-21").Count == 1 && otStore.OvertimeHours("2026-10-21") == 3 && otStore.WorkHours("2026-10-21", "09:00", "17:00") == ("08:00", "16:00")
                 && Report.Build(otStore, "work", new DateTime(2026, 10, 19), new DateTime(2026, 10, 25), month: false).Overtime == 3);
             // AFK breaks: overlapping ones join, the report counts them, undo takes one back; the end of work set by hand stays
-            otStore.SetAfk("2026-10-21", new[] { (TimeSpan.FromHours(12), TimeSpan.FromHours(12.5)), (TimeSpan.FromHours(12.25), TimeSpan.FromHours(13)) });
+            otStore.SetBreaks("2026-10-21", new[] { new Break(TimeSpan.FromHours(12), TimeSpan.FromHours(12.5)), new Break(TimeSpan.FromHours(12.25), TimeSpan.FromHours(13)), new Break(TimeSpan.FromHours(12.5), TimeSpan.FromHours(12.75), "private") });
             otStore.Checkpoint(); // as the day view does before each change
-            otStore.SetAfk("2026-10-21", otStore.Afk("2026-10-21").Append((TimeSpan.FromHours(15), TimeSpan.FromHours(15.25))));
-            bool afkJoined = otStore.Afk("2026-10-21").Count == 2 && otStore.AfkHours("2026-10-21") == 1.25
-                && Report.Build(otStore, "work", new DateTime(2026, 10, 19), new DateTime(2026, 10, 25), month: false).Afk == 1.25;
+            otStore.SetBreaks("2026-10-21", otStore.Breaks("2026-10-21").Append(new Break(TimeSpan.FromHours(15), TimeSpan.FromHours(15.25), "lunch")));
+            bool afkJoined = otStore.Breaks("2026-10-21").Count == 3 && otStore.BreakHours("2026-10-21") == 1.5 && otStore.Breaks("2026-10-21").Count(b => b.Kind == "lunch") == 1
+                && Report.Build(otStore, "work", new DateTime(2026, 10, 19), new DateTime(2026, 10, 25), month: false).Afk == 1.5;
             otStore.Undo();
-            bool afkUndone = otStore.Afk("2026-10-21").Count == 1 && otStore.AfkHours("2026-10-21") == 1;
+            bool afkUndone = otStore.Breaks("2026-10-21").Count == 2 && otStore.BreakHours("2026-10-21") == 1.25;
+            // the default lunch: on a working day without breaks of its own, not on a Sunday, not on a day whose breaks were all removed
+            var lunchWas = App.Settings.Lunch;
+            App.Settings.Lunch = "12:00-12:30";
+            otStore.SetBreaks("2026-10-20", Array.Empty<Break>());
+            bool lunch = otStore.Breaks("2026-10-22").SingleOrDefault()?.Kind == "lunch" && otStore.Breaks("2026-10-25").Count == 0 && otStore.Breaks("2026-10-20").Count == 0;
+            otStore.ResetBreaks("2026-10-20");
+            lunch &= otStore.Breaks("2026-10-20").Count == 1;
+            App.Settings.Lunch = lunchWas;
             otStore.SetWorkHours("2026-10-21", "08:00", "15:00", endSet: true);
             otStore.SetWorkHours("2026-10-21", "07:00", "15:00");
             bool endKept = otStore.EndSet("2026-10-21") && otStore.WorkHours("2026-10-21", "09:00", "17:00") == ("07:00", "15:00");
             otStore.SetWorkHours("2026-10-21", null, null);
-            Check("AFK: overlapping breaks join, the report counts them, undo takes the last one back; an end set by hand stays set, the defaults clear it",
-                afkJoined && afkUndone && endKept && !otStore.EndSet("2026-10-21"), $"{afkJoined} {afkUndone} {endKept}");
+            Check("breaks: overlapping ones of one kind join (AFK, lunch, private), the report counts them, undo takes the last back; the default lunch on working days only, a day can remove it; an end set by hand stays",
+                afkJoined && afkUndone && endKept && lunch && !otStore.EndSet("2026-10-21"), $"{afkJoined} {afkUndone} {endKept} {lunch}");
             var dayA = new DayInfo { Afk = new() { "10:00-10:30" }, AfkAt = new DateTime(2026, 10, 1), WorkStart = "08:00", WorkEnd = "16:00", HoursAt = new DateTime(2026, 10, 2) };
             var dayB = new DayInfo { Afk = new() { "11:00-11:15" }, AfkAt = new DateTime(2026, 10, 3), WorkStart = "09:00", WorkEnd = "17:00", HoursAt = new DateTime(2026, 10, 1) };
             var mergedDay = DayInfo.Merge(dayA, dayB);
@@ -738,6 +747,15 @@ static class Dev
             pcA.CheckDisk(); pcB.CheckDisk(); pcA.SaveNow(); pcB.SaveNow(); Drive(); pcA.CheckDisk(); pcB.CheckDisk();
             Check("sync: both computers' new tasks survive every order of saving and copying",
                 new[] { "nowe w pracy", "nowe w domu", "z pracy (zmienione)" }.All(x => Has(pcA, x) && Has(pcB, x)));
+            // the same, reading the folder first the way the timers do it (in the background), then saving / merging from those reads
+            pcA.Add(new TaskItem { Text = "w tle A", Day = "2026-10-23" });
+            pcA.SaveFromPrefetch();
+            pcB.Add(new TaskItem { Text = "w tle B", Day = "2026-10-23" });
+            pcB.SaveFromPrefetch();
+            Drive();
+            pcA.CheckFromPrefetch(); pcB.CheckFromPrefetch(); pcA.SaveFromPrefetch(); pcB.SaveFromPrefetch(); Drive(); pcA.CheckFromPrefetch(); pcB.CheckFromPrefetch();
+            Check("sync from background reads: both computers' tasks reach both, nothing lost on the way",
+                new[] { "w tle A", "w tle B", "nowe w pracy", "nowe w domu" }.All(x => Has(pcA, x) && Has(pcB, x)));
             try { Directory.Delete(fa, true); Directory.Delete(fb, true); } catch { }
 
             // the same for the settings: each computer writes its own file, the newest one is taken

@@ -110,6 +110,7 @@ public partial class App : Application
         ApplyTheme();
 
         if (Dev.Arg("--selftest") is { } testOut) { Dev.SelfTest(testOut); Shutdown(); return; }
+        Watchdog.Start(Dispatcher); // a hang of the board goes to error.log, with what it was doing
 
         if (Settings.Layer != "private") Settings.Layer = "work";
         Store = OpenLayer(Settings.Layer);
@@ -690,6 +691,7 @@ public partial class App : Application
 
     static void TrimMemory()
     {
+        using var watch = Watchdog.Step("freeing memory");
         // the system short of memory: no full collection and no emptying of the working set – every page pushed out now
         // would have to come back from a pagefile that is already busy, and the board would stall on each move
         var info = GC.GetGCMemoryInfo();

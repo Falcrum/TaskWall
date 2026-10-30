@@ -1146,6 +1146,8 @@ public partial class BoardWindow
         if (e.Key == Key.F11 && !IsSecond) { e.Handled = true; ToggleMax(); return; }
         if (e.Key is Key.OemQuestion or Key.Divide && Keyboard.Modifiers == ModifierKeys.Control) { e.Handled = true; HelpWindow.ShowHelp(); return; } // the cheat sheet
         if (Keyboard.FocusedElement is TextBox) return;
+        // the day view: ↑ ↓ pick a block, Alt+↑ ↓ move it, Alt+Shift+↑ ↓ change its length, Esc lets it go
+        if (_view == ViewMode.Day && _dayView?.HandleKey(e) == true) { e.Handled = true; return; }
         // the task under the mouse: Space = next state (○ → ◐ → ✓), Shift+1/2/3 = priority (! !! !!!), Shift+0 = none,
         // F2 = edit, Delete = to the bin
         // the arrows: a task picked with ↑ ↓ (then ← → go to the next day, Ctrl+← → takes it along)

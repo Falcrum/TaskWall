@@ -49,6 +49,7 @@ public sealed class HelpWindow : DarkWindow
             ("Ctrl+K", "paleta poleceń: widok, data („pt”, „T45”), nowe zadanie, szukanie, akcje zaznaczonego zadania"),
             ("↑ ↓ · ← →", "zaznacz zadanie i chodź po dniach (Spacja, Shift+1…3, F2, Enter działają na zaznaczonym); Ctrl+← → przenosi je o dzień; Esc odznacza"),
             ("F11", "tablica na cały ekran pod paskiem i z powrotem"),
+            ("Alt+↑ ↓ · Alt+Shift+↑ ↓", "widok dnia: ↑ ↓ zaznacza blok (zadanie, przerwę), Alt+↑ ↓ przesuwa go o kwadrans (kolejne zadania robią miejsce), Alt+Shift+↑ ↓ skraca / wydłuża; przy przeciąganiu Alt: bez przesuwania kolejnych"),
             ("Ctrl+Z", "cofnij"),
             ("Spacja (kursor na zadaniu)", "następny stan: ○ do zrobienia → ◐ w trakcie → ✓ zrobione"),
             ("Shift+1 · 2 · 3 · 0 (kursor na zadaniu)", "priorytet: niski · średni · wysoki · brak"),
