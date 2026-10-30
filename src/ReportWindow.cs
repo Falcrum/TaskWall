@@ -70,7 +70,8 @@ public sealed class Report
         return (days.Count, review, tests, hold);
     }
 
-    public static Report Build(BoardStore store, string layer, DateTime from, DateTime to, bool month)
+    /// <param name="insights">false: only the period's own numbers (the year view's middle part), not the board-wide stuck / held / estimate lists</param>
+    public static Report Build(BoardStore store, string layer, DateTime from, DateTime to, bool month, bool insights = true)
     {
         var r = new Report { Account = App.AccountName(layer), Month = month, From = from.Date, To = to.Date };
         var keys = new HashSet<string>();
@@ -92,6 +93,7 @@ public sealed class Report
                 store.Data.Tasks.Count(t => t.WorkedDays?.Contains(key) == true), store.OvertimeHours(key), d <= DateTime.Today ? store.BreakHours(key) : 0)); // breaks: only days already lived (the default lunch would fill the future)
         }
         r.Carried = store.Data.Tasks.Where(t => !t.Done && t.WorkedDays?.Any(keys.Contains) == true && t.Day != null && !keys.Contains(t.Day)).ToList();
+        if (!insights) return r;
         r.Projects = Insights.ByProject(Insights.Cycles(store.Data.Tasks, r.From, r.To));
         r.Stuck = store.Data.Tasks.Select(t => (t, Insights.DaysInState(t))).Where(x => x.Item2 >= Insights.StuckDays).OrderByDescending(x => x.Item2).ToList();
         r.Held = store.Data.Tasks.Where(t => t.IsHold && !t.Archived).Select(t => (t, Insights.DaysOnHold(t))).OrderByDescending(x => x.Item2).ToList();
