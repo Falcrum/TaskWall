@@ -645,6 +645,7 @@ static partial class L
         ("Filtr widoku w Notion wybiera tylko statusy, których w bazie już nie ma ({0}) – popraw filtr widoku w Notion.", "The Notion view's filter picks only statuses the database no longer has ({0}) – fix the view's filter in Notion."),
         ("Notion odrzucił filtr widoku:", "Notion refused the view's filter:"),
         ("Zmiany statusów w Notion:", "Status changes in Notion:"),
+        ("filtr widoku odrzucony przez Notion – przypisane do mnie", "the view's filter refused by Notion – assigned to me"),
         ("filtr widoku w Notion wskazuje statusy, których już nie ma ({0}) – pominięte, popraw filtr w Notion", "the Notion view's filter names statuses that are gone ({0}) – left out, fix the filter in Notion"),
         ("nowy status „{0}” (zakończony – pomijany)", "new status “{0}” (finished – skipped)"),
         ("nowy status „{0}” – wczytywany", "new status “{0}” – read"),

@@ -322,6 +322,7 @@ static class NotionSync
         if (filter == null && link.OnlyMine && await MineFilter() is { } mine) filter = mine;
         List<Page> pages;
         bool capped;
+        bool fellBack = false;
         for (int attempt = 0; ; attempt++)
         {
             try { (pages, capped) = await Query(filter); break; }
@@ -329,6 +330,16 @@ static class NotionSync
             {
                 filter = Pruned();
                 if (filter == null && link.OnlyMine && await MineFilter() is { } mine2) filter = mine2;
+            }
+            catch (MissingOption mo) when (!fellBack && viewFilter != null && MineFilterNow() is { } mine3)
+            {
+                // the view's filter can't be mended (written in a shape not understood here): the pages assigned to me,
+                // with the chosen statuses applied here, rather than nothing – and its shape in the log, to fix it for good
+                Log.Error("notion: the view's filter was refused (" + mo.Message + "): " + viewFilter.Value.GetRawText());
+                filter = mine3;
+                fellBack = true;
+                viewFiltered = false;
+                viewName = (viewName ?? L.T("widok")) + " · " + L.T("filtr widoku odrzucony przez Notion – przypisane do mnie");
             }
         }
         // a view whose filter the API doesn't give out (e.g. Notion's own "My tasks" views): with too many pages,
@@ -366,16 +377,38 @@ static class NotionSync
             if (kept.Count == 1) return (kept[0]!.DeepClone(), null);
             return (new System.Text.Json.Nodes.JsonObject { [op] = kept }, null);
         }
-        if (o["property"] is System.Text.Json.Nodes.JsonValue pv && pv.TryGetValue<string>(out var prop))
-            foreach (var type in new[] { "status", "select", "multi_select" })
-                if (o[type] is System.Text.Json.Nodes.JsonObject cond)
-                    foreach (var (key, negative) in new[] { ("equals", false), ("does_not_equal", true), ("contains", false), ("does_not_contain", true) })
-                        if (cond[key] is System.Text.Json.Nodes.JsonValue v && v.TryGetValue<string>(out var option) && !exists(prop, option))
-                        {
-                            dropped.Add(option);
-                            return (null, negative);
-                        }
-        return (node, null);
+        // one condition, whatever its shape (the property by name or by id, one option or a list of them, nested a level
+        // deeper): a missing option anywhere in it – it matches nothing ("is not …": everything); a list keeps the rest
+        string prop = (o["property"] ?? o["property_id"]) is System.Text.Json.Nodes.JsonValue pv && pv.TryGetValue<string>(out var p) ? p : "";
+        var leaf = o.DeepClone().AsObject();
+        var constant = Scrub(leaf, prop, exists, dropped, false);
+        return constant == null ? (leaf, null) : (null, constant);
+    }
+
+    /// <summary>Takes the missing options out of one condition; a constant when the condition itself goes (see <see cref="Prune"/>).</summary>
+    static bool? Scrub(System.Text.Json.Nodes.JsonObject obj, string prop, Func<string, string, bool> exists, List<string> dropped, bool negative)
+    {
+        foreach (var (key, value) in obj.ToList())
+        {
+            if (key is "property" or "property_id" or "type" || value == null) continue;
+            bool neg = negative || key.Contains("not", StringComparison.OrdinalIgnoreCase);
+            switch (value)
+            {
+                case System.Text.Json.Nodes.JsonValue v when v.TryGetValue<string>(out var option) && !exists(prop, option):
+                    dropped.Add(option);
+                    return neg;
+                case System.Text.Json.Nodes.JsonArray list:
+                    var gone = list.Where(x => x is System.Text.Json.Nodes.JsonValue xv && xv.TryGetValue<string>(out var xs) && !exists(prop, xs)).ToList();
+                    if (gone.Count == 0) break;
+                    foreach (var g in gone) { dropped.Add(g!.GetValue<string>()); list.Remove(g); }
+                    if (list.Count == 0) return neg;
+                    break;
+                case System.Text.Json.Nodes.JsonObject inner:
+                    if (Scrub(inner, prop, exists, dropped, neg) is { } c) return c;
+                    break;
+            }
+        }
+        return null;
     }
 
     /// <summary>

@@ -394,6 +394,9 @@ static class Dev
                 Check("notion: a view filter naming a removed status loses only that condition (nothing left to match = refused)",
                     pc == null && goneOptions.SequenceEqual(new[] { "Zaakceptowany" }) && pruned!.ToJsonString() == """{"and":[{"property":"Przypisanie","people":{"contains":"me"}},{"property":"status","status":{"equals":"W toku"}}]}"""
                     && onlyGone.Constant == false);
+                var oddShape = NotionSync.Prune(System.Text.Json.Nodes.JsonNode.Parse("""{"or":[{"property_id":"%3Ab","status":{"is_any_of":["W toku","Zaakceptowany"]}},{"property":"status","type":"status","status":{"value":{"does_not_equal":"Zaakceptowany"}}}]}""")!, (_, o) => o != "Zaakceptowany", new());
+                Check("notion: a removed status is found in any shape of a condition (property id, a list of options, nested)",
+                    oddShape.Constant == true && NotionSync.Prune(System.Text.Json.Nodes.JsonNode.Parse("""{"property_id":"%3Ab","status":{"is_any_of":["W toku","Zaakceptowany"]}}""")!, (_, o) => o != "Zaakceptowany", new()).Node!.ToJsonString() == """{"property_id":"%3Ab","status":{"is_any_of":["W toku"]}}""");
                 var renamedLink = new NotionLink
                 {
                     KnownStatuses = new() { "Not started", "In progress", "Accepted", "Done" }, ReadStatuses = new() { "Not started", "In progress", "Accepted" },
