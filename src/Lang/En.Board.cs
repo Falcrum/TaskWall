@@ -641,5 +641,15 @@ static partial class L
         ("Wróciły do backlogu", "Back in the backlog"),
         ("zadań czeka w backlogu", "tasks waiting in the backlog"),
         ("{0} estymacji", "{0} of estimate"),
+        // 0.41.1: statuses renamed / removed in Notion
+        ("Filtr widoku w Notion wybiera tylko statusy, których w bazie już nie ma ({0}) – popraw filtr widoku w Notion.", "The Notion view's filter picks only statuses the database no longer has ({0}) – fix the view's filter in Notion."),
+        ("Notion odrzucił filtr widoku:", "Notion refused the view's filter:"),
+        ("Zmiany statusów w Notion:", "Status changes in Notion:"),
+        ("filtr widoku w Notion wskazuje statusy, których już nie ma ({0}) – pominięte, popraw filtr w Notion", "the Notion view's filter names statuses that are gone ({0}) – left out, fix the filter in Notion"),
+        ("nowy status „{0}” (zakończony – pomijany)", "new status “{0}” (finished – skipped)"),
+        ("nowy status „{0}” – wczytywany", "new status “{0}” – read"),
+        ("status „{0}” nazywa się teraz „{1}”", "status “{0}” is now called “{1}”"),
+        ("statusu „{0}” nie ma już w bazie", "status “{0}” is no longer in the database"),
+        ("żaden z wybranych statusów już nie istnieje – wczytywane są wszystkie poza zakończonymi (wybierz je ponownie w ustawieniach)", "none of the chosen statuses exists any more – all but the finished ones are read (choose them again in the settings)"),
     };
 }

@@ -518,6 +518,8 @@ public partial class App : Application
             Resources["DialogBg"] = new SolidColorBrush(Th.Light ? Wallpaper.Surface(tint, 0.955, 0.06) : Wallpaper.Surface(tint, 0.105, 0.30));
             Resources["CardBg"] = new SolidColorBrush(Th.Light ? Wallpaper.Surface(tint, 0.99, 0.03) : Wallpaper.Surface(tint, 0.15, 0.28));
         }
+        // the top bar's glow is drawn in the accent: follow it (an "auto" accent is only known once the wallpaper is read)
+        _clock?.ApplyGlow();
     }
 
     // ---------- placement ----------

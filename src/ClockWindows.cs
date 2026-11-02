@@ -202,7 +202,7 @@ public sealed class ClockWindow : GlassWindow
 
     readonly Border _glow = new();
 
-    void ApplyGlow() => _glow.Background = Glow.Enabled ? Glow.Bottom() : null;
+    public void ApplyGlow() => _glow.Background = Glow.Enabled ? Glow.Bottom() : null;
 
     public void ApplySettings() { ApplyGlow(); BuildMeters(false); UpdateWeather(); _shown = ""; UpdateText(); }
 

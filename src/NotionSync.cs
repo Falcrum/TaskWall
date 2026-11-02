@@ -145,7 +145,16 @@ static class NotionSync
     /// Reads the database – through the filter of the view from the link (e.g. "Dla mnie": assigned to me, chosen
     /// statuses), so only those pages come in. Stops at <see cref="NotionLink.MaxPages"/> instead of flooding the backlog.
     /// </summary>
-    public static async Task<(string Title, List<Page> Pages, string? MeId, string? ViewName, bool Capped, bool ViewFiltered, List<string>? Statuses)> Read(NotionLink link, NotionLink? tokenFrom = null)
+    /// <summary>The database's statuses as Notion has them now: names in order, ids (id → name), groups (name → 0 to-do, 1 in progress, 2 complete).</summary>
+    public sealed record Statuses(List<string> Names, Dictionary<string, string>? Ids, Dictionary<string, int>? Groups);
+
+    /// <summary>Notion refused the query over an option the filter names but the database no longer has.</summary>
+    sealed class MissingOption(string option, string message) : InvalidOperationException(message)
+    {
+        public string Option { get; } = option;
+    }
+
+    public static async Task<(string Title, List<Page> Pages, string? MeId, string? ViewName, bool Capped, bool ViewFiltered, Statuses? Statuses, List<string> Dropped)> Read(NotionLink link, NotionLink? tokenFrom = null)
     {
         var token = Token(tokenFrom ?? link) ?? throw new InvalidOperationException(L.T("Brak tokenu (albo został zapisany na innym koncie Windows) – wklej go ponownie."));
         var id = NotionImport.ExtractId(link.Database) ?? throw new InvalidOperationException(L.T("Nie rozpoznaję linku do bazy. Skopiuj link do widoku bazy (••• → Copy link to view)."));
@@ -206,6 +215,11 @@ static class NotionSync
                 if (cursor != null) body["start_cursor"] = cursor;
                 JsonDocument q;
                 try { q = await Call(token, HttpMethod.Post, $"data_sources/{sourceId}/query", body); }
+                // 'status option "Zaakceptowany" not found for property "status"': the view's filter names a status renamed / removed in Notion
+                catch (NotionError e) when (e.Code == HttpStatusCode.BadRequest && System.Text.RegularExpressions.Regex.Match(e.Message, "option \"(.+?)\" not found") is { Success: true } m)
+                {
+                    throw new MissingOption(m.Groups[1].Value, L.T("Notion odrzucił filtr widoku:") + " " + e.Message);
+                }
                 catch (NotionError e) when (e.Code is HttpStatusCode.NotFound or HttpStatusCode.BadRequest)
                 {
                     throw new InvalidOperationException(L.T("Nie widzę tej bazy. Sprawdź link i to, czy masz do niej dostęp w Notion na koncie, z którego jest token.") + " (" + e.Message + ")");
@@ -224,6 +238,10 @@ static class NotionSync
         // the database's columns: all its statuses (for the settings, also those no page has yet) and the people columns
         var peopleProps = new List<string>();
         List<string>? schemaStatuses = null;
+        Dictionary<string, string>? statusIds = null;
+        Dictionary<string, int>? statusGroups = null;
+        // the options of every status / select column, by its name and its id (a view's filter may use either)
+        var options = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
         var columns = new List<string>();
         try
         {
@@ -236,11 +254,36 @@ static class NotionSync
                     var type = pr.Value.TryGetProperty("type", out var t) ? t.GetString() : null;
                     if (type != null) columns.Add(pr.Name + ": " + type);
                     if (type == "people") peopleProps.Add(pr.Name);
+                    if (type is "status" or "select" or "multi_select" && pr.Value.TryGetProperty(type, out var od) && od.TryGetProperty("options", out var all))
+                    {
+                        var names = all.EnumerateArray().Select(o => o.TryGetProperty("name", out var on) ? on.GetString() ?? "" : "").Where(n => n.Length > 0).ToHashSet(StringComparer.Ordinal);
+                        options[pr.Name] = names;
+                        if (pr.Value.TryGetProperty("id", out var pid) && pid.GetString() is { Length: > 0 } propId) options[propId] = names;
+                    }
                     if (type != "status" || mainFound) continue;
                     bool main = IsMainStatus(pr.Name.Trim().ToLowerInvariant());
                     if (schemaStatuses != null && !main) continue;
                     if (pr.Value.TryGetProperty("status", out var sd) && sd.TryGetProperty("options", out var opts))
+                    {
                         schemaStatuses = opts.EnumerateArray().Select(o => o.GetProperty("name").GetString() ?? "").Where(n => n.Length > 0).ToList();
+                        statusIds = new();
+                        foreach (var o in opts.EnumerateArray())
+                            if (o.TryGetProperty("id", out var oid) && oid.GetString() is { Length: > 0 } idv && o.TryGetProperty("name", out var on) && on.GetString() is { Length: > 0 } nm) statusIds[idv] = nm;
+                        // Notion's three groups, always in this order: To-do, In progress, Complete
+                        statusGroups = null;
+                        if (sd.TryGetProperty("groups", out var gs) && gs.ValueKind == JsonValueKind.Array)
+                        {
+                            statusGroups = new();
+                            int gi = 0;
+                            foreach (var g in gs.EnumerateArray())
+                            {
+                                if (g.TryGetProperty("option_ids", out var oids) && oids.ValueKind == JsonValueKind.Array)
+                                    foreach (var x in oids.EnumerateArray())
+                                        if (x.GetString() is { } xs && statusIds.TryGetValue(xs, out var gn)) statusGroups[gn] = Math.Min(gi, 2);
+                                gi++;
+                            }
+                        }
+                    }
                     mainFound = main;
                 }
             }
@@ -260,8 +303,34 @@ static class NotionSync
         Task<JsonElement?> MineFilter() => Task.FromResult(MineFilterNow());
 
         bool viewFiltered = filter != null; // the view's own filter (the finished statuses are its business then)
+        // statuses renamed or removed in Notion that the view's filter still names: taken out of the filter (Notion would
+        // refuse the whole query), also the ones Notion itself names in its refusal when the columns couldn't be read
+        var viewFilter = filter;
+        var missing = new HashSet<string>(StringComparer.Ordinal);
+        var dropped = new List<string>();
+        JsonElement? Pruned()
+        {
+            if (viewFilter is not { } vf) return null;
+            dropped.Clear();
+            var (node, constant) = Prune(System.Text.Json.Nodes.JsonNode.Parse(vf.GetRawText())!,
+                (prop, option) => !missing.Contains(option) && (!options.TryGetValue(prop, out var set) || set.Contains(option)), dropped);
+            if (constant == false)
+                throw new InvalidOperationException(L.F("Filtr widoku w Notion wybiera tylko statusy, których w bazie już nie ma ({0}) – popraw filtr widoku w Notion.", string.Join(", ", dropped.Distinct())));
+            return constant == true ? null : JsonSerializer.SerializeToElement(node);
+        }
+        filter = Pruned();
         if (filter == null && link.OnlyMine && await MineFilter() is { } mine) filter = mine;
-        var (pages, capped) = await Query(filter);
+        List<Page> pages;
+        bool capped;
+        for (int attempt = 0; ; attempt++)
+        {
+            try { (pages, capped) = await Query(filter); break; }
+            catch (MissingOption mo) when (attempt < 8 && viewFilter != null && missing.Add(mo.Option))
+            {
+                filter = Pruned();
+                if (filter == null && link.OnlyMine && await MineFilter() is { } mine2) filter = mine2;
+            }
+        }
         // a view whose filter the API doesn't give out (e.g. Notion's own "My tasks" views): with too many pages,
         // read the ones assigned to me instead of nothing
         if (capped && filter == null && await MineFilter() is { } mineOnly)
@@ -270,8 +339,108 @@ static class NotionSync
             viewName = (viewName ?? L.T("widok")) + " · " + L.T("przypisane do mnie");
         }
         if (columns.Count > 0) link.KnownColumns = columns;
-        return (title, pages, me, viewName, capped, viewFiltered, schemaStatuses);
+        return (title, pages, me, viewName, capped, viewFiltered, schemaStatuses == null ? null : new Statuses(schemaStatuses, statusIds, statusGroups), dropped.Distinct().ToList());
     }
+
+    /// <summary>
+    /// A view's filter without its conditions on options the database no longer has, read as Notion would read them:
+    /// "is X" matches nothing, "is not X" everything; an "and" with a part that matches nothing matches nothing, an "or"
+    /// keeps its other parts. Returns the filter left, or a constant (true: no filter at all, false: nothing matches).
+    /// </summary>
+    internal static (System.Text.Json.Nodes.JsonNode? Node, bool? Constant) Prune(System.Text.Json.Nodes.JsonNode node, Func<string, string, bool> exists, List<string> dropped)
+    {
+        if (node is not System.Text.Json.Nodes.JsonObject o) return (node, null);
+        foreach (var op in new[] { "and", "or" })
+        {
+            if (o[op] is not System.Text.Json.Nodes.JsonArray parts) continue;
+            bool and = op == "and";
+            var kept = new System.Text.Json.Nodes.JsonArray();
+            foreach (var part in parts)
+            {
+                if (part == null) continue;
+                var (n, c) = Prune(part, exists, dropped);
+                if (c == !and) return (null, !and); // and: a part matching nothing; or: a part matching everything
+                if (c == null) kept.Add(n!.DeepClone());
+            }
+            if (kept.Count == 0) return (null, and);
+            if (kept.Count == 1) return (kept[0]!.DeepClone(), null);
+            return (new System.Text.Json.Nodes.JsonObject { [op] = kept }, null);
+        }
+        if (o["property"] is System.Text.Json.Nodes.JsonValue pv && pv.TryGetValue<string>(out var prop))
+            foreach (var type in new[] { "status", "select", "multi_select" })
+                if (o[type] is System.Text.Json.Nodes.JsonObject cond)
+                    foreach (var (key, negative) in new[] { ("equals", false), ("does_not_equal", true), ("contains", false), ("does_not_contain", true) })
+                        if (cond[key] is System.Text.Json.Nodes.JsonValue v && v.TryGetValue<string>(out var option) && !exists(prop, option))
+                        {
+                            dropped.Add(option);
+                            return (null, negative);
+                        }
+        return (node, null);
+    }
+
+    /// <summary>
+    /// The database's statuses changed in Notion: the chosen ones follow. A renamed status (the same Notion id) keeps
+    /// its place under the new name, a new one is read unless Notion counts it as complete (or its name says finished),
+    /// a removed one is let go – and a choice left empty goes back to the default (all but the finished ones) rather
+    /// than reading nothing. Returns what changed, for the sync's result line.
+    /// </summary>
+    internal static List<string> Adapt(NotionLink link, Statuses? now)
+    {
+        var notes = new List<string>();
+        if (now == null || now.Names.Count == 0) return notes;
+        var exists = now.Names.ToHashSet(StringComparer.Ordinal);
+        var before = (link.KnownStatuses ?? new()).ToHashSet(StringComparer.Ordinal);
+        var renamed = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (link.StatusIds != null && now.Ids != null)
+            foreach (var (id, name) in now.Ids)
+                if (link.StatusIds.TryGetValue(id, out var old) && old != name) renamed[old] = name;
+        bool Known(string s) => before.Contains(s) || renamed.ContainsValue(s)
+            || (link.StatusIds != null && now.Ids != null && now.Ids.Any(kv => kv.Value == s && link.StatusIds.ContainsKey(kv.Key)));
+        var added = before.Count == 0 ? new List<string>() : now.Names.Where(s => !Known(s)).ToList();
+        bool Finished(string s) => now.Groups != null && now.Groups.TryGetValue(s, out var g) ? g == 2 : NotionImport.LooksDone(s);
+
+        List<string>? Follow(List<string>? list, bool read)
+        {
+            if (list == null) return null;
+            var result = new List<string>();
+            foreach (var s in list)
+            {
+                var n = renamed.TryGetValue(s, out var r) ? r : s;
+                if (exists.Contains(n) && !result.Contains(n)) result.Add(n);
+            }
+            if (read) result.AddRange(added.Where(s => !Finished(s) && !result.Contains(s)));
+            return result;
+        }
+        foreach (var (old, name) in renamed) notes.Add(L.F("status „{0}” nazywa się teraz „{1}”", old, name));
+        if (link.ReadStatuses != null)
+            foreach (var s in added) notes.Add(Finished(s) ? L.F("nowy status „{0}” (zakończony – pomijany)", s) : L.F("nowy status „{0}” – wczytywany", s));
+        foreach (var s in (link.ReadStatuses ?? new()).Concat(link.SkipStatuses ?? new()).Distinct().Where(s => !renamed.ContainsKey(s) && !exists.Contains(s)))
+            notes.Add(L.F("statusu „{0}” nie ma już w bazie", s));
+        var read = Follow(link.ReadStatuses, true);
+        if (read is { Count: 0 } && link.ReadStatuses is { Count: > 0 })
+        {
+            read = null; // none of the chosen ones is left: the default, not an empty board
+            notes.Add(L.T("żaden z wybranych statusów już nie istnieje – wczytywane są wszystkie poza zakończonymi (wybierz je ponownie w ustawieniach)"));
+        }
+        if (!SameList(read, link.ReadStatuses)) link.ReadStatuses = read;
+        var skip = Follow(link.SkipStatuses, false);
+        if (!SameList(skip, link.SkipStatuses)) link.SkipStatuses = skip;
+        if (now.Ids is { Count: > 0 }) link.StatusIds = now.Ids;
+        link.StatusGroups = now.Groups;
+        return notes;
+    }
+
+    static bool SameList(List<string>? a, List<string>? b) => a == null ? b == null : b != null && a.SequenceEqual(b);
+
+    /// <summary>Notion's group of a status: 0 to-do, 1 in progress, 2 complete, -1 not known.</summary>
+    static int Group(NotionLink link, string? status) => status != null && link.StatusGroups != null && link.StatusGroups.TryGetValue(status, out var g) ? g : -1;
+
+    /// <summary>Finished in Notion: its name says so, or Notion has it in the "Complete" group (whatever it is called).</summary>
+    static bool IsDone(NotionLink link, string? status) => NotionImport.LooksDone(status) || Group(link, status) == 2;
+
+    /// <summary>Being worked on: its name says so, or Notion has it in the "In progress" group and nothing more specific fits.</summary>
+    static bool IsInProgress(NotionLink link, string? status) => LooksInProgress(status)
+        || (Group(link, status) == 1 && !LooksOnHold(status) && !LooksInReview(status) && !LooksInTests(status));
 
     /// <summary>A short "?v=" id → the full view id (views of the database, matched by prefix).</summary>
     static async Task<string?> FindView(string token, string databaseId, string prefix)
@@ -396,7 +565,7 @@ static class NotionSync
         var conditions = (link.Conditions ?? new()).Select(Condition.Parse).Where(c => c != null).Select(c => c!).ToList();
         // not read: a status outside the chosen ones (or a skipped / finished one) and pages failing the extra conditions
         bool Skipped(string? status) => status != null && (read != null ? !read.Contains(status)
-            : skip.Contains(status) || (link.SkipStatuses == null && !viewFiltered && NotionImport.LooksDone(status)));
+            : skip.Contains(status) || (link.SkipStatuses == null && !viewFiltered && IsDone(link, status)));
         bool Excluded(Page page) => Skipped(page.Status) || conditions.Any(c => !c.Matches(page));
         foreach (var page in pages)
         {
@@ -414,7 +583,7 @@ static class NotionSync
                     Id = "notion-" + page.Id.Replace("-", ""), // the same id on every computer: two PCs importing the same page merge into one task
                     Text = title, NotionTitle = title, NotionId = page.Id, Url = page.Url,
                     Status = page.Status, Priority = page.Priority, Estimate = page.Estimate, Order = order++, ParentNotionId = page.ParentId,
-                    Started = LooksInProgress(page.Status) || LooksInReview(page.Status) || LooksInTests(page.Status) ? true : null,
+                    Started = IsInProgress(link, page.Status) || LooksInReview(page.Status) || LooksInTests(page.Status) ? true : null,
                     Review = LooksInReview(page.Status) ? true : null,
                     Testing = LooksInTests(page.Status) ? true : null,
                     Hold = LooksOnHold(page.Status) ? true : null,
@@ -448,14 +617,14 @@ static class NotionSync
                     if (LooksOnHold(page.Status)) t.Hold = true;
                     else if (LooksInTests(page.Status)) { t.Hold = null; t.Started = true; t.Review = null; t.Testing = true; }
                     else if (LooksInReview(page.Status)) { t.Hold = null; t.Started = true; t.Review = true; t.Testing = null; }
-                    else if (LooksInProgress(page.Status)) { t.Hold = null; t.Started = true; t.Review = null; t.Testing = null; }
+                    else if (IsInProgress(link, page.Status)) { t.Hold = null; t.Started = true; t.Review = null; t.Testing = null; }
                     else t.Hold = null; // another status: no longer held
                     t.NoteState(Days.Key(DateTime.Today)); // the day keeps the state Notion gave it
                 }
             }
             if (page.Priority != t.Priority) { t.Priority = page.Priority; changed = true; }
             if (page.Estimate != null && page.Estimate != t.Estimate) { t.Estimate = page.Estimate; changed = true; }
-            if (link.SyncDone && !t.Done && NotionImport.LooksDone(page.Status)) { t.Done = true; changed = true; }
+            if (link.SyncDone && !t.Done && IsDone(link, page.Status)) { t.Done = true; changed = true; }
             if (page.Url != t.Url) { t.Url = page.Url; changed = true; }
             if (page.ParentId != t.ParentNotionId) { t.ParentNotionId = page.ParentId; changed = true; }
             var source = link.Name.Length > 0 ? link.Name : null;
@@ -497,7 +666,7 @@ static class NotionSync
         System.Text.RegularExpressions.Regex.IsMatch(status, @"\btest|\bqa\b|testowan", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     public static bool LooksInProgress(string? status) => status != null &&
-        System.Text.RegularExpressions.Regex.IsMatch(status, @"w trakcie|in progress|doing|started|rozpocz|realizacj|wip", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        System.Text.RegularExpressions.Regex.IsMatch(status, @"w trakcie|w toku|w pracy|in progress|in work|working|ongoing|doing|started|rozpocz|realizacj|wip", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     /// <summary>
     /// Reads and applies all Notion databases of one account (one token, the options of the first one). Each database
@@ -528,17 +697,22 @@ static class NotionSync
                 var label = link.Name.Length > 0 ? link.Name + ": " : sources.Count > 1 ? L.T("baza") + " " + (sources.IndexOf(link) + 1) + ": " : "";
                 try
                 {
-                    var (_, pages, me, viewName, capped, filtered, schemaStatuses) = await Read(link, main);
+                    var (_, pages, me, viewName, capped, filtered, statuses, dropped) = await Read(link, main);
                     if (capped)
                         throw new InvalidOperationException(L.F("Ten widok ma ponad {0} zadań – nic nie wczytałem. Użyj widoku z filtrami (np. przypisane do mnie) albo podnieś limit.", link.MaxPages));
+                    // statuses renamed / added / removed in Notion: the chosen ones follow before the pages are applied
+                    var notes = Adapt(link, statuses);
+                    if (dropped.Count > 0) notes.Insert(0, L.F("filtr widoku w Notion wskazuje statusy, których już nie ma ({0}) – pominięte, popraw filtr w Notion", string.Join(", ", dropped)));
+                    foreach (var n in notes) Log.Error($"notion sync {layer} {link.Name}: {n}");
                     var (a, u) = Apply(store, link, pages, me, viewFiltered: filtered, complete: !capped); // without the view's filter the finished statuses stay out
                     added += a; updated += u; total += pages.Count;
                     // all statuses of the database in Notion's order (and any a page has that the list lacks)
-                    link.KnownStatuses = (schemaStatuses ?? new()).Concat(pages.Select(p => p.Status).Where(s => s != null).Select(s => s!).OrderBy(s => s)).Distinct().ToList();
+                    link.KnownStatuses = (statuses?.Names ?? new()).Concat(pages.Select(p => p.Status).Where(s => s != null).Select(s => s!).OrderBy(s => s)).Distinct().ToList();
                     link.LastSync = DateTime.Now;
                     link.ViewName = viewName;
                     link.LastResult = $"{DateTime.Now:HH:mm}: " + (viewName != null ? L.F("widok „{0}”", viewName) + " · " : link.UseViewFilter && ViewId(link.Database) == null ? L.T("cała baza (link bez widoku)") + " · " : "")
-                        + L.F("stron {0}, nowe {1}, zmienione {2}", pages.Count, a, u) + (link.OnlyMine && me == null ? " " + L.T("(nie udało się ustalić „moich”)") : "");
+                        + L.F("stron {0}, nowe {1}, zmienione {2}", pages.Count, a, u) + (link.OnlyMine && me == null ? " " + L.T("(nie udało się ustalić „moich”)") : "")
+                        + (notes.Count > 0 ? "\n" + L.T("Zmiany statusów w Notion:") + " " + string.Join("; ", notes) : "");
                     parts.Add(label + L.F("stron {0}, nowe {1}, zmienione {2}", pages.Count, a, u));
                 }
                 catch (Exception ex)

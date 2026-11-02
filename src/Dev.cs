@@ -386,6 +386,32 @@ static class Dev
                 var before = ns.Data.Tasks.Count;
                 NotionSync.Apply(ns, only, new() { qaPage, page with { Id = "r2", Title = "Testowane", Status = "Tested" }, page with { Id = "r3", Title = "Nowe", Status = "Not started" } }, "me-1");
                 Check("notion: only the chosen statuses, pages failing a condition left out", ns.Data.Tasks.Count == before + 1 && ns.Data.Tasks.Any(t => t.NotionId == "r3"));
+                // the producers renamed the statuses: the view's filter still names a removed one, the chosen ones follow by id
+                var viewFlt = System.Text.Json.Nodes.JsonNode.Parse("""{"and":[{"property":"Przypisanie","people":{"contains":"me"}},{"or":[{"property":"status","status":{"equals":"W toku"}},{"property":"status","status":{"equals":"Zaakceptowany"}}]}]}""")!;
+                var goneOptions = new System.Collections.Generic.List<string>();
+                var (pruned, pc) = NotionSync.Prune(viewFlt, (_, o) => o != "Zaakceptowany", goneOptions);
+                var onlyGone = NotionSync.Prune(System.Text.Json.Nodes.JsonNode.Parse("""{"and":[{"property":"Przypisanie","people":{"contains":"me"}},{"property":"status","status":{"equals":"Zaakceptowany"}}]}""")!, (_, o) => o != "Zaakceptowany", new());
+                Check("notion: a view filter naming a removed status loses only that condition (nothing left to match = refused)",
+                    pc == null && goneOptions.SequenceEqual(new[] { "Zaakceptowany" }) && pruned!.ToJsonString() == """{"and":[{"property":"Przypisanie","people":{"contains":"me"}},{"property":"status","status":{"equals":"W toku"}}]}"""
+                    && onlyGone.Constant == false);
+                var renamedLink = new NotionLink
+                {
+                    KnownStatuses = new() { "Not started", "In progress", "Accepted", "Done" }, ReadStatuses = new() { "Not started", "In progress", "Accepted" },
+                    StatusIds = new() { ["a"] = "Not started", ["b"] = "In progress", ["x"] = "Accepted", ["c"] = "Done" },
+                };
+                var notes = NotionSync.Adapt(renamedLink, new NotionSync.Statuses(new() { "Do zrobienia", "W toku", "Do testów", "Zarchiwizowany", "Done" },
+                    new() { ["a"] = "Do zrobienia", ["b"] = "W toku", ["d"] = "Do testów", ["e"] = "Zarchiwizowany", ["c"] = "Done" },
+                    new() { ["Do zrobienia"] = 0, ["W toku"] = 1, ["Do testów"] = 1, ["Zarchiwizowany"] = 2, ["Done"] = 2 }));
+                var lostLink = new NotionLink { ReadStatuses = new() { "Accepted" } }; // nothing known from before: no status counts as new
+                NotionSync.Adapt(lostLink, new NotionSync.Statuses(new() { "Do zrobienia", "Done" }, null, null));
+                Check("notion: renamed statuses stay chosen, a new one is read (a complete one not), a removed one goes; none left = the default",
+                    renamedLink.ReadStatuses!.SequenceEqual(new[] { "Do zrobienia", "W toku", "Do testów" }) && notes.Count == 5 && lostLink.ReadStatuses == null);
+                var grouped = new NotionLink { Name = "Grupy", StatusGroups = new() { ["Robię"] = 1, ["Odebrane"] = 2 } };
+                NotionSync.Apply(ns, grouped, new() { page with { Id = "g1", Title = "Grupa", Status = "Robię" } }, "me-1");
+                bool groupStarted = ns.Data.Tasks.FirstOrDefault(t => t.NotionId == "g1")?.IsStarted == true;
+                NotionSync.Apply(ns, grouped, new() { page with { Id = "g1", Title = "Grupa", Status = "Odebrane" } }, "me-1", viewFiltered: true);
+                Check("notion: a status whose name says nothing follows Notion's group (In progress → started, Complete → done)",
+                    groupStarted && ns.Data.Tasks.FirstOrDefault(t => t.NotionId == "g1")?.Done == true && NotionSync.LooksInProgress("W toku"));
                 var atProject = SmartAdd.Parse("@foa Fryzury napisz do jan@firma.pl", cats, wed, projects: new[] { "FoA", "Tuathan" });
                 Check("smart add: @project (any case) sets the project, an e-mail address stays", atProject.Project == "FoA" && atProject.Text == "Fryzury napisz do jan@firma.pl"
                     && SmartAdd.Parse("@Nieznany x", cats, wed, projects: new[] { "FoA" }).Project == null);

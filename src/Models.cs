@@ -742,6 +742,10 @@ public sealed class NotionLink
     public string? LastResult { get; set; }
     /// <summary>Statuses seen in the database at the last sync (for the settings).</summary>
     public List<string>? KnownStatuses { get; set; }
+    /// <summary>The status options' Notion ids at the last sync (id → name): a status renamed in Notion stays chosen under its new name.</summary>
+    public Dictionary<string, string>? StatusIds { get; set; }
+    /// <summary>Notion's group of each status (0 to-do, 1 in progress, 2 complete): what a status means when its name doesn't say it.</summary>
+    public Dictionary<string, int>? StatusGroups { get; set; }
     [System.Text.Json.Serialization.JsonIgnore] public bool Configured => Database.Length > 0 && TokenProtected != null;
 }
 

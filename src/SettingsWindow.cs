@@ -757,7 +757,7 @@ public sealed class SettingsWindow : DarkWindow
             dbState.Foreground = v.Length > 0 && id == null ? new SolidColorBrush(Color.FromRgb(0xF2, 0xA6, 0x5A)) : Ui.Res("FgDim");
         }
         db.TextChanged += (_, _) => ShowDbState();
-        db.LostKeyboardFocus += (_, _) => { if (db.Text.Trim() != link.Database) { link.Database = db.Text.Trim(); SettingsStore.Save(S); } };
+        db.LostKeyboardFocus += (_, _) => { if (db.Text.Trim() != link.Database) { if (NotionImport.ExtractId(db.Text.Trim()) != NotionImport.ExtractId(link.Database)) { link.KnownStatuses = null; link.StatusIds = null; link.StatusGroups = null; } link.Database = db.Text.Trim(); SettingsStore.Save(S); } };
         ShowDbState();
         p.Children.Add(Pair(L.T("Link do bazy"), db));
         p.Children.Add(dbState);

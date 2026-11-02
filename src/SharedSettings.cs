@@ -225,7 +225,7 @@ static class SharedSettings
                 {
                     var link = acc.Notion;
                     var database = n["Database"]?.GetValue<string>() ?? link.Database;
-                    if (database != link.Database) { link.LastSync = null; link.LastResult = null; link.KnownStatuses = null; link.ViewName = null; }
+                    if (database != link.Database) { link.LastSync = null; link.LastResult = null; link.KnownStatuses = null; link.ViewName = null; link.StatusIds = null; link.StatusGroups = null; }
                     link.Database = database;
                     link.Name = n["Name"]?.GetValue<string>() ?? link.Name;
                     link.Color = n["Color"]?.GetValue<string>() ?? link.Color;
