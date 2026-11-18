@@ -10,7 +10,7 @@
     <AssemblyName>TaskWall</AssemblyName>
     <RootNamespace>TaskWall</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.41.2</Version>
+    <Version>0.42.0</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <Product>TaskWall</Product>
     <!-- smaller memory footprint for a tray-style app -->
@@ -21,6 +21,9 @@
 
   <ItemGroup>
     <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="7" />
+    <!-- the unit tests are their own project (dotnet test tests/TaskWall.Tests) -->
+    <Compile Remove="tests/**" />
+    <None Remove="tests/**" />
   </ItemGroup>
 
 </Project>

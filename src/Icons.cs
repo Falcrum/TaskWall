@@ -79,6 +79,13 @@ static class Icons
     }
 
     /// <summary>‹ and › of the top bar.</summary>
+    /// <summary>Start: four rounded squares (the Windows Start button's idea, not its logo).</summary>
+    public static FrameworkElement Start(double s = 18) => Box(s,
+        Fill("M4,5.5 A1.5,1.5 0 0 1 5.5,4 H10.6 V10.6 H4 Z M13.4,4 H18.5 A1.5,1.5 0 0 1 20,5.5 V10.6 H13.4 Z M4,13.4 H10.6 V20 H5.5 A1.5,1.5 0 0 1 4,18.5 Z M13.4,13.4 H20 V18.5 A1.5,1.5 0 0 1 18.5,20 H13.4 Z"));
+
+    /// <summary>The tray's hidden icons: a chevron pointing up (down when the bar is at the top of the screen).</summary>
+    public static FrameworkElement Caret(bool up, double s = 14) => Box(s, Line(up ? "M6.5,15 L12,9.5 L17.5,15" : "M6.5,9.5 L12,15 L17.5,9.5", 2));
+
     public static FrameworkElement Chevron(bool right, double s = 14) => Box(s, Line(right ? "M9.5,5 L16.5,12 L9.5,19" : "M14.5,5 L7.5,12 L14.5,19", 2));
 
     /// <summary>"More": three dots.</summary>

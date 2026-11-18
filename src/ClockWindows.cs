@@ -54,15 +54,10 @@ public sealed class ClockWindow : GlassWindow
 {
     public const double BarHeight = 40;
 
-    readonly TextBlock _time = new() { FontSize = 21, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
-    readonly TextBlock _date = new() { FontSize = 11, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 2, 0, 0) };
-    readonly TextBlock _chevron = new() { Text = "▾", FontSize = 10, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 2, 0, 0) };
-    readonly StackPanel _weather = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
-    readonly StackPanel _meters = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right };
-    readonly Dictionary<string, Meter> _rings = new();
-    readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
+    readonly ClockFace _clock = new();
+    readonly WeatherBadge _weather = new();
+    readonly LoadMeters _meters = new();
     readonly CalendarWindow _calendar = new();
-    string _shown = "", _meterSet = "";
     bool _narrow;
 
     public double Scale { get; private set; } = 1;
@@ -76,42 +71,37 @@ public sealed class ClockWindow : GlassWindow
         Foreground = Ui.Res("Fg");
         Frame.VerticalAlignment = VerticalAlignment.Top;
         _calendar.KeepAbove = this;
-        _date.Foreground = Ui.Res("FgDim");
-        _chevron.Foreground = Ui.Res("FgFaint");
 
         // the middle: "19:43  PONIEDZIAŁEK 26 PAŹDZIERNIK ▾" – a click opens the month under it
-        var clock = new StackPanel { Orientation = Orientation.Horizontal };
-        clock.Children.Add(_time);
-        clock.Children.Add(_date);
-        clock.Children.Add(_chevron);
-        var middle = new Border { Child = clock, Padding = new Thickness(12, 0, 10, 0), Margin = new Thickness(0, 4, 0, 4), CornerRadius = new CornerRadius(9), Cursor = Cursors.Hand, ToolTip = L.T("Kalendarz") };
-        Anim.HoverBackground(middle, Colors.Transparent, Th.Ink(0x18));
         // a click on the clock while the calendar is open: pressing the mouse already closed it (it lost the focus) – don't open it again
-        middle.MouseLeftButtonUp += (_, e) => { e.Handled = true; if (!_calendar.JustClosed) _calendar.Toggle(); };
-        Grid.SetColumn(middle, 1);
+        _clock.Clicked += () => { if (!_calendar.JustClosed) _calendar.Toggle(); };
+        _clock.TenMinutes += _weather.Update; // the "now" reading gets old
+        Grid.SetColumn(_clock, 1);
 
         var grid = new Grid { Height = BarHeight, Margin = new Thickness(16, 0, 14, 0) };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.Children.Add(_weather);
-        grid.Children.Add(middle);
+        grid.Children.Add(_clock);
         Grid.SetColumn(_meters, 2);
         grid.Children.Add(_meters);
         grid.MouseRightButtonUp += (_, e) => { e.Handled = true; App.Instance.ShowSettings(); };
-        grid.SizeChanged += (_, e) => { bool narrow = e.NewSize.Width < 820; if (narrow != _narrow) { _narrow = narrow; UpdateWeather(); BuildMeters(true); } };
+        grid.SizeChanged += (_, e) =>
+        {
+            bool narrow = e.NewSize.Width < 820;
+            if (narrow == _narrow) return;
+            _narrow = _weather.Narrow = _meters.Narrow = narrow;
+            _weather.Update();
+            _meters.Build(true, IsVisible);
+        };
         // Poświata: the board's light from its top goes on up into the bar (from its bottom edge), so the two read as one
         _glow.Child = grid;
         Body = _glow;
 
-        _timer.Tick += (_, _) => UpdateText();
-        _timer.Start();
-        SysMeters.Updated += r => Dispatcher.BeginInvoke(() => ShowMeters(r));
-        WeatherService.Changed += UpdateWeather;
-        IsVisibleChanged += (_, _) => BuildMeters(false);
+        IsVisibleChanged += (_, _) => _meters.Build(false, IsVisible);
         ApplyGlow();
-        UpdateText();
-        UpdateWeather();
+        _weather.Update();
     }
 
     public void SetScale(double scale)
@@ -120,164 +110,17 @@ public sealed class ClockWindow : GlassWindow
         ApplyScale(scale);
         Frame.Height = BarHeight * scale;
         _calendar.SetScale(scale);
-        UpdateWeather();
-        BuildMeters(true);
-    }
-
-    public void UpdateText()
-    {
-        var now = DateTime.Now;
-        var time = App.Settings.Use24h ? now.ToString("HH:mm") : now.ToString("h:mm", CultureInfo.InvariantCulture);
-        // PONIEDZIAŁEK 26 PAŹDZIERNIK / MONDAY 26 OCTOBER (month in the nominative, like a wall calendar)
-        var date = L.LongDay(now);
-        if (time + date == _shown) return;
-        bool newMinute = _shown.Length > 0;
-        _shown = time + date;
-        _time.Text = time;
-        _date.Text = App.Settings.Use24h ? date : $"{date} · {now.ToString("tt", CultureInfo.InvariantCulture)}";
-        if (newMinute && now.Minute % 10 == 0) UpdateWeather(); // the "now" reading gets old
+        _weather.Update();
+        _meters.Build(true, IsVisible);
     }
 
     public void Open() => _calendar.Toggle(true);
-
-    // ---------- weather now ----------
-
-    void UpdateWeather()
-    {
-        _weather.Children.Clear();
-        if (!App.Settings.BarWeather || WeatherService.Current is not { } w) return;
-        var (symbol, desc) = WeatherService.Describe(w.Code);
-        if (!w.Day && w.Code <= 2) symbol = "☾"; // clear or a few clouds at night
-        _weather.Children.Add(new TextBlock { Text = symbol, FontFamily = new FontFamily("Segoe UI Symbol"), FontSize = 17, Foreground = Ui.Res("AccentBrush"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) });
-        _weather.Children.Add(new TextBlock { Text = $"{Math.Round(w.Temp):0}°", FontSize = 17, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
-        var line = new TextBlock { FontSize = 11, Foreground = Ui.Res("FgDim"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 2, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis };
-        line.Inlines.Add(new Run(desc));
-        if (!_narrow)
-        {
-            if (w.Feels is { } f && Math.Abs(f - w.Temp) >= 1) line.Inlines.Add(new Run("  ·  " + L.F("odczuwalna {0}°", Math.Round(f))) { Foreground = Ui.Res("FgFaint") });
-            var today = WeatherService.On(DateTime.Today);
-            // like the day headers: today's max / min, the chance of rain and how much, the wind now
-            if (today != null)
-                line.Inlines.Add(new Run($"  ·  {Math.Round(today.Max):0}°/{Math.Round(today.Min):0}°"
-                    + (today.Rain is { } r && r > 0 ? $"  ☂ {r}%" + (today.Mm is >= 0.1 and var mm ? " · " + mm.ToString(mm < 10 ? "0.#" : "0", L.Culture) + " mm" : "") : "")) { Foreground = Ui.Res("FgFaint") });
-            if (w.Wind is { } wn)
-            {
-                line.Inlines.Add(new Run("  ·  ") { Foreground = Ui.Res("FgFaint") });
-                line.Inlines.Add(new InlineUIContainer(Icons.Wind(Ui.Res("FgFaint"), 12)) { BaselineAlignment = BaselineAlignment.Center });
-                line.Inlines.Add(new Run($" {Math.Round(wn):0} km/h") { Foreground = Ui.Res("FgFaint") });
-            }
-        }
-        _weather.Children.Add(line);
-        var day = WeatherService.On(DateTime.Today);
-        _weather.ToolTip = $"{App.Settings.Weather.City}\n{desc}, {Math.Round(w.Temp):0}°"
-            + (w.Feels is { } ff ? "\n" + L.F("odczuwalna {0}°", Math.Round(ff)) : "")
-            + (w.Wind is { } wi ? "\n" + L.F("wiatr {0} km/h", Math.Round(wi)) : "")
-            + (day?.Rain is { } dr ? "\n" + L.F("szansa opadów {0}%", dr) : "")
-            + (day?.Mm is { } dmm ? "\n" + L.F("opady: {0} mm", dmm.ToString("0.#", L.Culture)) : "")
-            + (w.Humidity is { } h ? "\n" + L.F("wilgotność {0}%", h) : "")
-            + "\n" + L.F("pomiar z {0}", w.At.ToString("HH:mm"));
-    }
-
-    // ---------- the computer's load ----------
-
-    /// <summary>The rings chosen in Settings; reading runs only while the bar is on screen.</summary>
-    void BuildMeters(bool force)
-    {
-        var kinds = App.Settings.Meters.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(SysMeters.Kinds.Contains).Distinct().ToList();
-        var set = string.Join(",", kinds) + _narrow;
-        if (force || set != _meterSet)
-        {
-            _meterSet = set;
-            _meters.Children.Clear();
-            _rings.Clear();
-            foreach (var k in kinds)
-            {
-                var m = new Meter(k, !_narrow);
-                _rings[k] = m;
-                _meters.Children.Add(m.Root);
-            }
-        }
-        if (IsVisible && kinds.Count > 0) SysMeters.Start(); else SysMeters.Stop();
-    }
 
     readonly Border _glow = new();
 
     public void ApplyGlow() => _glow.Background = Glow.Enabled ? Glow.Bottom() : null;
 
-    public void ApplySettings() { ApplyGlow(); BuildMeters(false); UpdateWeather(); _shown = ""; UpdateText(); }
-
-    void ShowMeters(Dictionary<string, MeterValue> values)
-    {
-        foreach (var (k, ring) in _rings)
-            if (values.TryGetValue(k, out var v)) ring.Set(v);
-    }
-
-    /// <summary>A ring that fills with the load, the symbol of what it measures inside, the number next to it.</summary>
-    sealed class Meter
-    {
-        static readonly Dictionary<string, (Color Color, string Name)> Kinds = new()
-        {
-            ["cpu"] = (Color.FromRgb(0xF2, 0x6B, 0x4A), "CPU"),
-            ["gpu"] = (Color.FromRgb(0x3F, 0xD6, 0x8C), "GPU"),
-            ["ram"] = (Color.FromRgb(0xF2, 0xD1, 0x3D), "RAM"),
-            ["disk"] = (Color.FromRgb(0x5B, 0x9B, 0xFF), L.T("Dysk")),
-            ["net"] = (Color.FromRgb(0xB3, 0x82, 0xFF), L.T("Sieć")),
-        };
-        const double Size = 22, Thick = 2.3;
-
-        public readonly FrameworkElement Root;
-        readonly System.Windows.Shapes.Path _arc;
-        readonly TextBlock _text;
-        double _shown = -1;
-
-        public Meter(string kind, bool label)
-        {
-            var (color, name) = Kinds[kind];
-            var ring = new Grid { Width = Size, Height = Size, VerticalAlignment = VerticalAlignment.Center };
-            ring.Children.Add(new System.Windows.Shapes.Ellipse { Stroke = Ui.Brush(Th.Ink(0x2A)), StrokeThickness = Thick });
-            _arc = new System.Windows.Shapes.Path { Stroke = Ui.Brush(color), StrokeThickness = Thick, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round };
-            ring.Children.Add(_arc);
-            var icon = Icons.Meter(kind, Ui.Res("Fg"), 10); // a quiet white symbol: only the ring is in colour
-            icon.Opacity = 0.75;
-            icon.HorizontalAlignment = HorizontalAlignment.Center;
-            icon.VerticalAlignment = VerticalAlignment.Center;
-            ring.Children.Add(icon);
-            _text = new TextBlock { Text = "–", FontSize = 10.5, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0), Width = 26, Foreground = Ui.Res("FgDim") };
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(6, 0, 0, 0), Background = Brushes.Transparent, ToolTip = name };
-            row.Children.Add(ring);
-            if (label) row.Children.Add(_text);
-            else row.Margin = new Thickness(5, 0, 0, 0);
-            Root = row;
-        }
-
-        public void Set(MeterValue v)
-        {
-            Root.ToolTip = v.Detail;
-            double p = Math.Clamp(v.Percent, 0, 100);
-            _text.Text = $"{Math.Round(p):0}%";
-            if (Math.Abs(p - _shown) < 0.5) return;
-            _shown = p;
-            _arc.Data = Arc(p);
-        }
-
-        /// <summary>The filled part of the ring, clockwise from the top.</summary>
-        static Geometry Arc(double percent)
-        {
-            double r = (Size - Thick) / 2, c = Size / 2;
-            if (percent <= 0.5) return Geometry.Empty;
-            if (percent >= 99.5) return new EllipseGeometry(new Point(c, c), r, r);
-            double a = percent / 100 * 2 * Math.PI;
-            var end = new Point(c + r * Math.Sin(a), c - r * Math.Cos(a));
-            var g = new StreamGeometry();
-            using (var ctx = g.Open())
-            {
-                ctx.BeginFigure(new Point(c, c - r), false, false);
-                ctx.ArcTo(end, new Size(r, r), 0, percent > 50, SweepDirection.Clockwise, true, false);
-            }
-            g.Freeze();
-            return g;
-        }
-    }
+    public void ApplySettings() { ApplyGlow(); _meters.Build(false, IsVisible); _weather.Update(); _clock.Refresh(); }
 }
 
 /// <summary>The month calendar that opens under the top bar's date (Todowall-style), on its own glass.</summary>
@@ -292,6 +135,9 @@ public sealed class CalendarWindow : GlassWindow
 
     public double Scale { get; private set; } = 1;
     public bool IsOpen => _open;
+
+    /// <summary>Grows upwards from the bottom of its window (the full-width bar at the bottom of the screen).</summary>
+    public bool OpensUp { set => Frame.VerticalAlignment = value ? VerticalAlignment.Bottom : VerticalAlignment.Top; }
 
     public CalendarWindow()
     {

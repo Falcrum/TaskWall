@@ -14,7 +14,15 @@ static class Native
     public static readonly IntPtr HWND_BOTTOM = new(1);
     public static readonly IntPtr HWND_TOP = IntPtr.Zero;
     public const uint SWP_NOSIZE = 0x0001, SWP_NOMOVE = 0x0002, SWP_NOZORDER = 0x0004, SWP_NOACTIVATE = 0x0010;
-    public const uint GW_HWNDPREV = 3;
+    public const uint GW_HWNDNEXT = 2, GW_HWNDPREV = 3;
+    [DllImport("user32.dll")] public static extern IntPtr GetTopWindow(IntPtr hWnd);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr GetProp(IntPtr hWnd, string name);
+
+    /// <summary>
+    /// A full-screen window of Rustyfiles' experimental desktop (it marks them with this property): it lives right
+    /// above the desktop, where the board lives too – the board stays above it and counts it as the desktop.
+    /// </summary>
+    public static bool IsDesktopCover(IntPtr hwnd) => GetProp(hwnd, "rustyfiles.DesktopCover") != IntPtr.Zero;
 
     [StructLayout(LayoutKind.Sequential)]
     public struct WINDOWPOS

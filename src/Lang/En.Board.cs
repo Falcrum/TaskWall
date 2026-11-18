@@ -652,5 +652,14 @@ static partial class L
         ("status „{0}” nazywa się teraz „{1}”", "status “{0}” is now called “{1}”"),
         ("statusu „{0}” nie ma już w bazie", "status “{0}” is no longer in the database"),
         ("żaden z wybranych statusów już nie istnieje – wczytywane są wszystkie poza zakończonymi (wybierz je ponownie w ustawieniach)", "none of the chosen statuses exists any more – all but the finished ones are read (choose them again in the settings)"),
+        // 0.42: the full-width bar
+        ("Pasek na całą szerokość ekranu (jak pasek zadań)", "A bar across the whole screen (like the taskbar)"),
+        ("Zamiast paska nad tablicą: jeden pasek przez cały ekran – Start i pogoda po lewej, obciążenie, ikony zasobnika i zegar z kalendarzem po prawej. Windows rezerwuje dla niego miejsce jak dla paska zadań (zmaksymalizowane okna się pod niego nie wsuwają). Przy grze i filmie na pełnym ekranie chowa się i nic nie odświeża. Gdy TaskWall nagle się zamknie (awaria), osobny strażnik oddaje to miejsce.", "Instead of the bar over the board: one bar across the whole screen – Start and the weather on the left, the load, the tray's icons and the clock with the calendar on the right. Windows reserves its strip like the taskbar's (maximised windows stop at it). A full-screen game or film hides it and nothing is refreshed. When TaskWall suddenly closes (a crash), a separate guard gives the strip back."),
+        ("Położenie paska na całą szerokość", "Position of the full-width bar"),
+        ("Góra ekranu", "Top of the screen"),
+        ("Dół ekranu", "Bottom of the screen"),
+        ("Start", "Start"),
+        ("Ukryte ikony zasobnika", "Hidden tray icons"),
+        ("Pasek na całą szerokość trzy razy zakończył się awarią w ciągu 10 minut – tym razem TaskWall startuje bez niego (ze zwykłym paskiem nad tablicą). Szczegóły w error.log.", "The full-width bar crashed three times in 10 minutes – this time TaskWall starts without it (with the usual bar over the board). Details in error.log."),
     };
 }

@@ -1159,6 +1159,14 @@ public sealed class SettingsWindow : DarkWindow
         p.Children.Add(Check(L.T("Uruchamiaj razem z Windows"), S.StartWithWindows, v => S.StartWithWindows = v));
         p.Children.Add(Check(L.T("Pasek u góry ekranu"), S.ShowClock, v => S.ShowClock = v,
             L.T("Wąski pasek nad tablicą, tak szeroki jak ona: pogoda teraz po lewej, godzina i data w środku (kliknięcie otwiera kalendarz miesiąca), obciążenie komputera po prawej.")));
+        p.Children.Add(Check(L.T("Pasek na całą szerokość ekranu (jak pasek zadań)"), S.AppBar, v => S.AppBar = v,
+            L.T("Zamiast paska nad tablicą: jeden pasek przez cały ekran – Start i pogoda po lewej, obciążenie, ikony zasobnika i zegar z kalendarzem po prawej. Windows rezerwuje dla niego miejsce jak dla paska zadań (zmaksymalizowane okna się pod niego nie wsuwają). Przy grze i filmie na pełnym ekranie chowa się i nic nie odświeża. Gdy TaskWall nagle się zamknie (awaria), osobny strażnik oddaje to miejsce.")));
+        var barPos = new ComboBox { Width = 200 };
+        barPos.Items.Add(new ComboBoxItem { Content = L.T("Góra ekranu"), Tag = true });
+        barPos.Items.Add(new ComboBoxItem { Content = L.T("Dół ekranu"), Tag = false });
+        barPos.SelectedIndex = S.AppBarTop ? 0 : 1;
+        barPos.SelectionChanged += (_, _) => { if (barPos.SelectedItem is ComboBoxItem it) { S.AppBarTop = (bool)it.Tag; App.Instance.ApplySettings(); } };
+        p.Children.Add(Pair(L.T("Położenie paska na całą szerokość"), barPos));
         p.Children.Add(Check(L.T("Pogoda teraz na pasku"), S.BarWeather, v => S.BarWeather = v, L.T("Potrzebuje miejscowości w sekcji Pogoda. Odświeżana co 30 minut.")));
         // the load rings: one tick per kind, the order stays CPU, GPU, RAM, disk, network
         var meters = new WrapPanel();

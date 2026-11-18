@@ -42,6 +42,13 @@ public partial class App : Application
 
     ClockWindow? _clock;
     public static ClockWindow? Clock => Instance._clock;
+    /// <summary>The full-width bar (Settings → Ogólne), while it is on.</summary>
+    BarWindow? _bar;
+    /// <summary>The bar crashed TaskWall three times in ten minutes: this run goes without it (the guard's count).</summary>
+    bool _barBlocked;
+    bool FullBar => Settings.AppBar && !_barBlocked;
+    /// <summary>The month calendar of the bar on screen (the full-width one or the old one over the board).</summary>
+    public static CalendarWindow? ActiveCalendar => Instance._bar?.Calendar ?? Instance._clock?.Calendar;
     SettingsWindow? _settingsWindow;
     TrayIcon? _tray;
     Mutex? _mutex;
@@ -65,6 +72,8 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        // the full-width bar's guard: a second copy waiting for the main one (no window, no mutex, nothing else)
+        if (Dev.Arg("--guard") is { } guardPid && int.TryParse(guardPid, out var watched)) { Guard.Run(watched); Shutdown(); return; }
         if (Dev.Arg("--data") == null) SettingsStore.MigrateFromDeskWall();
         try { var boot = SettingsStore.Load(); SharedSettings.Pull(boot); L.Set(boot.Language); } catch { /* Polish */ }
         // installer switches (TaskWall-Setup.exe, --install, --uninstall) run before anything else
@@ -122,6 +131,19 @@ public partial class App : Application
         CalendarService.Changed += () => { foreach (var b in Boards) b.OnExternalChange(quiet: true); };
 
         SetupTray();
+        _barBlocked = Settings.AppBar && Guard.CrashLoop();
+        if (_barBlocked)
+            Dispatcher.BeginInvoke(() => _tray?.Balloon("TaskWall", L.T("Pasek na całą szerokość trzy razy zakończył się awarią w ciągu 10 minut – tym razem TaskWall startuje bez niego (ze zwykłym paskiem nad tablicą). Szczegóły w error.log.")), DispatcherPriority.ApplicationIdle);
+        // the locked screen and sleep: the full-width bar stops like for a full-screen program
+        SystemEvents.SessionSwitch += (_, a) =>
+        {
+            if (a.Reason is SessionSwitchReason.SessionLock or SessionSwitchReason.SessionUnlock)
+                Dispatcher.BeginInvoke(() => _bar?.Pause(a.Reason == SessionSwitchReason.SessionLock));
+        };
+        SystemEvents.PowerModeChanged += (_, a) =>
+        {
+            if (a.Mode is PowerModes.Suspend or PowerModes.Resume) Dispatcher.BeginInvoke(() => _bar?.Pause(a.Mode == PowerModes.Suspend));
+        };
         SystemEvents.DisplaySettingsChanged += (_, _) => Dispatcher.BeginInvoke(ApplySettings);
         // no polling: the wallpaper is read at start-up, after settings changes, on "Odśwież tapetę"
         // and when Windows itself reports a new wallpaper (free event)
@@ -407,6 +429,9 @@ public partial class App : Application
     {
         foreach (var s in Stores.Values)
             try { s.SaveNow(); } catch (Exception ex) { Log.Error("save on exit", ex); }
+        // the bar gives its strip of the screen back; the guard sees a clean exit and ends
+        try { _bar?.Undock(); } catch (Exception ex) { Log.Error("bar on exit", ex); }
+        if (_bar != null || Settings.AppBar) Guard.CleanExit();
         _tray?.Dispose();
         base.OnExit(e);
     }
@@ -426,6 +451,8 @@ public partial class App : Application
         }
         _clock.SetScale(Settings.UiScale);
         _clock.ApplySettings();
+        _bar?.SetScale(Settings.UiScale);
+        _bar?.ApplySettings();
         LayoutWindows();
         RegisterHotkey();
         ScheduleGlass();
@@ -520,6 +547,7 @@ public partial class App : Application
         }
         // the top bar's glow is drawn in the accent: follow it (an "auto" accent is only known once the wallpaper is read)
         _clock?.ApplyGlow();
+        _bar?.ApplyGlow();
     }
 
     // ---------- placement ----------
@@ -529,8 +557,33 @@ public partial class App : Application
         if (Board == null || _clock == null) return;
         var mon = Monitors.Pick(Settings.Monitor);
         double s = mon.Scale, ui = Settings.UiScale;
-        var wa = mon.Work;
         int P(double dip) => (int)Math.Round(dip * s);
+        // the full-width bar first: it reserves its strip, the work area (read again below) is then the rest of the screen
+        PxRect? strip = null;
+        if (FullBar)
+        {
+            if (_bar == null)
+            {
+                _bar = new BarWindow();
+                _bar.Moved += LayoutWindows;
+                _bar.SetScale(ui);
+                Anim.Enter(_bar.FrameElement, 0, Settings.AppBarTop ? -30 : 30, 520, 150);
+            }
+            var b = mon.Bounds;
+            try { strip = _bar.Dock(new PxRect(b.X, b.Y, b.Width, b.Height), Settings.AppBarTop, P(BarWindow.BarHeight * ui), s); }
+            catch (Exception ex) { Log.Error("bar dock", ex); }
+            mon = Monitors.Pick(Settings.Monitor);
+        }
+        else if (_bar != null)
+        {
+            var old = _bar;
+            _bar = null;
+            old.Undock();
+            old.Close();
+            mon = Monitors.Pick(Settings.Monitor);
+        }
+        bool clock = Settings.ShowClock && !FullBar; // the old top bar over the board: not with the full-width one
+        var wa = mon.Work;
 
         // the board as set, or (the button next to "hide") the whole screen under the top bar
         bool max = Settings.BoardMax;
@@ -539,7 +592,7 @@ public partial class App : Application
         int bw = max ? wa.Width - 2 * edge : (int)Math.Round(wa.Width * Math.Clamp(Settings.WidthPercent, 30, 100) / 100);
         double weekH = wa.Height / s * Math.Clamp(Settings.WeekHeightPercent, 5, 100) / 100;
         int barH = P(ClockWindow.BarHeight * ui);
-        int minTop = wa.Y + (Settings.ShowClock ? barH : 0) + edge;
+        int minTop = wa.Y + (clock ? barH : 0) + edge;
         int bh = max || Settings.WeekHeightPercent >= 99 ? wa.Y + wa.Height - edge - minTop // "od zegara do paska zadań": all of it
             : Math.Min(P(BoardWindow.ChromeHeight * ui + Board.HeightInWeeks * weekH), wa.Y + wa.Height - minTop - edge);
         int maxTop = Math.Max(minTop, wa.Y + wa.Height - bh - edge);
@@ -547,12 +600,18 @@ public partial class App : Application
         int left = wa.X + (wa.Width - bw) / 2;
 
         Board.PlacePhysical(left, top, bw, bh, s);
-        if (Settings.ShowClock)
+        if (clock)
         {
             // the bar as wide as the board, hanging from the top edge; the month opens under the date
             _clock.PlacePhysical(left, wa.Y, bw, barH, s);
             int cw = P(CalendarWindow.TabWidth * ui);
             _clock.Calendar.PlacePhysical(wa.X + (wa.Width - cw) / 2, wa.Y + barH + P(6), cw, P(CalendarWindow.CalendarHeight * ui), s);
+        }
+        if (_bar != null && strip is { } st)
+        {
+            // the month opens from the clock at the bar's right end: under it (bar at the top) or over it (at the bottom)
+            int cw = P(CalendarWindow.TabWidth * ui), ch = P(CalendarWindow.CalendarHeight * ui);
+            _bar.Calendar.PlacePhysical(st.Right - cw - P(12), Settings.AppBarTop ? st.Bottom + P(6) : st.Y - P(6) - ch, cw, ch, s);
         }
         if (_second != null && SecondScreen() is { } m2)
         {
@@ -568,7 +627,8 @@ public partial class App : Application
         foreach (var b in Boards)
             if (Settings.BoardHidden) { if (b.IsVisible) b.Hide(); }
             else if (!b.IsVisible) b.Show();
-        if (Settings.ShowClock) { if (!_clock.IsVisible) _clock.Show(); }
+        if (_bar != null && !_bar.Paused && !_bar.IsVisible) _bar.Show();
+        if (clock) { if (!_clock.IsVisible) _clock.Show(); }
         else
         {
             if (_clock.IsVisible) _clock.Hide();
@@ -658,6 +718,14 @@ public partial class App : Application
             _clock.SetGlass(Settings.Blur && cr.Width > 0 ? Wallpaper.RenderGlass(src, cr, blurPx) : null);
             var kr = _clock.Calendar.PhysicalRect;
             _clock.Calendar.SetGlass(Settings.Blur && kr.Width > 0 ? Wallpaper.RenderGlass(src, kr, blurPx) : null);
+            if (_bar != null)
+            {
+                // the full-width bar and its calendar: the same frosted wallpaper
+                var fr = _bar.PhysicalRect;
+                _bar.SetGlass(Settings.Blur && fr.Width > 0 ? Wallpaper.RenderGlass(src, fr, blurPx) : null);
+                var fk = _bar.Calendar.PhysicalRect;
+                _bar.Calendar.SetGlass(Settings.Blur && fk.Width > 0 ? Wallpaper.RenderGlass(src, fk, blurPx) : null);
+            }
 
             if (Wallpaper.Average(src, br) is { } avg && avg != _surfaceTint)
             {

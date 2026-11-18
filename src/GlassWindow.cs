@@ -29,8 +29,14 @@ public class GlassWindow : Window
     /// <summary>Corner radius in window DIPs.</summary>
     public double Radius { get; set; } = 22;
     public bool SquareTopCorners { get; set; }
+    /// <summary>The thin frame only on these sides (the full-width bar: the side facing the board); null = all round.</summary>
+    public Thickness? BorderSides { get => _borderSides; set { _borderSides = value; ApplyCorners(); } }
+    Thickness? _borderSides;
     /// <summary>Keep this window directly above another glass window (clock above board).</summary>
     public GlassWindow? KeepAbove { get; set; }
+    /// <summary>Always above other windows, like the taskbar (the full-width bar and its calendar) – not pushed to the desktop.</summary>
+    public bool StaysOnTop { get => _staysOnTop; set { _staysOnTop = value; Topmost = value || DevTopmost; } }
+    bool _staysOnTop;
 
     /// <summary>Rounded panel holding glass + tint + body. Its size may be smaller than the window (clock).</summary>
     protected readonly Grid Frame = new();
@@ -99,7 +105,7 @@ public class GlassWindow : Window
         _glass.CornerRadius = r;
         _tint.CornerRadius = r;
         _pattern.CornerRadius = r;
-        _tint.BorderThickness = SquareTopCorners ? new Thickness(1, 0, 1, 1) : new Thickness(1);
+        _tint.BorderThickness = BorderSides ?? (SquareTopCorners ? new Thickness(1, 0, 1, 1) : new Thickness(1));
         UpdateClip();
     }
 
@@ -237,6 +243,14 @@ public class GlassWindow : Window
                 if (prev == Hwnd) keep = true;          // already right above
                 else target = prev == IntPtr.Zero ? Native.HWND_TOP : prev;
             }
+            else
+            {
+                // Rustyfiles' desktop windows sit right above the desktop too: the board stays above them, not under (gone)
+                var (place, after) = ZOrder.Desktop(ZList(), h => Native.IsDesktopCover(new IntPtr(h)), Hwnd.ToInt64());
+                if (place == ZPlace.Keep) keep = true;
+                else if (place == ZPlace.Top) target = Native.HWND_TOP;
+                else if (place == ZPlace.After) target = new IntPtr(after);
+            }
             if (keep) wp.flags |= Native.SWP_NOZORDER;
             else
             {
@@ -246,6 +260,15 @@ public class GlassWindow : Window
             Marshal.StructureToPtr(wp, lParam, false);
         }
         return IntPtr.Zero;
+    }
+
+    /// <summary>The top-level windows, the top one first (a few hundred: a quick walk, done only when the board moves in the z-order).</summary>
+    static List<long> ZList()
+    {
+        var list = new List<long>(512);
+        for (var h = Native.GetTopWindow(IntPtr.Zero); h != IntPtr.Zero && list.Count < 5000; h = Native.GetWindow(h, Native.GW_HWNDNEXT))
+            list.Add(h.ToInt64());
+        return list;
     }
 
     // ---------- "Show desktop" + quick peek ----------
@@ -266,7 +289,7 @@ public class GlassWindow : Window
         if (_peek) { Peek(false); return; }
 
         var cls = Native.ClassName(hwnd);
-        bool isDesktop = cls is "WorkerW" or "Progman";
+        bool isDesktop = cls is "WorkerW" or "Progman" || Native.IsDesktopCover(hwnd); // Rustyfiles' desktop counts as the desktop
         if (isDesktop)
         {
             // Plain click on the desktop: desktop stays below us. Win+D: desktop is raised above us.
@@ -295,7 +318,7 @@ public class GlassWindow : Window
     static void SetAllTopmost(bool on)
     {
         foreach (var w in All.ToList())
-            if (w.IsVisible) w.Topmost = on || DevTopmost || AlwaysOnTop; // WndProc pushes it back to the bottom once Topmost is cleared
+            if (w.IsVisible && !w.StaysOnTop) w.Topmost = on || DevTopmost || AlwaysOnTop; // WndProc pushes it back to the bottom once Topmost is cleared
     }
 
     /// <summary>"Tablica nad wszystkim" from the tray: stays on top until switched off (unlike the peek).</summary>

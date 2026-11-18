@@ -768,6 +768,13 @@ public sealed class AppSettings
     public bool Use24h { get; set; } = true;
     /// <summary>The top bar: the clock and date (the calendar under them), the weather now, the computer's load.</summary>
     public bool ShowClock { get; set; } = true;
+    /// <summary>
+    /// The bar across the whole screen instead of the top bar over the board: registered with Windows like the taskbar
+    /// (its strip reserved – maximised windows stop at it). Off by default, always a choice.
+    /// </summary>
+    public bool AppBar { get; set; }
+    /// <summary>That bar at the top of the screen (false: at the bottom).</summary>
+    public bool AppBarTop { get; set; } = true;
     /// <summary>The weather now on the left of the top bar (needs a place in Settings → Pogoda).</summary>
     public bool BarWeather { get; set; } = true;
     /// <summary>The top bar's load rings on the right, in order: cpu, gpu, ram, disk, net (empty = none).</summary>
