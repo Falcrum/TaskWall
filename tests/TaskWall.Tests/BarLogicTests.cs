@@ -162,3 +162,24 @@ public class BarMetricsTests
         Assert.Equal(22, BarMetrics.Radius(56));
     }
 }
+
+public class BarProportionTests
+{
+    [Fact]
+    public void DockIconsAreAboutTwoThirdsOfTheBar()
+    {
+        foreach (var size in new[] { "large", "medium", "small" })
+        {
+            double ratio = BarMetrics.Icon(size) / BarMetrics.Height(size, dock: true);
+            Assert.InRange(ratio, 0.6, 0.7);
+        }
+    }
+
+    [Fact]
+    public void SecondaryTextFollowsTheMainText()
+    {
+        Assert.True(BarType.Secondary(17) > BarType.Secondary(13));
+        Assert.InRange(BarType.Secondary(15), 10, 11.5);
+        Assert.True(BarType.Ring(13) < BarMetrics.Height("small", false), "the small bar still holds its rings");
+    }
+}

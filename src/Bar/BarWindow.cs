@@ -140,7 +140,8 @@ public sealed class BarWindow : GlassWindow
 
         // ----- left: Start, the weather -----
         var left = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        var start = IconButton(Icons.Start(), L.T("Start"), (_, _) => Keys.Press(Keys.LWin));
+        var start = IconButton(Icons.Start(), L.T("Start"), (_, _) => ToggleStart());
+        WatchStart();
         left.Children.Add(start);
         left.Children.Add(Separator());
         left.Children.Add(_weather);
@@ -150,8 +151,10 @@ public sealed class BarWindow : GlassWindow
         // ----- right: the load, the tray's hidden icons, the clock -----
         var right = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         right.Children.Add(_meters);
+        // a line between the load and the connection / speakers, as between the other groups
+        right.Children.Add(Separator());
         // the connection and the speakers
-        _network = new NetworkButton(this) { Margin = new Thickness(10, 0, 0, 0) };
+        _network = new NetworkButton(this);
         right.Children.Add(_network);
         _volumeButton = new VolumeButton(this);
         right.Children.Add(_volumeButton);
@@ -266,6 +269,8 @@ public sealed class BarWindow : GlassWindow
         double font = BarMetrics.Font(S.BarSize);
         _weather.TextSize = font;
         _clock.TextSize = font;
+        _meters.TextSize = font;
+        _meters.Build(false, IsVisible && !Paused);
         _weather.Update();
         _sectors.Forget();
         if (want && _dock == null)
@@ -313,7 +318,8 @@ public sealed class BarWindow : GlassWindow
     /// <param name="gap">the gap round the glass (DIP, Settings → Ekran → Odstęp, as round the board)</param>
     /// <param name="ui">the UI scale (Settings → Ekran → Skala)</param>
     /// <param name="scale">the monitor's DPI scale</param>
-    public PxRect Dock(PxRect monitor, bool top, double gap, double ui, double scale)
+    /// <param name="span">where the glass stands across (physical x and width: the board's, Settings → Pasek → Szerokość); null: the screen's width less the gap</param>
+    public PxRect Dock(PxRect monitor, bool top, double gap, double ui, double scale, (int X, int W)? span = null)
     {
         int P(double dip) => (int)Math.Round(dip * scale);
         int g = P(gap), h = P(_barHeight * ui), head = P(HeadroomNow * ui);
@@ -339,13 +345,15 @@ public sealed class BarWindow : GlassWindow
         // the strip: the glass and its gap from the screen's edge (between the glass and the board the board keeps its own gap)
         var r = _appBar.Dock(monitor, top, g + h);
         StripRect = r;
-        FrameRect = new PxRect(r.X + g, top ? r.Y + g : r.Bottom - g - h, r.Width - 2 * g, h);
+        var (fx, fw) = span is { } sp && sp.W > 0 ? (Math.Max(r.X, sp.X), Math.Min(sp.W, r.Right - Math.Max(r.X, sp.X))) : (r.X + g, r.Width - 2 * g);
+        FrameRect = new PxRect(fx, top ? r.Y + g : r.Bottom - g - h, fw, h);
+        double sideL = (fx - r.X) / scale, sideR = (r.Right - fx - fw) / scale; // DIP from the window's sides to the glass
         Headroom = HeadroomNow;
         // the glass and the sectors stand in from the window's edges like the board; rounded like it (at most a pill)
         Radius = BarMetrics.Radius(_barHeight * ui);
         Frame.Height = h / scale;
-        Frame.Margin = top ? new Thickness(gap, gap, gap, 0) : new Thickness(gap, 0, gap, gap);
-        _sectors.Margin = new Thickness(gap / ui + 10, top ? gap / ui : 0, gap / ui + 12, top ? 0 : gap / ui);
+        Frame.Margin = top ? new Thickness(sideL, gap, sideR, 0) : new Thickness(sideL, 0, sideR, gap);
+        _sectors.Margin = new Thickness(sideL / ui + 10, top ? gap / ui : 0, sideR / ui + 12, top ? 0 : gap / ui);
         PlacePhysical(r.X, top ? r.Y : r.Y - head, r.Width, r.Height + head, scale);
         Guard.Watch(Hwnd);
         return r;
@@ -387,6 +395,47 @@ public sealed class BarWindow : GlassWindow
             _weather.Update();
             _meters.Build(false, true);
         }
+    }
+
+    // ---------- Start ----------
+
+    Native.WinEventProc? _startProc;
+    IntPtr _startHook;
+    bool _startFront;
+    DateTime _startClosedAt;
+    readonly Dictionary<uint, bool> _startPids = new();
+
+    /// <summary>The Start menu's own windows (StartMenuExperienceHost; Search when Start opens with it).</summary>
+    bool IsStart(IntPtr hwnd)
+    {
+        Native.GetWindowThreadProcessId(hwnd, out var pid);
+        if (_startPids.TryGetValue(pid, out var known)) return known;
+        bool start = false;
+        try { using var p = System.Diagnostics.Process.GetProcessById((int)pid); start = p.ProcessName is "StartMenuExperienceHost" or "SearchHost"; } catch { }
+        if (_startPids.Count > 200) _startPids.Clear();
+        return _startPids[pid] = start;
+    }
+
+    /// <summary>Notes when Start leaves the front: a click on the Start button that closed it (by taking the focus) must not open it again.</summary>
+    void WatchStart()
+    {
+        if (_startHook != IntPtr.Zero) return;
+        _startProc = (hook, evt, hwnd, idObject, idChild, thread, time) =>
+        {
+            if (hwnd == IntPtr.Zero) return;
+            bool start = IsStart(hwnd);
+            if (_startFront && !start) _startClosedAt = DateTime.Now;
+            _startFront = start;
+        };
+        _startHook = Native.SetWinEventHook(0x0003, 0x0003, IntPtr.Zero, _startProc, 0, 0, Native.WINEVENT_OUTOFCONTEXT);
+        Closed += (_, _) => { if (_startHook != IntPtr.Zero) Native.UnhookWinEvent(_startHook); _startHook = IntPtr.Zero; };
+    }
+
+    /// <summary>The Start button: opens Start, or – when this very click just closed it – leaves it shut (like the taskbar's button).</summary>
+    void ToggleStart()
+    {
+        if (_startFront || (DateTime.Now - _startClosedAt).TotalMilliseconds < 500) { if (_startFront) Keys.Press(Keys.Escape); return; }
+        Keys.Press(Keys.LWin);
     }
 
     // ---------- the tray's hidden icons ----------

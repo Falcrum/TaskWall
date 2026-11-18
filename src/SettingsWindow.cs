@@ -1167,7 +1167,10 @@ public sealed class SettingsWindow : DarkWindow
             tag => { S.AppBarTop = tag == "top"; App.Instance.ApplySettings(); })));
         full.Children.Add(Pair(L.T("Wysokość"), Combo(new[] { ("large", L.T("Duży")), ("medium", L.T("Średni")), ("small", L.T("Mały")) }, S.BarSize,
             tag => { S.BarSize = tag; App.Instance.ApplySettings(); }),
-            L.T("Duży: ikony docka 44 px. Średni: 32 px. Mały: niewiele wyższy niż kółka obciążenia (ikony 22 px). Napisy rosną i maleją razem z paskiem.")));
+            L.T("Duży: ikony docka 36 px. Średni: 28 px. Mały: niewiele wyższy niż kółka obciążenia (ikony 20 px). Napisy i kółka rosną i maleją razem z paskiem.")));
+        full.Children.Add(Pair(L.T("Szerokość"), Combo(new[] { ("board", L.T("Jak tablica")), ("screen", L.T("Cały ekran")) }, S.BarWidth,
+            tag => { S.BarWidth = tag; App.Instance.ApplySettings(); }),
+            L.T("Jak tablica: szkło paska zaczyna się i kończy tam, gdzie tablica, więc ich krawędzie się zgadzają. Cały ekran: od brzegu do brzegu (z odstępem). Windows i tak rezerwuje cały pas ekranu.")));
         full.Children.Add(Check(L.T("Ukryj pasek zadań Windows"), S.HideTaskbar, v => S.HideTaskbar = v,
             L.T("Pasek zadań Windows znika i oddaje swoje miejsce (na wszystkich monitorach). Wraca, gdy wyłączysz pasek TaskWall, zamkniesz TaskWall albo ten nagle się zamknie (strażnik). Start otwierasz przyciskiem na pasku albo klawiszem Windows.")));
         var dock = new StackPanel { Margin = new Thickness(26, 0, 0, 0) };
@@ -1199,6 +1202,9 @@ public sealed class SettingsWindow : DarkWindow
         }
         any.Children.Add(Pair(L.T("Obciążenie na pasku"), meters,
             L.T("Kręgi wypełniają się jak w Menedżerze zadań: procesor, karta graficzna (najbardziej zajęty silnik), pamięć, najbardziej zajęty dysk (czas aktywności; wolne miejsce w podpowiedzi), sieć (ruch względem prędkości łącza). Odczyt co 2 sekundy, tylko gdy pasek jest widoczny.")));
+        any.Children.Add(Pair(L.T("Kolory kółek"), Combo(new[] { ("high", L.T("Tylko przy dużym obciążeniu")), ("always", L.T("Zawsze")) }, S.MeterColors,
+            tag => { S.MeterColors = tag; App.Instance.ApplySettings(); }, 260),
+            L.T("Tylko przy dużym obciążeniu: kółka są spokojnie szare i dostają swój kolor (CPU pomarańczowy, GPU zielony …) od 80%. Zawsze: każde w swoim kolorze.")));
         any.Children.Add(Check(L.T("Zegar 24-godzinny"), S.Use24h, v => S.Use24h = v));
         p.Children.Add(any);
         Show();

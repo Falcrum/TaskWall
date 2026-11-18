@@ -104,10 +104,10 @@ public static class CrashLoop
 public static class BarMetrics
 {
     /// <summary>The bar's height: large (taller with the dock, for 44 px icons), medium, small (a little more than a load ring).</summary>
-    public static double Height(string size, bool dock) => size switch { "large" => dock ? 56 : 48, "small" => 30, _ => 40 };
+    public static double Height(string size, bool dock) => size switch { "large" => dock ? 56 : 48, "small" => 32, _ => 42 };
 
-    /// <summary>The dock's icons at rest: the bar's height less a margin above and below.</summary>
-    public static double Icon(string size) => size switch { "large" => 44, "small" => 22, _ => 32 };
+    /// <summary>The dock's icons at rest: about two thirds of the bar's height – room above and below, the marks clear of the glass's edge.</summary>
+    public static double Icon(string size) => size switch { "large" => 36, "small" => 20, _ => 28 };
 
     /// <summary>The text of the clock, the date and the temperature.</summary>
     public static double Font(string size) => size switch { "large" => 17, "small" => 13, _ => 15 };
@@ -117,4 +117,14 @@ public static class BarMetrics
 
     /// <summary>The corners: the board's radius, at most half the bar's height (a pill).</summary>
     public static double Radius(double height, double boardRadius = 22) => Math.Min(boardRadius, height / 2);
+}
+
+/// <summary>Secondary sizes of the bar's text and rings, following its main text (the temperature, the date and time).</summary>
+public static class BarType
+{
+    /// <summary>The weather's details, the load's numbers: about seven tenths of the main text.</summary>
+    public static double Secondary(double main) => Math.Round(main * 0.72 * 2) / 2;
+
+    /// <summary>The load rings: a little more than the main text.</summary>
+    public static double Ring(double main) => Math.Round(main * 1.3);
 }

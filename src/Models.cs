@@ -792,8 +792,12 @@ public sealed class AppSettings
     public bool HideTaskbar { get; set; } = true;
     /// <summary>The full-width bar's height: "large", "medium" or "small" (a little taller than a load ring).</summary>
     public string BarSize { get; set; } = "medium";
+    /// <summary>The full-width bar's glass: as wide as the board ("board", its edges in line with the board's) or the whole screen ("screen"). The strip reserved is the screen's width either way.</summary>
+    public string BarWidth { get; set; } = "board";
     /// <summary>Rounded corners on the board, the bars and the panels (off: square everywhere).</summary>
     public bool RoundCorners { get; set; } = true;
+    /// <summary>The load rings in their own colours "always", or only "high" (80 % and more; quiet grey below).</summary>
+    public string MeterColors { get; set; } = "high";
     /// <summary>The dock in the full-width bar's middle: pinned and running programs (off by default).</summary>
     public bool Dock { get; set; }
     /// <summary>The dock's magnification under the pointer: "off", "subtle" (1.25×) or "full" (1.55×).</summary>

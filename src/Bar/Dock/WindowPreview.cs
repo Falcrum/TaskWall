@@ -97,6 +97,7 @@ sealed class WindowPreview : GlassWindow
         x = Math.Clamp(x, strip.X + gap, Math.Max(strip.X + gap, strip.Right - pw - gap));
         int y = barTop ? strip.Bottom + gap : strip.Y - ph - gap;
         PlacePhysical(x, y, pw, ph, scale);
+        App.Instance.PaintGlass(this); // the frosted glass of the bar under the live pictures
         if (!IsVisible) Show();
         // the live pictures: DWM draws each window into its tile (physical pixels of this window's client area)
         for (int i = 0; i < _shown.Count; i++)

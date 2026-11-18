@@ -583,7 +583,16 @@ public partial class App : Application
             try { if (Settings.HideTaskbar) WindowsTaskbar.Hide(); else WindowsTaskbar.Restore(); }
             catch (Exception ex) { Log.Error("taskbar", ex); }
             var b = mon.Bounds;
-            try { strip = _bar.Dock(new PxRect(b.X, b.Y, b.Width, b.Height), Settings.AppBarTop, Math.Clamp(Settings.Gap, 0, 40), ui, s); }
+            // the glass as wide as the board (its edges in line), or the whole screen; the board's width is the work area's share either way
+            (int X, int W)? span = null;
+            if (Settings.BarWidth == "board")
+            {
+                var w0 = Monitors.Pick(Settings.Monitor).Work;
+                int e0 = P(Math.Clamp(Settings.Gap, 0, 40));
+                int bw0 = Settings.BoardMax ? w0.Width - 2 * e0 : (int)Math.Round(w0.Width * Math.Clamp(Settings.WidthPercent, 30, 100) / 100);
+                span = (w0.X + (w0.Width - bw0) / 2, bw0);
+            }
+            try { strip = _bar.Dock(new PxRect(b.X, b.Y, b.Width, b.Height), Settings.AppBarTop, Math.Clamp(Settings.Gap, 0, 40), ui, s, span); }
             catch (Exception ex) { Log.Error("bar dock", ex); }
             mon = Monitors.Pick(Settings.Monitor);
         }
@@ -714,6 +723,22 @@ public partial class App : Application
     {
         _glassTimer.Stop();
         _glassTimer.Start();
+    }
+
+    /// <summary>
+    /// A panel's frosted glass (the volume, the network, the dock's previews): the wallpaper behind its own rectangle, blurred like the
+    /// bar's – so every piece of glass reads as one material. Called when the panel is placed.
+    /// </summary>
+    public void PaintGlass(GlassWindow w)
+    {
+        try
+        {
+            var r = w.PhysicalRect;
+            if (!Settings.Blur || r.Width <= 0) { w.SetGlass(null); return; }
+            var mon = Monitors.Pick(Settings.Monitor);
+            w.SetGlass(Wallpaper.RenderGlass(Wallpaper.Resolve(mon), r, Math.Clamp(Settings.BlurStrength, 0, 100) * 1.3 * mon.Scale));
+        }
+        catch (Exception ex) { Log.Error("panel glass", ex); }
     }
 
     void RefreshGlass()

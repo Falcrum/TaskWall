@@ -33,6 +33,9 @@ public sealed class LoadMeters : StackPanel
         Build(false, false);
     }
 
+    /// <summary>The bar's main text size: the rings and their numbers follow it (0: the old top bar's fixed sizes).</summary>
+    public double TextSize { get; set; }
+
     /// <summary>The rings without their numbers.</summary>
     public bool Narrow { get; set; }
 
@@ -40,7 +43,7 @@ public sealed class LoadMeters : StackPanel
     public void Build(bool force, bool active)
     {
         var kinds = App.Settings.Meters.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(SysMeters.Kinds.Contains).Distinct().ToList();
-        var set = string.Join(",", kinds) + Narrow;
+        var set = string.Join(",", kinds) + Narrow + TextSize + App.Settings.MeterColors;
         if (force || set != _set)
         {
             _set = set;
@@ -48,7 +51,7 @@ public sealed class LoadMeters : StackPanel
             _rings.Clear();
             foreach (var k in kinds)
             {
-                var m = new Meter(k, !Narrow);
+                var m = TextSize > 0 ? new Meter(k, !Narrow, BarType.Ring(TextSize), BarType.Secondary(TextSize)) : new Meter(k, !Narrow, 22, 10.5);
                 _rings[k] = m;
                 Children.Add(m.Root);
             }
@@ -77,26 +80,30 @@ public sealed class LoadMeters : StackPanel
             ["disk"] = (Color.FromRgb(0x5B, 0x9B, 0xFF), L.T("Dysk")),
             ["net"] = (Color.FromRgb(0xB3, 0x82, 0xFF), L.T("Sieć")),
         };
-        const double Size = 22, Thick = 2.3;
+        readonly double Size, Thick;
+        readonly Color _color;
 
         public readonly FrameworkElement Root;
         readonly System.Windows.Shapes.Path _arc;
         readonly TextBlock _text;
         double _shown = -1;
 
-        public Meter(string kind, bool label)
+        public Meter(string kind, bool label, double size, double font)
         {
             var (color, name) = Kinds[kind];
+            Size = size;
+            Thick = Math.Round(size * 0.105, 1);
+            _color = color;
             var ring = new Grid { Width = Size, Height = Size, VerticalAlignment = VerticalAlignment.Center };
             ring.Children.Add(new System.Windows.Shapes.Ellipse { Stroke = Ui.Brush(Th.Ink(0x2A)), StrokeThickness = Thick });
-            _arc = new System.Windows.Shapes.Path { Stroke = Ui.Brush(color), StrokeThickness = Thick, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round };
+            _arc = new System.Windows.Shapes.Path { Stroke = Ui.Brush(Calm(0)), StrokeThickness = Thick, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round };
             ring.Children.Add(_arc);
-            var icon = Icons.Meter(kind, Ui.Res("Fg"), 10); // a quiet white symbol: only the ring is in colour
+            var icon = Icons.Meter(kind, Ui.Res("Fg"), Math.Round(size * 0.45)); // a quiet white symbol: only the ring is in colour
             icon.Opacity = 0.75;
             icon.HorizontalAlignment = HorizontalAlignment.Center;
             icon.VerticalAlignment = VerticalAlignment.Center;
             ring.Children.Add(icon);
-            _text = new TextBlock { Text = "–", FontSize = 10.5, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0), Width = 26, Foreground = Ui.Res("FgDim") };
+            _text = new TextBlock { Text = "–", FontSize = font, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0), MinWidth = font * 2.5, Foreground = Ui.Res("FgDim") };
             var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(6, 0, 0, 0), Background = Brushes.Transparent, ToolTip = name };
             row.Children.Add(ring);
             if (label) row.Children.Add(_text);
@@ -111,11 +118,18 @@ public sealed class LoadMeters : StackPanel
             _text.Text = $"{Math.Round(p):0}%";
             if (Math.Abs(p - _shown) < 0.5) return;
             _shown = p;
+            _arc.Stroke = Ui.Brush(Calm(p));
             _arc.Data = Arc(p);
         }
 
+        /// <summary>
+        /// The ring's colour: its own (CPU orange, GPU green …) always, or – Settings → Pasek → Kolory kółek: przy dużym obciążeniu,
+        /// the default – a quiet light grey until the load reaches 80 %, so five rings don't make the bar loud.
+        /// </summary>
+        Color Calm(double percent) => App.Settings.MeterColors == "always" || percent >= 80 ? _color : Th.Ink(0x9A);
+
         /// <summary>The filled part of the ring, clockwise from the top.</summary>
-        static Geometry Arc(double percent)
+        Geometry Arc(double percent)
         {
             double r = (Size - Thick) / 2, c = Size / 2;
             if (percent <= 0.5) return Geometry.Empty;

@@ -26,7 +26,7 @@ sealed class BarPanel : GlassWindow
         ShowActivated = true;
         FontFamily = Ui.Font("UiFont");
         Foreground = Ui.Res("Fg");
-        _content.SetResourceReference(Border.BackgroundProperty, "MenuBg");
+        // the same frosted glass as the bar (painted when placed), not a flat panel
         Body = _content;
         Deactivated += (_, _) => { if (IsVisible) { Hide(); _closedAt = DateTime.Now; } };
         PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) Hide(); };
@@ -50,6 +50,7 @@ sealed class BarPanel : GlassWindow
         int x = Math.Clamp((int)Math.Round(a.X - w / 2.0), frame.X, Math.Max(frame.X, frame.Right - w));
         int y = bar.AtTop ? frame.Bottom + gap : frame.Y - h - gap;
         PlacePhysical(x, y, w, h, dpi.DpiScaleX);
+        App.Instance.PaintGlass(this);
         Show();
         Activate();
         Anim.Enter(FrameElement, 0, bar.AtTop ? -8 : 8, 220);

@@ -40,7 +40,8 @@ public sealed class WeatherBadge : StackPanel
         if (!w.Day && w.Code <= 2) symbol = "☾"; // clear or a few clouds at night
         Children.Add(new TextBlock { Text = symbol, FontFamily = new FontFamily("Segoe UI Symbol"), FontSize = TextSize, Foreground = Ui.Res("AccentBrush"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) });
         Children.Add(new TextBlock { Text = $"{Math.Round(w.Temp):0}°", FontSize = TextSize, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
-        var line = new TextBlock { FontSize = 11, Foreground = Ui.Res("FgDim"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 2, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis };
+        // the details follow the temperature's size (the bar's height)
+        var line = new TextBlock { FontSize = BarType.Secondary(TextSize), Foreground = Ui.Res("FgDim"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 2, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis };
         line.Inlines.Add(new Run(desc));
         if (!Narrow)
         {
@@ -53,7 +54,7 @@ public sealed class WeatherBadge : StackPanel
             if (w.Wind is { } wn)
             {
                 line.Inlines.Add(new Run("  ·  ") { Foreground = Ui.Res("FgFaint") });
-                line.Inlines.Add(new InlineUIContainer(Icons.Wind(Ui.Res("FgFaint"), 12)) { BaselineAlignment = BaselineAlignment.Center });
+                line.Inlines.Add(new InlineUIContainer(Icons.Wind(Ui.Res("FgFaint"), BarType.Secondary(TextSize) + 1)) { BaselineAlignment = BaselineAlignment.Center });
                 line.Inlines.Add(new Run($" {Math.Round(wn):0} km/h") { Foreground = Ui.Res("FgFaint") });
             }
         }

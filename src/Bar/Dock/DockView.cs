@@ -419,12 +419,14 @@ sealed class DockView : Canvas
             e.Visual.Width = e.Visual.Height = size;
             SetLeft(e.Visual, X(centre) - size / 2);
             SetTop(e.Visual, top ? edge : edge - size);
-            // the mark: under the icon (at the screen's edge side)
             bool front = e.Windows.Any(t => t.Hwnd == _front);
-            e.Mark.Width = e.Windows.Count == 0 ? 0 : front ? 16 : 5;
-            e.Mark.Height = e.Windows.Count == 0 ? 0 : 3;
+            // the mark: in the middle of the room between the icon and the glass's edge (the screen's side) – a dot, a line for the one in front
+            double room = Math.Max(4, (BarHeight - IconSize) / 2);
+            e.Mark.Width = e.Windows.Count == 0 ? 0 : front ? 14 : 4;
+            e.Mark.Height = e.Windows.Count == 0 ? 0 : front ? 3 : 4;
+            e.Mark.CornerRadius = new CornerRadius(2);
             SetLeft(e.Mark, X(centre) - e.Mark.Width / 2);
-            SetTop(e.Mark, top ? 1 : BarHeight - 4);
+            SetTop(e.Mark, top ? room / 2 - e.Mark.Height / 2 : BarHeight - room / 2 - e.Mark.Height / 2);
         }
         // while the icons are grown, the room above them catches the pointer (otherwise it passes through to the window under it)
         double head = _bar.Headroom;

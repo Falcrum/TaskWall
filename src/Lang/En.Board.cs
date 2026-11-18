@@ -732,6 +732,16 @@ static partial class L
         ("Ustawienia paska…", "Bar settings…"),
         ("Menedżer zadań", "Task Manager"),
         ("Ustawienia TaskWall…", "TaskWall settings…"),
+        // 0.46: the bar's design – width, sizes, the rings' colours
+        ("Szerokość", "Width"),
+        ("Jak tablica", "As wide as the board"),
+        ("Cały ekran", "The whole screen"),
+        ("Jak tablica: szkło paska zaczyna się i kończy tam, gdzie tablica, więc ich krawędzie się zgadzają. Cały ekran: od brzegu do brzegu (z odstępem). Windows i tak rezerwuje cały pas ekranu.", "As wide as the board: the bar's glass starts and ends where the board does, so their edges line up. The whole screen: edge to edge (with the gap). Windows reserves the whole strip either way."),
+        ("Duży: ikony docka 36 px. Średni: 28 px. Mały: niewiele wyższy niż kółka obciążenia (ikony 20 px). Napisy i kółka rosną i maleją razem z paskiem.", "Large: 36 px dock icons. Medium: 28 px. Small: barely taller than the load rings (20 px icons). The text and the rings grow and shrink with the bar."),
+        ("Kolory kółek", "Ring colours"),
+        ("Tylko przy dużym obciążeniu", "Only under heavy load"),
+        ("Zawsze", "Always"),
+        ("Tylko przy dużym obciążeniu: kółka są spokojnie szare i dostają swój kolor (CPU pomarańczowy, GPU zielony …) od 80%. Zawsze: każde w swoim kolorze.", "Only under heavy load: the rings are a quiet grey and take their colour (CPU orange, GPU green …) from 80 %. Always: each in its own colour."),
         ("Pasek na całą szerokość trzy razy zakończył się awarią w ciągu 10 minut – tym razem TaskWall startuje bez niego (ze zwykłym paskiem nad tablicą). Szczegóły w error.log.", "The full-width bar crashed three times in 10 minutes – this time TaskWall starts without it (with the usual bar over the board). Details in error.log."),
     };
 }
