@@ -146,11 +146,11 @@ public partial class App : Application
         SystemEvents.SessionSwitch += (_, a) =>
         {
             if (a.Reason is SessionSwitchReason.SessionLock or SessionSwitchReason.SessionUnlock)
-                Dispatcher.BeginInvoke(() => _bar?.Pause(a.Reason == SessionSwitchReason.SessionLock));
+                Dispatcher.BeginInvoke(() => _bar?.Pause("locked", a.Reason == SessionSwitchReason.SessionLock));
         };
         SystemEvents.PowerModeChanged += (_, a) =>
         {
-            if (a.Mode is PowerModes.Suspend or PowerModes.Resume) Dispatcher.BeginInvoke(() => _bar?.Pause(a.Mode == PowerModes.Suspend));
+            if (a.Mode is PowerModes.Suspend or PowerModes.Resume) Dispatcher.BeginInvoke(() => _bar?.Pause("asleep", a.Mode == PowerModes.Suspend));
         };
         SystemEvents.DisplaySettingsChanged += (_, _) => Dispatcher.BeginInvoke(ApplySettings);
         // no polling: the wallpaper is read at start-up, after settings changes, on "Odśwież tapetę"

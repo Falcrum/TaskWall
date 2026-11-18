@@ -80,6 +80,9 @@ public sealed class ClockFace : Border
         else { _timer.Start(); Update(); }
     }
 
+    /// <summary>The bar closed: the second timer stops (it would keep the clock alive).</summary>
+    public void Detach() => _timer.Stop();
+
     /// <summary>Shown afresh (settings changed: 12 / 24 h, language).</summary>
     public void Refresh() { _shown = ""; Update(); }
 

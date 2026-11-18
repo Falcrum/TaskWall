@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -56,7 +57,10 @@ static class TaskList
     public static List<Task> Tasks()
     {
         var list = new List<Task>();
-        EnumWindows((h, _) => { if (Read(h) is { } t) list.Add(t); return true; }, IntPtr.Zero);
+        var seen = new HashSet<IntPtr>();
+        EnumWindows((h, _) => { seen.Add(h); if (Read(h) is { } t) list.Add(t); return true; }, IntPtr.Zero);
+        // a window that is gone takes its remembered program with it (a new window may get its handle)
+        foreach (var gone in Known.Keys.Where(k => !seen.Contains(k)).ToList()) Known.Remove(gone);
         return list;
     }
 
@@ -74,7 +78,10 @@ static class TaskList
         var title = Title(h);
         bool min = IsIconic(h);
         if (TaskRules.IsHelper(title, r.Right - r.Left, r.Bottom - r.Top, min)) return null;
-        return new Task(h, title, pid, ExeOf(pid), AppIdOf(h), min);
+        // the program and the app id don't change while the window lives: read once per window (a process id is reused by a new
+        // process after the old one ends – remembering by process would give a new program the old one's icon)
+        if (!Known.TryGetValue(h, out var who) || who.Pid != pid) Known[h] = who = (pid, ExeOf(pid), AppIdOf(h));
+        return new Task(h, title, pid, who.Exe, who.AppId, min);
     }
 
     public static string Title(IntPtr h)
@@ -86,12 +93,12 @@ static class TaskList
         return sb.ToString();
     }
 
-    static readonly Dictionary<uint, string?> Exes = new();
+    /// <summary>Each live window's process, program and app id, read when the window was first seen.</summary>
+    static readonly Dictionary<IntPtr, (uint Pid, string? Exe, string? AppId)> Known = new();
 
     /// <summary>The program a process runs (null for one that can't be opened – an elevated one of another user).</summary>
     public static string? ExeOf(uint pid)
     {
-        if (Exes.TryGetValue(pid, out var known)) return known;
         string? exe = null;
         var p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
         if (p != IntPtr.Zero)
@@ -101,8 +108,7 @@ static class TaskList
             if (QueryFullProcessImageName(p, 0, sb, ref size)) exe = sb.ToString();
             CloseHandle(p);
         }
-        if (Exes.Count > 500) Exes.Clear(); // process ids are reused: keep it short
-        return Exes[pid] = exe;
+        return exe;
     }
 
     /// <summary>The window's AppUserModelID (System.AppUserModel.ID in its property store), when it sets one.</summary>

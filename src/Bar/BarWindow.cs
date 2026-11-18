@@ -117,7 +117,7 @@ public sealed class BarWindow : GlassWindow
     public CalendarWindow Calendar => _calendar;
     /// <summary>Hidden while a program runs full screen (or the screen is locked, the computer asleep).</summary>
     public bool Paused { get; private set; }
-    public bool Top => _top;
+    public bool AtTop => _top;
     /// <summary>The reserved strip (physical pixels): the glass and its gap from the screen's edge; the window may be taller by <see cref="Headroom"/>.</summary>
     public PxRect StripRect { get; private set; }
     /// <summary>The glass itself (physical pixels): the strip less the gap at the screen's edge and its sides, like the board's.</summary>
@@ -178,7 +178,7 @@ public sealed class BarWindow : GlassWindow
             bool narrowMeters = level >= 3;
             if (_meters.Narrow != narrowMeters) { _meters.Narrow = narrowMeters; _meters.Build(true, IsVisible && !Paused); }
         };
-        WeatherService.Changed += () => _sectors.Forget();
+        WeatherService.Changed += _sectors.Forget;
         // the sectors lie over the glass, not in it: the dock's grown icons reach past the glass into the window's transparent room
         _sectors.Background = Brushes.Transparent; // the whole strip takes the right click
         _sectors.MouseRightButtonUp += (_, e) => { e.Handled = true; App.Instance.ShowSettings(); };
@@ -188,7 +188,21 @@ public sealed class BarWindow : GlassWindow
         Body = _glow; // the glass: the glow only
 
         IsVisibleChanged += (_, _) => _meters.Build(false, IsVisible && !Paused);
-        Closed += (_, _) => { _appBar?.Remove(); if (_shellHooked) DeregisterShellHookWindow(Hwnd); _calendar.Close(); };
+        Closed += (_, _) =>
+        {
+            _appBar?.Remove();
+            if (_shellHooked) DeregisterShellHookWindow(Hwnd);
+            // off every static event: a closed bar must not stay alive through them (and go on working for nothing)
+            WeatherService.Changed -= _sectors.Forget;
+            _weather.Detach();
+            _clock.Detach();
+            _meters.Detach();
+            _network.Detach();
+            _volumeButton.Detach();
+            _dock?.Detach();
+            CloseTray();
+            _calendar.Close();
+        };
         SetEdge(true);
         ApplyGlow();
         _weather.Update();
@@ -248,6 +262,7 @@ public sealed class BarWindow : GlassWindow
         }
         else if (!want && _dock != null)
         {
+            _dock.Detach();
             _middle.Child = null;
             _dock = null;
         }
@@ -305,7 +320,7 @@ public sealed class BarWindow : GlassWindow
             _shellHooked = RegisterShellHookWindow(Hwnd);
             _appBar = new AppBar(Hwnd);
             _appBar.PositionChanged += () => Dispatcher.BeginInvoke(() => Moved?.Invoke(), DispatcherPriority.Background);
-            _appBar.FullscreenChanged += full => Dispatcher.BeginInvoke(() => Pause(full));
+            _appBar.FullscreenChanged += full => Dispatcher.BeginInvoke(() => Pause("fullscreen", full));
         }
         if (top != _top) SetEdge(top);
         // the strip: the glass and its gap from the screen's edge (between the glass and the board the board keeps its own gap)
@@ -330,12 +345,18 @@ public sealed class BarWindow : GlassWindow
         Guard.Watch(IntPtr.Zero);
     }
 
+    readonly HashSet<string> _pauses = new();
+
     /// <summary>
-    /// A full-screen program (a game, a film, a presentation), the locked screen, sleep: the bar hides and stops its
-    /// clock and the load reading; back afterwards with fresh readings.
+    /// A full-screen program (a game, a film, a presentation), the locked screen, sleep: the bar hides and stops its clock and
+    /// the load reading; back afterwards with fresh readings. One reason on or off at a time – "fullscreen", "locked", "asleep":
+    /// the bar stays hidden while any of them holds (unlocking the screen during a full-screen game must not bring the bar over
+    /// the game).
     /// </summary>
-    public void Pause(bool paused)
+    public void Pause(string reason, bool on)
     {
+        if (on) _pauses.Add(reason); else _pauses.Remove(reason);
+        bool paused = _pauses.Count > 0;
         if (paused == Paused) return;
         Paused = paused;
         _clock.Pause(paused);

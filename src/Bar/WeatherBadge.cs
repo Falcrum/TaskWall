@@ -20,6 +20,9 @@ public sealed class WeatherBadge : StackPanel
         WeatherService.Changed += Update;
     }
 
+    /// <summary>The bar closed: off the weather's event.</summary>
+    public void Detach() => WeatherService.Changed -= Update;
+
     /// <summary>Only the sky in words, no feel / max-min / rain / wind (a narrow bar).</summary>
     public bool Narrow { get; set; }
 

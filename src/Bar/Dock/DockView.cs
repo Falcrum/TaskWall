@@ -108,23 +108,38 @@ sealed class DockView : Canvas
         _preview.CloseRequested += h => { WindowActions.Close(h); ScheduleRefresh(); _preview.Dismiss(); };
         _preview.MouseLeave += (_, _) => { _hidePreview.Stop(); _hidePreview.Start(); };
         MouseMove += OnMove;
-        MouseLeave += (_, _) => { _pointer = -1e6; _bell.Leave(Now); _hovered = null; _hoverPreview.Stop(); _hidePreview.Stop(); _hidePreview.Start(); Animate(); };
+        // the bell dies away where the pointer was last (the pointer stays where it left), not all at once
+        MouseLeave += (_, _) => { _bell.Leave(Now); _hovered = null; _hoverPreview.Stop(); _hidePreview.Stop(); _hidePreview.Start(); Animate(); };
         StartHooks();
-        Unloaded += (_, _) => { StopHooks(); _preview.Dismiss(); };
+        Unloaded += (_, _) => Detach();
         Refresh();
     }
 
     // ---------- the windows: what runs, what is in front, what asks for attention ----------
 
+    bool _refreshAfterDrop;
+
+    /// <summary>The dock taken off the bar (switched off, the bar closed): no hooks, no frames, no timers, the previews closed.</summary>
+    public void Detach()
+    {
+        StopHooks();
+        Unhook();
+        foreach (var t in new[] { _refresh, _thinCheck, _hoverPreview, _hidePreview }) t.Stop();
+        _preview.Dismiss();
+        _preview.Close();
+    }
+
     Native.WinEventProc? _proc;
     readonly List<IntPtr> _hooks = new();
+    IntPtr _moveHook;
+    uint _moveHookPid;
 
     void StartHooks()
     {
         if (_hooks.Count > 0) return;
         _proc = OnWinEvent;
-        // the window in front; minimised / restored; moved or resized (maximised): the thin dock follows
-        foreach (var (a, b) in new[] { (0x0003u, 0x0003u), (0x0016u, 0x0017u), (0x800Bu, 0x800Bu) })
+        // the window in front; minimised / restored; moved or resized by hand – a few events a minute, not a stream
+        foreach (var (a, b) in new[] { (0x0003u, 0x0003u), (0x0016u, 0x0017u), (0x000Bu, 0x000Bu) })
             _hooks.Add(Native.SetWinEventHook(a, b, IntPtr.Zero, _proc, 0, 0, Native.WINEVENT_OUTOFCONTEXT | 0x2 /* SKIPOWNPROCESS */));
     }
 
@@ -132,6 +147,22 @@ sealed class DockView : Canvas
     {
         foreach (var h in _hooks) Native.UnhookWinEvent(h);
         _hooks.Clear();
+        WatchMoves(IntPtr.Zero);
+    }
+
+    /// <summary>
+    /// Maximising (the button, a double click on the title) raises no event of its own but a location change: listened to only
+    /// for the program in front (a system-wide hook would wake TaskWall at every move of the mouse and every blink of a caret).
+    /// </summary>
+    void WatchMoves(IntPtr front)
+    {
+        uint pid = 0;
+        if (front != IntPtr.Zero && S.DockThin) Native.GetWindowThreadProcessId(front, out pid);
+        if (pid == _moveHookPid && (_moveHook != IntPtr.Zero || pid == 0)) return;
+        if (_moveHook != IntPtr.Zero) { Native.UnhookWinEvent(_moveHook); _moveHook = IntPtr.Zero; }
+        _moveHookPid = pid;
+        if (pid != 0 && pid != (uint)Environment.ProcessId)
+            _moveHook = Native.SetWinEventHook(0x800B, 0x800B, IntPtr.Zero, _proc!, pid, 0, Native.WINEVENT_OUTOFCONTEXT);
     }
 
     void OnWinEvent(IntPtr hook, uint evt, IntPtr hwnd, int idObject, int idChild, uint thread, uint time)
@@ -139,12 +170,21 @@ sealed class DockView : Canvas
         if (idObject != 0 || hwnd == IntPtr.Zero) return; // the window itself, not its caret or scroll bars
         if (evt == 0x0003)
         {
-            _front = hwnd;
-            foreach (var e in _entries) if (e.Windows.Any(w => w.Hwnd == hwnd)) e.Attention = false;
-            UpdateMarks();
+            Activated(hwnd);
+            WatchMoves(hwnd);
         }
-        if (evt is 0x0016 or 0x0017 or 0x0003) ScheduleRefresh();
         if (S.DockThin) { _thinCheck.Stop(); _thinCheck.Start(); }
+    }
+
+    /// <summary>A window came in front: the marks follow; the list is read again only for a window the dock doesn't know (a new one, another virtual desktop).</summary>
+    void Activated(IntPtr hwnd)
+    {
+        _front = hwnd;
+        bool known = false;
+        foreach (var e in _entries)
+            if (e.Windows.Any(w => w.Hwnd == hwnd)) { e.Attention = false; known = true; }
+        UpdateMarks();
+        if (!known) ScheduleRefresh();
     }
 
     /// <summary>The bar's shell hook (HSHELL_*): windows created, gone, activated, renamed, flashing.</summary>
@@ -157,12 +197,12 @@ sealed class DockView : Canvas
                 UpdateMarks();
                 break;
             case 4 or 0x8004: // activated
-                _front = hwnd;
-                foreach (var e in _entries) if (e.Windows.Any(w => w.Hwnd == hwnd)) e.Attention = false;
-                UpdateMarks();
+                Activated(hwnd);
+                break;
+            case 1 or 2 or 6: // created, gone, renamed
+                ScheduleRefresh();
                 break;
         }
-        if (code is 1 or 2 or 6 or 4 or 0x8004) ScheduleRefresh();
     }
 
     void ScheduleRefresh()
@@ -180,16 +220,19 @@ sealed class DockView : Canvas
         else { Refresh(); CheckThin(); }
     }
 
-    /// <summary>A window maximised on the bar's screen (not minimised, not on another virtual desktop): the thin dock.</summary>
+    /// <summary>
+    /// A window maximised on the bar's screen (not minimised, not on another virtual desktop): the thin dock. Only the windows
+    /// the dock already knows are looked at – no new reading of all windows.
+    /// </summary>
     void CheckThin()
     {
         bool thin = false;
         if (S.DockThin && !_paused)
         {
             var strip = _bar.StripRect;
-            foreach (var t in TaskList.Tasks())
+            foreach (var t in _entries.SelectMany(e => e.Windows))
             {
-                if (t.Minimized || !TaskList.IsZoomed(t.Hwnd)) continue;
+                if (!Native.IsWindowVisible(t.Hwnd) || TaskList.IsIconic(t.Hwnd) || !TaskList.IsZoomed(t.Hwnd) || TaskList.Cloaked(t.Hwnd)) continue;
                 Native.GetWindowRect(t.Hwnd, out var r);
                 int cx = (r.Left + r.Right) / 2;
                 if (cx >= strip.X && cx < strip.Right) { thin = true; break; }
@@ -200,7 +243,6 @@ sealed class DockView : Canvas
         if (thin && !_near) _grow.Leave(Now); else _grow.Enter(Now);
         Animate();
     }
-
     /// <summary>The pointer came to the bar (anywhere on it) or left it: the thin dock grows back, or thin again.</summary>
     public void PointerNear(bool near)
     {
@@ -215,6 +257,8 @@ sealed class DockView : Canvas
     public void Refresh()
     {
         if (_paused) return;
+        // mid-drag the row keeps the order being dragged: read again once the icon is dropped
+        if (_dragging != null) { _refreshAfterDrop = true; return; }
         List<TaskList.Task> tasks;
         try { tasks = TaskList.Tasks(); }
         catch (Exception ex) { Log.Error("dock tasks", ex); return; }
@@ -334,7 +378,7 @@ sealed class DockView : Canvas
         double presence = _bell.Value(now) * grow;
         var f = _slots.Count == 0 ? new Magnify.Frame(new(), 0, 0) : Magnify.Layout(_slots, _rest, _restWidth, _pointer, presence, Strength, _restWidth + 2 * Reserve);
         bool still = _bell.Settled(now) && (!(S.DockThin && _thin) || _grow.Settled(now)) || !Anim.On;
-        bool top = _bar.Top;
+        bool top = _bar.AtTop;
         double mid = BarHeight / 2;
         double k = IconSize / Magnify.IconRest; // the arithmetic is in 44 px icons (as in Rustyfiles); drawn at the bar's size
         double X(double v) => k * (Reserve + v);
@@ -439,6 +483,7 @@ sealed class DockView : Canvas
             SettingsStore.Save(S);
         }
         Relayout();
+        if (_refreshAfterDrop) { _refreshAfterDrop = false; Refresh(); }
     }
 
     // ---------- clicks ----------
@@ -469,13 +514,13 @@ sealed class DockView : Canvas
         if (e.Windows.Count == 0 || !e.Visual.IsVisible) return;
         _hovered = e;
         var c = e.Visual.PointToScreen(new Point(e.Visual.ActualWidth / 2, 0));
-        _preview.Present(e.Windows, c.X, _bar.FrameRect, _bar.Top, VisualTreeHelper.GetDpi(_bar).DpiScaleX);
+        _preview.Present(e.Windows, c.X, _bar.FrameRect, _bar.AtTop, VisualTreeHelper.GetDpi(_bar).DpiScaleX);
     }
 
     void Menu(Entry e)
     {
         _preview.Dismiss();
-        var m = new ContextMenu { PlacementTarget = e.Visual, Placement = _bar.Top ? System.Windows.Controls.Primitives.PlacementMode.Bottom : System.Windows.Controls.Primitives.PlacementMode.Top };
+        var m = new ContextMenu { PlacementTarget = e.Visual, Placement = _bar.AtTop ? System.Windows.Controls.Primitives.PlacementMode.Bottom : System.Windows.Controls.Primitives.PlacementMode.Top };
         MenuItem Item(string text, Action a) { var i = new MenuItem { Header = text }; i.Click += (_, _) => a(); m.Items.Add(i); return i; }
         var header = new MenuItem { Header = e.Name, IsEnabled = false, FontWeight = FontWeights.SemiBold };
         m.Items.Add(header);

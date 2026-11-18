@@ -69,7 +69,7 @@ static class ShellIcons
     /// <summary>The program's icon (a Store app by its id; the window's own icon when neither can be read).</summary>
     public static ImageSource? Icon(string key, string? exe, string? appId, IntPtr window)
     {
-        if (Icons.TryGetValue(key, out var known) && known != null) return known;
+        if (Icons.TryGetValue(key, out var known)) return known; // none too: a program without an icon isn't asked again on every refresh
         ImageSource? img = null;
         // a Store app's own tile icon beats ApplicationFrameHost.exe's
         foreach (var parsing in new[] { !string.IsNullOrEmpty(appId) ? @"shell:AppsFolder\" + appId : "", Parsing(exe, null) })

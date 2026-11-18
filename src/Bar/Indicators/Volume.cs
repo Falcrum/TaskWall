@@ -76,7 +76,8 @@ static class Volume
 
     sealed class Callbacks : IAudioEndpointVolumeCallback, IMMNotificationClient
     {
-        public int OnNotify(IntPtr data) { Changed?.Invoke(); return 0; }
+        // AUDIO_VOLUME_NOTIFICATION_DATA begins with the event context: TaskWall's own changes carry its guid
+        public int OnNotify(IntPtr data) { Changed?.Invoke(data != IntPtr.Zero && Marshal.PtrToStructure<Guid>(data) == _context); return 0; }
         public int OnDeviceStateChanged(string id, int state) => 0;
         public int OnDeviceAdded(string id) => 0;
         public int OnDeviceRemoved(string id) => 0;
@@ -90,8 +91,8 @@ static class Volume
     static Guid _context = Guid.NewGuid();
     static bool _listening;
 
-    /// <summary>The volume or the mute changed (from anywhere) – raised on a Core Audio thread.</summary>
-    public static event Action? Changed;
+    /// <summary>The volume or the mute changed (true: by TaskWall itself) – raised on a Core Audio thread.</summary>
+    public static event Action<bool>? Changed;
     /// <summary>Another device became the default speakers – raised on a Core Audio thread; call <see cref="Reopen"/> on the UI thread.</summary>
     public static event Action? DeviceChanged;
 

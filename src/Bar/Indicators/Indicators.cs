@@ -48,11 +48,11 @@ sealed class BarPanel : GlassWindow
         var a = anchor.PointToScreen(new Point(anchor.ActualWidth / 2, 0));
         int gap = (int)Math.Round(6 * dpi.DpiScaleY);
         int x = Math.Clamp((int)Math.Round(a.X - w / 2.0), frame.X, Math.Max(frame.X, frame.Right - w));
-        int y = bar.Top ? frame.Bottom + gap : frame.Y - h - gap;
+        int y = bar.AtTop ? frame.Bottom + gap : frame.Y - h - gap;
         PlacePhysical(x, y, w, h, dpi.DpiScaleX);
         Show();
         Activate();
-        Anim.Enter(FrameElement, 0, bar.Top ? -8 : 8, 220);
+        Anim.Enter(FrameElement, 0, bar.AtTop ? -8 : 8, 220);
     }
 
     public static TextBlock Text(string text, double size = 12, string brush = "Fg", FontWeight? weight = null) =>
@@ -86,8 +86,8 @@ sealed class VolumeButton : Button
         _bar = bar;
         Style = (Style)Application.Current.Resources["BarIcon"];
         VerticalAlignment = VerticalAlignment.Center;
-        Volume.Changed += () => Dispatcher.BeginInvoke(Show);
-        Volume.DeviceChanged += () => Dispatcher.BeginInvoke(() => { Volume.Reopen(); Show(); FillOutputs(); if (_deviceName != null) _deviceName.Text = Volume.DeviceName; });
+        Volume.Changed += OnVolume;
+        Volume.DeviceChanged += OnDevice;
         Click += (_, _) => { if (_panel.IsVisible || _panel.JustClosed) { _panel.Hide(); return; } OpenPanel(); };
         MouseUp += (_, e) => { if (e.ChangedButton == MouseButton.Middle) { Volume.Muted = !Volume.Muted; e.Handled = true; } };
         PreviewMouseWheel += (_, e) => { if (Volume.Level is { } l) Volume.Level = l + Math.Sign(e.Delta) * 0.02; e.Handled = true; };
@@ -95,7 +95,19 @@ sealed class VolumeButton : Button
     }
 
     /// <summary>The icon, the tool tip and an open slider after any change.</summary>
-    public void Show()
+    void OnVolume(bool own) => Dispatcher.BeginInvoke(() => Show(own));
+    void OnDevice() => Dispatcher.BeginInvoke(() => { Volume.Reopen(); Show(); FillOutputs(); if (_deviceName != null) _deviceName.Text = Volume.DeviceName; });
+
+    /// <summary>The bar closed: off the static events (they would keep this button and its bar alive), the panel closed.</summary>
+    public void Detach()
+    {
+        Volume.Changed -= OnVolume;
+        Volume.DeviceChanged -= OnDevice;
+        _panel.Close();
+    }
+
+    /// <param name="own">the change came from this slider: the icon and the number follow, the slider stays under the hand</param>
+    public void Show(bool own = false)
     {
         var level = Volume.Level;
         bool muted = Volume.Muted;
@@ -103,7 +115,7 @@ sealed class VolumeButton : Button
         int waves = level is not { } l || l <= 0.001 ? 0 : l < 0.34 ? 1 : l < 0.67 ? 2 : 3;
         Content = Icons.Speaker(waves, muted || level == null);
         ToolTip = level == null ? L.T("Brak głośników") : (Volume.DeviceName.Length > 0 ? Volume.DeviceName + "\n" : "") + (muted ? L.F("Wyciszone ({0}%)", pct) : L.F("Głośność {0}%", pct)) + "\n" + L.T("Kółko: głośniej / ciszej · środkowy przycisk: wycisz");
-        if (_slider != null && !_setting) _slider.Value = pct;
+        if (_slider != null && !_setting && !own) _slider.Value = pct;
         if (_percent != null) _percent.Text = muted ? L.T("wyciszone") : $"{pct}%";
         if (_mute != null) _mute.Content = Icons.Speaker(waves, muted);
     }
@@ -184,10 +196,23 @@ sealed class NetworkButton : Button
         VerticalAlignment = VerticalAlignment.Center;
         _soon.Tick += (_, _) => { _soon.Stop(); Refresh(); };
         _signal.Tick += (_, _) => Refresh();
-        NetworkChange.NetworkAddressChanged += (_, _) => Dispatcher.BeginInvoke(Soon);
-        NetworkChange.NetworkAvailabilityChanged += (_, _) => Dispatcher.BeginInvoke(Soon);
+        NetworkChange.NetworkAddressChanged += OnAddress;
+        NetworkChange.NetworkAvailabilityChanged += OnAvailability;
         Click += (_, _) => { if (_panel.IsVisible || _panel.JustClosed) { _panel.Hide(); return; } Refresh(); OpenPanel(); };
         Refresh();
+    }
+
+    void OnAddress(object? s, EventArgs e) => Dispatcher.BeginInvoke(Soon);
+    void OnAvailability(object? s, NetworkAvailabilityEventArgs e) => Dispatcher.BeginInvoke(Soon);
+
+    /// <summary>The bar closed: off Windows' network events, the timers stopped, the panel closed.</summary>
+    public void Detach()
+    {
+        NetworkChange.NetworkAddressChanged -= OnAddress;
+        NetworkChange.NetworkAvailabilityChanged -= OnAvailability;
+        _soon.Stop();
+        _signal.Stop();
+        _panel.Close();
     }
 
     // a change comes in bursts (an address, then the gateway, then the internet check): read once it settles

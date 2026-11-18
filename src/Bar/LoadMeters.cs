@@ -21,7 +21,16 @@ public sealed class LoadMeters : StackPanel
         Orientation = Orientation.Horizontal;
         VerticalAlignment = VerticalAlignment.Center;
         HorizontalAlignment = HorizontalAlignment.Right;
-        SysMeters.Updated += r => Dispatcher.BeginInvoke(() => Show(r));
+        SysMeters.Updated += OnReading;
+    }
+
+    void OnReading(Dictionary<string, MeterValue> r) => Dispatcher.BeginInvoke(() => Show(r));
+
+    /// <summary>The bar closed: off the readings (and the reading stops when no bar shows rings).</summary>
+    public void Detach()
+    {
+        SysMeters.Updated -= OnReading;
+        Build(false, false);
     }
 
     /// <summary>The rings without their numbers.</summary>
