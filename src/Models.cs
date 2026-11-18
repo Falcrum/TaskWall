@@ -749,6 +749,19 @@ public sealed class NotionLink
     [System.Text.Json.Serialization.JsonIgnore] public bool Configured => Database.Length > 0 && TokenProtected != null;
 }
 
+/// <summary>
+/// A program pinned to the dock: its group key (the AppUserModelID or the program's path, as running windows are grouped), how to
+/// start it (the file with arguments, or a Store app by its id) and its name.
+/// </summary>
+public sealed class DockPin
+{
+    public string Key { get; set; } = "";
+    public string? Exe { get; set; }
+    public string? Args { get; set; }
+    public string? AppId { get; set; }
+    public string Name { get; set; } = "";
+}
+
 /// <summary>Per-computer settings (stored locally, not in the cloud folder).</summary>
 public sealed class AppSettings
 {
@@ -775,6 +788,16 @@ public sealed class AppSettings
     public bool AppBar { get; set; }
     /// <summary>That bar at the top of the screen (false: at the bottom).</summary>
     public bool AppBarTop { get; set; } = true;
+    /// <summary>With the full-width bar on: the Windows taskbar is hidden (auto-hide + hidden windows), back when the bar goes.</summary>
+    public bool HideTaskbar { get; set; } = true;
+    /// <summary>The dock in the full-width bar's middle: pinned and running programs (off by default).</summary>
+    public bool Dock { get; set; }
+    /// <summary>The dock's magnification under the pointer: "off", "subtle" (1.25×) or "full" (1.55×).</summary>
+    public string DockMagnify { get; set; } = "full";
+    /// <summary>Smaller dock icons while a window is maximised on the screen, full again when the pointer comes to the bar.</summary>
+    public bool DockThin { get; set; } = true;
+    /// <summary>The programs pinned to the dock, in order.</summary>
+    public List<DockPin> DockPins { get; set; } = new();
     /// <summary>The weather now on the left of the top bar (needs a place in Settings → Pogoda).</summary>
     public bool BarWeather { get; set; } = true;
     /// <summary>The top bar's load rings on the right, in order: cpu, gpu, ram, disk, net (empty = none).</summary>

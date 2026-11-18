@@ -95,8 +95,29 @@ public class GlassWindow : Window
 
     public void ApplyScale(double scale)
     {
-        _bodyHost.LayoutTransform = Math.Abs(scale - 1) < 0.001 ? Transform.Identity : new ScaleTransform(scale, scale);
+        var t = Math.Abs(scale - 1) < 0.001 ? Transform.Identity : new ScaleTransform(scale, scale);
+        _bodyHost.LayoutTransform = t;
+        if (_overlay != null) _overlay.LayoutTransform = t;
         ApplyCorners();
+    }
+
+    Grid? _overlay;
+
+    /// <summary>
+    /// A layer over the glass, as big as the window and not clipped to the frame (the full-width bar: its sectors, and the dock's
+    /// icons growing past the glass into the window's transparent room); scaled with the body.
+    /// </summary>
+    protected Grid Overlay
+    {
+        get
+        {
+            if (_overlay == null)
+            {
+                _overlay = new Grid { LayoutTransform = _bodyHost.LayoutTransform };
+                _shell.Children.Add(_overlay);
+            }
+            return _overlay;
+        }
     }
 
     void ApplyCorners()

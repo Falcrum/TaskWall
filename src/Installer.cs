@@ -233,8 +233,23 @@ static class Installer
         }
     }
 
+    /// <summary>The running TaskWall's "please close" event: it closes cleanly (the bar's strip and the Windows taskbar given back).</summary>
+    public const string QuitEvent = @"Local\TaskWall.Quit";
+
     static void StopOtherInstances()
     {
+        // first asked (it has no main window CloseMainWindow could reach), only then ended by force
+        try
+        {
+            if (System.Threading.EventWaitHandle.TryOpenExisting(QuitEvent, out var quit))
+                using (quit)
+                {
+                    quit.Set();
+                    foreach (var p in Process.GetProcessesByName("TaskWall").Where(p => p.Id != Environment.ProcessId))
+                        try { p.WaitForExit(5000); } catch { }
+                }
+        }
+        catch { /* not running */ }
         foreach (var p in Process.GetProcessesByName("TaskWall").Where(p => p.Id != Environment.ProcessId))
         {
             try { p.CloseMainWindow(); if (!p.WaitForExit(1500)) p.Kill(); p.WaitForExit(3000); }

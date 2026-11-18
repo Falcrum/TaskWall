@@ -31,6 +31,9 @@ static class SharedSettings
         nameof(AppSettings.Timeline), nameof(AppSettings.LastWeekSummary), nameof(AppSettings.NotesSource), nameof(AppSettings.DayNotesLeft),
         // screens and hardware differ per computer
         nameof(AppSettings.BoardMax), nameof(AppSettings.Gap), nameof(AppSettings.SecondMonitor), nameof(AppSettings.SecondView), nameof(AppSettings.Meters),
+        // the full-width bar replaces this computer's taskbar: each computer chooses for itself
+        nameof(AppSettings.AppBar), nameof(AppSettings.AppBarTop), nameof(AppSettings.HideTaskbar),
+        nameof(AppSettings.Dock), nameof(AppSettings.DockMagnify), nameof(AppSettings.DockThin), nameof(AppSettings.DockPins),
     };
 
     static string? PathFor(AppSettings s) => Dev.Arg("--data") is { } dev ? Path.Combine(dev, FileName)

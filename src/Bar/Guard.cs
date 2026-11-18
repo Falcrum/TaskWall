@@ -22,6 +22,9 @@ static class Guard
         public long Bar { get; set; }
         public bool Clean { get; set; }
         public List<DateTime> Crashes { get; set; } = new();
+        /// <summary>The Windows taskbar is hidden by TaskWall; its auto-hide setting before.</summary>
+        public bool TaskbarHidden { get; set; }
+        public bool AutoHideBefore { get; set; }
     }
 
     static readonly object Gate = new();
@@ -78,6 +81,39 @@ static class Guard
         }
     }
 
+    /// <summary>TaskWall hid the Windows taskbar (or showed it again): the guard brings it back after a crash.</summary>
+    public static void NoteTaskbar(bool hidden, bool autoHideBefore)
+    {
+        lock (Gate)
+        {
+            var s = Read();
+            s.Pid = Environment.ProcessId;
+            s.Clean = false;
+            s.TaskbarHidden = hidden;
+            s.AutoHideBefore = autoHideBefore;
+            Write(s);
+        }
+    }
+
+    /// <summary>
+    /// At the start: the taskbar was left hidden by a TaskWall that is gone and whose guard didn't get to it (both
+    /// killed, a reboot – the windows come back with Explorer, the auto-hide setting doesn't): put it back now.
+    /// </summary>
+    public static void RecoverTaskbar()
+    {
+        lock (Gate)
+        {
+            var s = Read();
+            if (!s.TaskbarHidden || s.Pid == Environment.ProcessId) return;
+            try { using var p = Process.GetProcessById(s.Pid); if (!p.HasExited && p.ProcessName.Contains("TaskWall", StringComparison.OrdinalIgnoreCase)) return; }
+            catch (ArgumentException) { /* gone */ }
+            WindowsTaskbar.Restore(s.AutoHideBefore);
+            s.TaskbarHidden = false;
+            Write(s);
+            Log.Error("guard: the Windows taskbar was left hidden by an earlier TaskWall – shown again");
+        }
+    }
+
     /// <summary>TaskWall exits normally (the bar already gave its strip back): the guard has nothing to do.</summary>
     public static void CleanExit()
     {
@@ -102,7 +138,15 @@ static class Guard
         catch (ArgumentException) { /* already gone */ }
         catch (Exception ex) { Log.Error("guard wait", ex); }
         var s = Read();
-        if (s.Pid != pid || s.Clean) return;
+        if (s.Pid != pid) return;
+        if (s.TaskbarHidden)
+        {
+            // a crash or a clean exit that didn't get to it: the Windows taskbar comes back as it was
+            WindowsTaskbar.Restore(s.AutoHideBefore);
+            s.TaskbarHidden = false;
+            if (!s.Clean) Log.Error($"guard: TaskWall (pid {pid}) ended without closing – the Windows taskbar shown again");
+        }
+        if (s.Clean) { Write(s); return; }
         if (s.Bar != 0)
         {
             AppBar.Remove(new IntPtr(s.Bar)); // the strip of a window that no longer exists

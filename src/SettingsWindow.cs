@@ -61,7 +61,8 @@ public sealed class SettingsWindow : DarkWindow
             _sections.Children.Add(box);
         }
 
-        AddSection(L.T("Ogólne"), L.T("język, autostart, zegar, alarmy i przypomnienia, linki Notion, skrót klawiszowy"), BuildGeneral);
+        AddSection(L.T("Ogólne"), L.T("język, autostart, alarmy i przypomnienia, linki Notion, skrót klawiszowy"), BuildGeneral);
+        AddSection(L.T("Pasek"), L.T("pasek nad tablicą albo na całą szerokość ekranu, pasek zadań Windows, dock, pogoda, obciążenie, zegar"), BuildBar);
         AddSection(L.T("Konta"), L.T("Praca i Prywatne: folder, kalendarze Google, kategorie, oznaczenia dni"), BuildAccounts);
         AddSection(L.T("Połączenia"), L.T("Notion: automatyczne wczytywanie zadań z bazy"), BuildConnections);
         AddSection(L.T("Pogoda"), L.T("prognoza w nagłówkach dni, lokalizacja"), BuildWeather);
@@ -1135,28 +1136,10 @@ public sealed class SettingsWindow : DarkWindow
         return p;
     }
 
-    FrameworkElement BuildGeneral()
+    /// <summary>Settings → Pasek: the old bar over the board or the full-width one (its place, the Windows taskbar, the dock), what both show.</summary>
+    FrameworkElement BuildBar()
     {
         var p = new StackPanel();
-        // language: applied after a restart (all windows are built in it)
-        var lang = new ComboBox { Width = 200 };
-        lang.Items.Add(new ComboBoxItem { Content = "Polski", Tag = "pl" });
-        lang.Items.Add(new ComboBoxItem { Content = "English", Tag = "en" });
-        lang.SelectedIndex = S.Language == "en" ? 1 : 0;
-        var restart = Btn(L.T("Uruchom ponownie"), "SecondaryButton", (_, _) => App.Instance.Restart());
-        restart.Visibility = Visibility.Collapsed;
-        lang.SelectionChanged += (_, _) =>
-        {
-            if (lang.SelectedItem is not ComboBoxItem it) return;
-            S.Language = (string)it.Tag;
-            SettingsStore.Save(S);
-            restart.Visibility = S.Language == (L.En ? "en" : "pl") ? Visibility.Collapsed : Visibility.Visible;
-        };
-        var langRow = new StackPanel { Orientation = Orientation.Horizontal };
-        langRow.Children.Add(lang);
-        langRow.Children.Add(restart);
-        p.Children.Add(Pair("Język / Language", langRow));
-        p.Children.Add(Check(L.T("Uruchamiaj razem z Windows"), S.StartWithWindows, v => S.StartWithWindows = v));
         p.Children.Add(Check(L.T("Pasek u góry ekranu"), S.ShowClock, v => S.ShowClock = v,
             L.T("Wąski pasek nad tablicą, tak szeroki jak ona: pogoda teraz po lewej, godzina i data w środku (kliknięcie otwiera kalendarz miesiąca), obciążenie komputera po prawej.")));
         p.Children.Add(Check(L.T("Pasek na całą szerokość ekranu (jak pasek zadań)"), S.AppBar, v => S.AppBar = v,
@@ -1167,6 +1150,9 @@ public sealed class SettingsWindow : DarkWindow
         barPos.SelectedIndex = S.AppBarTop ? 0 : 1;
         barPos.SelectionChanged += (_, _) => { if (barPos.SelectedItem is ComboBoxItem it) { S.AppBarTop = (bool)it.Tag; App.Instance.ApplySettings(); } };
         p.Children.Add(Pair(L.T("Położenie paska na całą szerokość"), barPos));
+        p.Children.Add(Check(L.T("Ukryj pasek zadań Windows"), S.HideTaskbar, v => S.HideTaskbar = v,
+            L.T("Działa razem z paskiem na całą szerokość: pasek zadań Windows znika i oddaje swoje miejsce (na wszystkich monitorach). Wraca, gdy wyłączysz pasek TaskWall, zamkniesz TaskWall albo ten nagle się zamknie (strażnik). Start otwierasz przyciskiem na pasku albo klawiszem Windows.")));
+        foreach (var line in DockSettings()) p.Children.Add(line);
         p.Children.Add(Check(L.T("Pogoda teraz na pasku"), S.BarWeather, v => S.BarWeather = v, L.T("Potrzebuje miejscowości w sekcji Pogoda. Odświeżana co 30 minut.")));
         // the load rings: one tick per kind, the order stays CPU, GPU, RAM, disk, network
         var meters = new WrapPanel();
@@ -1189,6 +1175,53 @@ public sealed class SettingsWindow : DarkWindow
         p.Children.Add(Pair(L.T("Obciążenie na pasku"), meters,
             L.T("Kręgi wypełniają się jak w Menedżerze zadań: procesor, karta graficzna (najbardziej zajęty silnik), pamięć, najbardziej zajęty dysk (czas aktywności; wolne miejsce w podpowiedzi), sieć (ruch względem prędkości łącza). Odczyt co 2 sekundy, tylko gdy pasek jest widoczny.")));
         p.Children.Add(Check(L.T("Zegar 24-godzinny"), S.Use24h, v => S.Use24h = v));
+        return p;
+    }
+
+    /// <summary>The dock's options (the full-width bar's middle sector).</summary>
+    IEnumerable<FrameworkElement> DockSettings()
+    {
+        yield return Check(L.T("Dock na pasku"), S.Dock, v => S.Dock = v,
+            L.T("Środek paska na całą szerokość: przypięte programy, kreska, potem pozostałe uruchomione. Kliknięcie przywołuje okno programu (ponowne – chowa je; kilka okien – podglądy na żywo), środkowy przycisk otwiera nowe okno, prawy przypina, odpina i zamyka. Przypięte ikony przesuwasz przeciągnięciem. Pasek robi się wtedy nieco wyższy (ikony 44 px)."));
+        var mag = new ComboBox { Width = 200 };
+        foreach (var (tag, label) in new[] { ("off", L.T("Wyłączone")), ("subtle", L.T("Subtelne (1,25×)")), ("full", L.T("Pełne (1,55×)")) })
+            mag.Items.Add(new ComboBoxItem { Content = label, Tag = tag });
+        mag.SelectedItem = mag.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == S.DockMagnify) ?? mag.Items[2];
+        mag.SelectionChanged += (_, _) => { if (mag.SelectedItem is ComboBoxItem it) { S.DockMagnify = (string)it.Tag; App.Instance.ApplySettings(); } };
+        yield return Pair(L.T("Powiększanie ikon docka"), mag, L.T("Ikona pod kursorem rośnie, a sąsiednie trochę mniej – jak w docku macOS."));
+        yield return Check(L.T("Cienki dock przy zmaksymalizowanym oknie"), S.DockThin, v => S.DockThin = v,
+            L.T("Gdy na ekranie jest zmaksymalizowane okno, ikony docka maleją do 30 px (nic obok się nie przesuwa) i wracają do pełnej wielkości, gdy kursor zbliży się do paska."));
+        if (S.DockPins.Count > 0)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(new TextBlock { Text = L.F("Przypięte programy: {0}", S.DockPins.Count) + "  –  " + string.Join(", ", S.DockPins.Select(p => p.Name)), Foreground = Ui.Res("FgDim"), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 480 });
+            row.Children.Add(Btn(L.T("Odepnij wszystkie"), "LinkButton", (_, _) => { S.DockPins.Clear(); App.Instance.ApplySettings(); row.Visibility = Visibility.Collapsed; }));
+            yield return row;
+        }
+    }
+
+    FrameworkElement BuildGeneral()
+    {
+        var p = new StackPanel();
+        // language: applied after a restart (all windows are built in it)
+        var lang = new ComboBox { Width = 200 };
+        lang.Items.Add(new ComboBoxItem { Content = "Polski", Tag = "pl" });
+        lang.Items.Add(new ComboBoxItem { Content = "English", Tag = "en" });
+        lang.SelectedIndex = S.Language == "en" ? 1 : 0;
+        var restart = Btn(L.T("Uruchom ponownie"), "SecondaryButton", (_, _) => App.Instance.Restart());
+        restart.Visibility = Visibility.Collapsed;
+        lang.SelectionChanged += (_, _) =>
+        {
+            if (lang.SelectedItem is not ComboBoxItem it) return;
+            S.Language = (string)it.Tag;
+            SettingsStore.Save(S);
+            restart.Visibility = S.Language == (L.En ? "en" : "pl") ? Visibility.Collapsed : Visibility.Visible;
+        };
+        var langRow = new StackPanel { Orientation = Orientation.Horizontal };
+        langRow.Children.Add(lang);
+        langRow.Children.Add(restart);
+        p.Children.Add(Pair("Język / Language", langRow));
+        p.Children.Add(Check(L.T("Uruchamiaj razem z Windows"), S.StartWithWindows, v => S.StartWithWindows = v));
         p.Children.Add(Check(L.T("Dźwięk alarmów"), S.AlarmSound, v => S.AlarmSound = v));
         var remind = new ComboBox { Width = 200, HorizontalAlignment = HorizontalAlignment.Left };
         foreach (var (m, label) in new[] { (-1, L.T("Wyłączone")), (0, L.T("W chwili rozpoczęcia")), (5, L.T("5 min przed")), (10, L.T("10 min przed")), (15, L.T("15 min przed")) })

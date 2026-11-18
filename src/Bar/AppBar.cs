@@ -82,6 +82,13 @@ sealed class AppBar
 
     PxRect? _granted;
 
+    /// <summary>Explorer restarted and forgot every bar: the next <see cref="Dock"/> registers again.</summary>
+    public void Forget()
+    {
+        _registered = false;
+        _set = _granted = null;
+    }
+
     /// <summary>Gives the strip back (the work area grows again).</summary>
     public void Remove()
     {
@@ -99,6 +106,24 @@ sealed class AppBar
     }
 
     APPBARDATA Data() => new() { cbSize = Marshal.SizeOf<APPBARDATA>(), hWnd = _hwnd };
+
+    const uint ABM_GETSTATE = 4, ABM_SETSTATE = 10;
+    const int ABS_AUTOHIDE = 1, ABS_ALWAYSONTOP = 2;
+
+    /// <summary>The Windows taskbar's "automatically hide" setting.</summary>
+    public static bool TaskbarAutoHide
+    {
+        get
+        {
+            var d = new APPBARDATA { cbSize = Marshal.SizeOf<APPBARDATA>() };
+            return ((long)SHAppBarMessage(ABM_GETSTATE, ref d) & ABS_AUTOHIDE) != 0;
+        }
+        set
+        {
+            var d = new APPBARDATA { cbSize = Marshal.SizeOf<APPBARDATA>(), hWnd = Native.FindWindow("Shell_TrayWnd", null), lParam = new IntPtr(value ? ABS_AUTOHIDE : ABS_ALWAYSONTOP) };
+            SHAppBarMessage(ABM_SETSTATE, ref d);
+        }
+    }
 
     IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {

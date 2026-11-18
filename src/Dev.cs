@@ -68,6 +68,9 @@ static class Dev
         else if (open == "timeline") App.Current.Dispatcher.BeginInvoke(() => App.Board?.ShowTimeline(), DispatcherPriority.ApplicationIdle);
         else if (open == "drawer") App.Current.Dispatcher.BeginInvoke(() => App.Board?.RevealBacklog(), DispatcherPriority.ApplicationIdle);
         else if (open?.StartsWith("palette") == true) App.Current.Dispatcher.BeginInvoke(() => App.Board?.DevPalette(open.Length > 8 ? open[8..] : ""), DispatcherPriority.ApplicationIdle);
+        else if (open == "dock-hover") { var dt = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) }; dt.Tick += (_, _) => { dt.Stop(); App.Bar?.DevHover(); }; dt.Start(); }
+        else if (open == "dock-preview") { var dp = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) }; dp.Tick += (_, _) => { dp.Stop(); App.Bar?.DevPreview(); }; dp.Start(); }
+        else if (open == "tray") { var tt = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) }; tt.Tick += (_, _) => { tt.Stop(); App.Bar?.OpenTrayOverflow(); }; tt.Start(); } // the full-width bar's tray chevron
         else if (open == "calendar") App.Current.Dispatcher.BeginInvoke(() => App.ActiveCalendar?.Toggle(true), DispatcherPriority.ApplicationIdle);
         else if (open?.StartsWith("import=") == true)
             App.Current.Dispatcher.BeginInvoke(() => App.Instance.ImportNotion(open["import=".Length..]));

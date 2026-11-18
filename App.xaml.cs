@@ -49,6 +49,7 @@ public partial class App : Application
     bool FullBar => Settings.AppBar && !_barBlocked;
     /// <summary>The month calendar of the bar on screen (the full-width one or the old one over the board).</summary>
     public static CalendarWindow? ActiveCalendar => Instance._bar?.Calendar ?? Instance._clock?.Calendar;
+    public static BarWindow? Bar => Instance._bar;
     SettingsWindow? _settingsWindow;
     TrayIcon? _tray;
     Mutex? _mutex;
@@ -85,6 +86,12 @@ public partial class App : Application
         // dev runs (--data) live next to the installed copy
         _mutex = new Mutex(true, Dev.Arg("--data") != null ? @"Local\TaskWall.Dev" : @"Local\TaskWall.SingleInstance", out bool first);
         if (!first) { Shutdown(); return; }
+        // the installer (an update) asks this copy to close: cleanly, so the bar gives its strip and the taskbar back
+        if (Dev.Arg("--data") == null)
+        {
+            var quit = new EventWaitHandle(false, EventResetMode.AutoReset, Installer.QuitEvent);
+            new Thread(() => { if (quit.WaitOne()) Dispatcher.BeginInvoke(Shutdown); }) { IsBackground = true, Name = "TaskWall quit" }.Start();
+        }
 
         // after start-up a stray exception is logged and the app keeps running; during start-up it must not leave
         // an invisible process holding the single-instance mutex
@@ -131,6 +138,7 @@ public partial class App : Application
         CalendarService.Changed += () => { foreach (var b in Boards) b.OnExternalChange(quiet: true); };
 
         SetupTray();
+        Guard.RecoverTaskbar(); // a taskbar left hidden by an earlier TaskWall that is gone
         _barBlocked = Settings.AppBar && Guard.CrashLoop();
         if (_barBlocked)
             Dispatcher.BeginInvoke(() => _tray?.Balloon("TaskWall", L.T("Pasek na całą szerokość trzy razy zakończył się awarią w ciągu 10 minut – tym razem TaskWall startuje bez niego (ze zwykłym paskiem nad tablicą). Szczegóły w error.log.")), DispatcherPriority.ApplicationIdle);
@@ -431,6 +439,7 @@ public partial class App : Application
             try { s.SaveNow(); } catch (Exception ex) { Log.Error("save on exit", ex); }
         // the bar gives its strip of the screen back; the guard sees a clean exit and ends
         try { _bar?.Undock(); } catch (Exception ex) { Log.Error("bar on exit", ex); }
+        try { WindowsTaskbar.Restore(); } catch (Exception ex) { Log.Error("taskbar on exit", ex); }
         if (_bar != null || Settings.AppBar) Guard.CleanExit();
         _tray?.Dispose();
         base.OnExit(e);
@@ -569,8 +578,12 @@ public partial class App : Application
                 _bar.SetScale(ui);
                 Anim.Enter(_bar.FrameElement, 0, Settings.AppBarTop ? -30 : 30, 520, 150);
             }
+            // the Windows taskbar out of the way first, so the bar's strip is measured without it
+            try { if (Settings.HideTaskbar) WindowsTaskbar.Hide(); else WindowsTaskbar.Restore(); }
+            catch (Exception ex) { Log.Error("taskbar", ex); }
             var b = mon.Bounds;
-            try { strip = _bar.Dock(new PxRect(b.X, b.Y, b.Width, b.Height), Settings.AppBarTop, P(BarWindow.BarHeight * ui), s); }
+            double head = BarWindow.HeadroomFor(Settings.Dock, Settings.DockMagnify);
+            try { strip = _bar.Dock(new PxRect(b.X, b.Y, b.Width, b.Height), Settings.AppBarTop, P(BarWindow.HeightFor(Settings.Dock) * ui), P(head * ui), s, head); }
             catch (Exception ex) { Log.Error("bar dock", ex); }
             mon = Monitors.Pick(Settings.Monitor);
         }
@@ -580,6 +593,7 @@ public partial class App : Application
             _bar = null;
             old.Undock();
             old.Close();
+            try { WindowsTaskbar.Restore(); } catch (Exception ex) { Log.Error("taskbar", ex); }
             mon = Monitors.Pick(Settings.Monitor);
         }
         bool clock = Settings.ShowClock && !FullBar; // the old top bar over the board: not with the full-width one
@@ -721,7 +735,8 @@ public partial class App : Application
             if (_bar != null)
             {
                 // the full-width bar and its calendar: the same frosted wallpaper
-                var fr = _bar.PhysicalRect;
+                var sr = _bar.StripRect; // the glass: the reserved strip, not the dock's room past it
+                var fr = new Int32Rect(sr.X, sr.Y, sr.Width, sr.Height);
                 _bar.SetGlass(Settings.Blur && fr.Width > 0 ? Wallpaper.RenderGlass(src, fr, blurPx) : null);
                 var fk = _bar.Calendar.PhysicalRect;
                 _bar.Calendar.SetGlass(Settings.Blur && fk.Width > 0 ? Wallpaper.RenderGlass(src, fk, blurPx) : null);

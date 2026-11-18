@@ -48,21 +48,40 @@ sealed class SectorPanel : Panel
 /// </summary>
 public sealed class BarWindow : GlassWindow
 {
-    public const double BarHeight = 48;
+    /// <summary>The bar's height (DIP before the UI scale): with the dock it is taller, for the 44 px icons.</summary>
+    public static double HeightFor(bool dock) => dock ? 56 : 48;
+
+    /// <summary>The room past the bar's edge that grown dock icons reach into (window, not reserved): none without magnification.</summary>
+    public static double HeadroomFor(bool dock, string magnify) =>
+        !dock || magnify == "off" ? 0 : Math.Ceiling(Magnify.IconRest * (Magnify.Peak(magnify == "subtle" ? Strength.Subtle : Strength.Full) - 1)) + 4;
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern uint RegisterWindowMessage(string name);
+    [DllImport("user32.dll")] static extern bool RegisterShellHookWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern bool DeregisterShellHookWindow(IntPtr h);
+    static readonly uint TaskbarCreated = RegisterWindowMessage("TaskbarCreated");
+    static readonly uint ShellHook = RegisterWindowMessage("SHELLHOOK");
 
     readonly WeatherBadge _weather = new();
     readonly ClockFace _clock = new();
     readonly LoadMeters _meters = new();
     readonly CalendarWindow _calendar = new();
     readonly Border _glow = new();
+    readonly Border _middle = new();
+    readonly SectorPanel _sectors = new() { Margin = new Thickness(10, 0, 12, 0) };
     readonly Button _tray;
+    DockView? _dock;
     AppBar? _appBar;
-    bool _top = true, _narrow;
+    bool _top = true, _narrow, _shellHooked;
+    double _barHeight = HeightFor(false);
 
     public CalendarWindow Calendar => _calendar;
     /// <summary>Hidden while a program runs full screen (or the screen is locked, the computer asleep).</summary>
     public bool Paused { get; private set; }
     public bool Top => _top;
+    /// <summary>The reserved strip (physical pixels): the glass; the window may be taller by <see cref="Headroom"/>.</summary>
+    public PxRect StripRect { get; private set; }
+    /// <summary>The transparent room past the glass that grown dock icons reach into (DIP before the UI scale).</summary>
+    public double Headroom { get; private set; }
 
     /// <summary>Windows moved the other bars (the taskbar resized, a monitor changed): lay the windows out again.</summary>
     public event Action? Moved;
@@ -84,8 +103,7 @@ public sealed class BarWindow : GlassWindow
         left.Children.Add(Separator());
         left.Children.Add(_weather);
 
-        // ----- middle: the dock comes here (an empty sector for now) -----
-        var middle = new Border();
+        // ----- middle: the dock (Settings → Pasek → Dock) -----
 
         // ----- right: the load, the tray's hidden icons, the clock -----
         var right = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -99,11 +117,10 @@ public sealed class BarWindow : GlassWindow
         _clock.TenMinutes += _weather.Update;
         right.Children.Add(_clock);
 
-        var sectors = new SectorPanel { Margin = new Thickness(10, 0, 12, 0) };
-        sectors.Children.Add(left);
-        sectors.Children.Add(middle);
-        sectors.Children.Add(right);
-        sectors.SizeChanged += (_, e) =>
+        _sectors.Children.Add(left);
+        _sectors.Children.Add(_middle);
+        _sectors.Children.Add(right);
+        _sectors.SizeChanged += (_, e) =>
         {
             bool narrow = e.NewSize.Width < 1100;
             if (narrow == _narrow) return;
@@ -111,16 +128,20 @@ public sealed class BarWindow : GlassWindow
             _weather.Update();
             _meters.Build(true, IsVisible && !Paused);
         };
-        _glow.Child = sectors;
-        _glow.Background = Brushes.Transparent; // the whole bar takes the right click
-        _glow.MouseRightButtonUp += (_, e) => { e.Handled = true; App.Instance.ShowSettings(); };
-        Body = _glow;
+        // the sectors lie over the glass, not in it: the dock's grown icons reach past the glass into the window's transparent room
+        _sectors.Background = Brushes.Transparent; // the whole strip takes the right click
+        _sectors.MouseRightButtonUp += (_, e) => { e.Handled = true; App.Instance.ShowSettings(); };
+        _sectors.MouseEnter += (_, _) => _dock?.PointerNear(true);
+        _sectors.MouseLeave += (_, _) => _dock?.PointerNear(false);
+        Overlay.Children.Add(_sectors);
+        Body = _glow; // the glass: the glow only
 
         IsVisibleChanged += (_, _) => _meters.Build(false, IsVisible && !Paused);
-        Closed += (_, _) => { _appBar?.Remove(); _calendar.Close(); };
+        Closed += (_, _) => { _appBar?.Remove(); if (_shellHooked) DeregisterShellHookWindow(Hwnd); _calendar.Close(); };
         SetEdge(true);
         ApplyGlow();
         _weather.Update();
+        ApplyDock();
     }
 
     static Button IconButton(FrameworkElement icon, string tip, RoutedEventHandler click)
@@ -140,13 +161,41 @@ public sealed class BarWindow : GlassWindow
         _clock.OpensUp = !top;
         _calendar.OpensUp = !top;
         _tray.Content = Icons.Caret(!top);
+        // the glass and the sectors at the screen's edge of the window; the rest of it is the dock's room
+        Frame.VerticalAlignment = _sectors.VerticalAlignment = top ? VerticalAlignment.Top : VerticalAlignment.Bottom;
         ApplyGlow();
     }
 
     /// <summary>The board's light: from the bar's edge that faces the board.</summary>
-    public void ApplyGlow() => _glow.Background = Glow.Enabled ? (_top ? Glow.Bottom() : Glow.Top()) : Brushes.Transparent;
+    public void ApplyGlow() => _glow.Background = Glow.Enabled ? (_top ? Glow.Bottom() : Glow.Top()) : null;
 
-    public void ApplySettings() { ApplyGlow(); _meters.Build(false, IsVisible && !Paused); _weather.Update(); _clock.Refresh(); }
+    public void ApplySettings()
+    {
+        ApplyGlow();
+        _meters.Build(false, IsVisible && !Paused);
+        _weather.Update();
+        _clock.Refresh();
+        ApplyDock();
+    }
+
+    /// <summary>The dock in the middle sector, or none (Settings → Pasek → Dock); the bar's height follows.</summary>
+    void ApplyDock()
+    {
+        bool want = App.Settings.Dock;
+        _barHeight = HeightFor(want);
+        _sectors.Height = _barHeight;
+        if (want && _dock == null)
+        {
+            _dock = new DockView(this);
+            _middle.Child = _dock;
+        }
+        else if (!want && _dock != null)
+        {
+            _middle.Child = null;
+            _dock = null;
+        }
+        if (_dock != null) { _dock.BarHeight = _barHeight; _dock.Refresh(); }
+    }
 
     public void SetScale(double scale)
     {
@@ -157,21 +206,40 @@ public sealed class BarWindow : GlassWindow
     }
 
     /// <summary>
-    /// Reserves the strip on <paramref name="monitor"/> (physical pixels) and moves the window into it; returns the strip
-    /// (Windows may have moved it out of the taskbar's way).
+    /// Reserves the strip on <paramref name="monitor"/> (physical pixels) and moves the window into it – taller by
+    /// <paramref name="headroom"/> px towards the board when the dock's icons grow past the glass; returns the strip (Windows may
+    /// have moved it out of the taskbar's way).
     /// </summary>
-    public PxRect Dock(PxRect monitor, bool top, int height, double scale)
+    /// <summary>Dev runs: the dock as if the pointer were over it.</summary>
+    public void DevHover() => _dock?.DevHover();
+    public void DevPreview() => _dock?.DevPreview();
+
+    public PxRect Dock(PxRect monitor, bool top, int height, int headroom, double scale, double headroomDip)
     {
         new WindowInteropHelper(this).EnsureHandle();
         if (_appBar == null)
         {
+            HwndSource.FromHwnd(Hwnd)?.AddHook((IntPtr h, int msg, IntPtr w, IntPtr l, ref bool handled) =>
+            {
+                // Explorer restarted ("TaskbarCreated"): it forgot this bar, and a new taskbar is on screen – all again
+                if (msg == (int)TaskbarCreated)
+                    Dispatcher.BeginInvoke(() => { _appBar?.Forget(); WindowsTaskbar.Rehide(); _shellHooked = RegisterShellHookWindow(Hwnd); Moved?.Invoke(); }, DispatcherPriority.Background);
+                // windows created, gone, activated, flashing: the dock follows (no polling)
+                else if (msg == (int)ShellHook && _dock != null)
+                    _dock.OnShell(w.ToInt32() & 0xFFFF, l);
+                return IntPtr.Zero;
+            });
+            _shellHooked = RegisterShellHookWindow(Hwnd);
             _appBar = new AppBar(Hwnd);
             _appBar.PositionChanged += () => Dispatcher.BeginInvoke(() => Moved?.Invoke(), DispatcherPriority.Background);
             _appBar.FullscreenChanged += full => Dispatcher.BeginInvoke(() => Pause(full));
         }
         if (top != _top) SetEdge(top);
         var r = _appBar.Dock(monitor, top, height);
-        PlacePhysical(r.X, r.Y, r.Width, r.Height, scale);
+        StripRect = r;
+        Headroom = headroomDip;
+        Frame.Height = r.Height / scale;
+        PlacePhysical(r.X, top ? r.Y : r.Y - headroom, r.Width, r.Height + headroom, scale);
         Guard.Watch(Hwnd);
         return r;
     }
@@ -192,6 +260,7 @@ public sealed class BarWindow : GlassWindow
         if (paused == Paused) return;
         Paused = paused;
         _clock.Pause(paused);
+        _dock?.Pause(paused);
         if (paused)
         {
             if (_calendar.IsOpen) _calendar.Toggle(false);
@@ -206,12 +275,34 @@ public sealed class BarWindow : GlassWindow
         }
     }
 
-    /// <summary>The hidden icons of the Windows tray: Win+B moves the focus to the tray's chevron, Enter opens it.</summary>
-    static void OpenTrayOverflow()
+    /// <summary>
+    /// The hidden icons of the Windows tray: Win+B moves the focus to the tray's chevron, Enter opens it – Windows puts
+    /// that window over its own taskbar, so it is moved to this bar's chevron as soon as it shows (Windows 11:
+    /// TopLevelWindowForOverflowXamlIsland, Windows 10: NotifyIconOverflowWindow).
+    /// </summary>
+    public void OpenTrayOverflow()
     {
         Keys.Press(Keys.LWin, Keys.B);
-        var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
-        t.Tick += (_, _) => { t.Stop(); Keys.Press(Keys.Return); };
+        var anchor = _tray.PointToScreen(new Point(_tray.ActualWidth, 0)); // physical pixels: the chevron's right edge
+        var strip = StripRect;
+        int tries = 0;
+        var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(60) };
+        t.Tick += (_, _) =>
+        {
+            if (++tries == 2) Keys.Press(Keys.Return);
+            if (tries < 3) return;
+            var w = Native.FindWindow("TopLevelWindowForOverflowXamlIsland", null);
+            if (w == IntPtr.Zero) w = Native.FindWindow("NotifyIconOverflowWindow", null);
+            if (w != IntPtr.Zero && Native.IsWindowVisible(w) && Native.GetWindowRect(w, out var r) && r.Right > r.Left)
+            {
+                int width = r.Right - r.Left, height = r.Bottom - r.Top, gap = (int)Math.Round(6 * VisualTreeHelper.GetDpi(this).DpiScaleY);
+                int x = (int)Math.Round(anchor.X) - width;
+                int y = _top ? strip.Y + strip.Height + gap : strip.Y - height - gap;
+                Native.SetWindowPos(w, IntPtr.Zero, Math.Max(strip.X, x), y, 0, 0, Native.SWP_NOSIZE | Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
+                t.Stop();
+            }
+            else if (tries > 25) t.Stop(); // didn't open (all icons shown on the taskbar, no chevron): nothing to move
+        };
         t.Start();
     }
 }
