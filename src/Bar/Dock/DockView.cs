@@ -78,7 +78,7 @@ sealed class DockView : Canvas
     Point _pressAt;
     readonly DispatcherTimer _refresh = new() { Interval = TimeSpan.FromMilliseconds(120) };
     readonly DispatcherTimer _thinCheck = new() { Interval = TimeSpan.FromMilliseconds(200) };
-    readonly DispatcherTimer _hoverPreview = new() { Interval = TimeSpan.FromMilliseconds(380) };
+    readonly DispatcherTimer _hoverPreview = new() { Interval = TimeSpan.FromMilliseconds(700) }; // the name shows at once, the previews when the pointer stays
     readonly DispatcherTimer _hidePreview = new() { Interval = TimeSpan.FromMilliseconds(320) };
     Entry? _hovered;
     readonly WindowPreview _preview = new();
@@ -263,9 +263,12 @@ sealed class DockView : Canvas
         try { tasks = TaskList.Tasks(); }
         catch (Exception ex) { Log.Error("dock tasks", ex); return; }
         var groups = new Dictionary<string, List<TaskList.Task>>(StringComparer.OrdinalIgnoreCase);
+        var pinByExe = S.DockPins.Where(p => !string.IsNullOrEmpty(p.Exe)).GroupBy(p => p.Exe!, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Key, StringComparer.OrdinalIgnoreCase);
         foreach (var t in tasks)
         {
-            if (!groups.TryGetValue(t.Group, out var l)) groups[t.Group] = l = new();
+            // a program pinned by its file groups its windows under the pin even when they carry an app id of their own
+            var key = t.Exe != null && pinByExe.TryGetValue(t.Exe, out var pk) ? pk : t.Group;
+            if (!groups.TryGetValue(key, out var l)) groups[key] = l = new();
             l.Add(t);
         }
         // the running ones keep the order they came in (a new one at the end), like the taskbar
@@ -285,7 +288,10 @@ sealed class DockView : Canvas
             string? exe = first?.Exe ?? e.Pin?.Exe, appId = first?.AppId ?? e.Pin?.AppId;
             e.Name = e.Pin?.Name is { Length: > 0 } pn ? pn : ShellIcons.Name(e.Key, exe, appId, first?.Title ?? e.Key);
             e.Img.Source ??= ShellIcons.Icon(e.Key, exe, appId, first?.Hwnd ?? IntPtr.Zero);
-            e.Visual.ToolTip = e.Windows.Count == 0 ? e.Name : null; // running ones show their previews instead
+            // the name at once (like the Mac's dock); the live previews of a running one follow when the pointer stays
+            e.Visual.ToolTip = new ToolTip { Content = e.Name + "\n" + (e.Windows.Count == 0 ? L.T("Kliknij, aby uruchomić") : L.T("Środkowy przycisk: nowe okno")), Placement = _bar.AtTop ? System.Windows.Controls.Primitives.PlacementMode.Bottom : System.Windows.Controls.Primitives.PlacementMode.Top };
+            ToolTipService.SetInitialShowDelay(e.Visual, 0);
+            System.Windows.Automation.AutomationProperties.SetName(e.Visual, e.Name);
             _entries.Add(e);
         }
         foreach (var gone in old.Values) { Children.Remove(gone.Visual); Children.Remove(gone.Mark); }
@@ -513,6 +519,7 @@ sealed class DockView : Canvas
     {
         if (e.Windows.Count == 0 || !e.Visual.IsVisible) return;
         _hovered = e;
+        if (e.Visual.ToolTip is ToolTip tip) tip.IsOpen = false; // the previews take the name's place
         var c = e.Visual.PointToScreen(new Point(e.Visual.ActualWidth / 2, 0));
         _preview.Present(e.Windows, c.X, _bar.FrameRect, _bar.AtTop, VisualTreeHelper.GetDpi(_bar).DpiScaleX);
     }

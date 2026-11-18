@@ -16,7 +16,7 @@ public sealed class ClockFace : Border
 {
     readonly TextBlock _time = new() { FontSize = 21, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
     readonly TextBlock _date = new() { FontSize = 11, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 2, 0, 0) };
-    readonly TextBlock _chevron = new() { Text = "▾", FontSize = 10, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 2, 0, 0) };
+    readonly TextBlock _chevron = new() { Text = "▾", FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 1, 0, 0) };
     readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     string _shown = "";
 
@@ -30,7 +30,8 @@ public sealed class ClockFace : Border
     public ClockFace(bool dateFirst = false)
     {
         _date.Foreground = Ui.Res("FgDim");
-        _chevron.Foreground = Ui.Res("FgFaint");
+        _chevron.Foreground = Ui.Res("FgDim");
+        System.Windows.Automation.AutomationProperties.SetName(this, L.T("Kalendarz"));
         var clock = new StackPanel { Orientation = Orientation.Horizontal };
         _dateFirst = dateFirst;
         if (dateFirst)

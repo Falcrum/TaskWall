@@ -181,7 +181,18 @@ public sealed class BarWindow : GlassWindow
         WeatherService.Changed += _sectors.Forget;
         // the sectors lie over the glass, not in it: the dock's grown icons reach past the glass into the window's transparent room
         _sectors.Background = Brushes.Transparent; // the whole strip takes the right click
-        _sectors.MouseRightButtonUp += (_, e) => { e.Handled = true; App.Instance.ShowSettings(); };
+        // the right button: a small menu, as on the Windows taskbar (not the settings at once)
+        _sectors.MouseRightButtonUp += (_, e) =>
+        {
+            e.Handled = true;
+            var m = new ContextMenu { Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint };
+            void Item(string text, Action a) { var i = new MenuItem { Header = text }; i.Click += (_, _) => a(); m.Items.Add(i); }
+            Item(L.T("Ustawienia paska…"), () => App.Instance.ShowSettings(1));
+            Item(L.T("Menedżer zadań"), () => GlassWindow.OpenUrl("taskmgr.exe"));
+            m.Items.Add(new Separator());
+            Item(L.T("Ustawienia TaskWall…"), () => App.Instance.ShowSettings());
+            m.IsOpen = true;
+        };
         _sectors.MouseEnter += (_, _) => _dock?.PointerNear(true);
         _sectors.MouseLeave += (_, _) => _dock?.PointerNear(false);
         Overlay.Children.Add(_sectors);
@@ -211,7 +222,9 @@ public sealed class BarWindow : GlassWindow
 
     static Button IconButton(FrameworkElement icon, string tip, RoutedEventHandler click)
     {
-        var b = new Button { Style = (Style)Application.Current.Resources["BarIcon"], Content = icon, ToolTip = tip, VerticalAlignment = VerticalAlignment.Center };
+        // at least 32 × 32 to aim at, and a name for screen readers (not only the tool tip)
+        var b = new Button { Style = (Style)Application.Current.Resources["BarIcon"], Content = icon, ToolTip = tip, VerticalAlignment = VerticalAlignment.Center, MinWidth = 32, MinHeight = 32 };
+        System.Windows.Automation.AutomationProperties.SetName(b, tip);
         b.Click += click;
         return b;
     }

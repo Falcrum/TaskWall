@@ -85,6 +85,7 @@ sealed class VolumeButton : Button
     {
         _bar = bar;
         Style = (Style)Application.Current.Resources["BarIcon"];
+        MinWidth = MinHeight = 32;
         VerticalAlignment = VerticalAlignment.Center;
         Volume.Changed += OnVolume;
         Volume.DeviceChanged += OnDevice;
@@ -114,6 +115,7 @@ sealed class VolumeButton : Button
         int pct = (int)Math.Round((level ?? 0) * 100);
         int waves = level is not { } l || l <= 0.001 ? 0 : l < 0.34 ? 1 : l < 0.67 ? 2 : 3;
         Content = Icons.Speaker(waves, muted || level == null);
+        System.Windows.Automation.AutomationProperties.SetName(this, level == null ? L.T("Brak głośników") : L.F("Głośność {0}%", pct));
         ToolTip = level == null ? L.T("Brak głośników") : (Volume.DeviceName.Length > 0 ? Volume.DeviceName + "\n" : "") + (muted ? L.F("Wyciszone ({0}%)", pct) : L.F("Głośność {0}%", pct)) + "\n" + L.T("Kółko: głośniej / ciszej · środkowy przycisk: wycisz");
         if (_slider != null && !_setting && !own) _slider.Value = pct;
         if (_percent != null) _percent.Text = muted ? L.T("wyciszone") : $"{pct}%";
@@ -193,6 +195,7 @@ sealed class NetworkButton : Button
     {
         _bar = bar;
         Style = (Style)Application.Current.Resources["BarIcon"];
+        MinWidth = MinHeight = 32;
         VerticalAlignment = VerticalAlignment.Center;
         _soon.Tick += (_, _) => { _soon.Stop(); Refresh(); };
         _signal.Tick += (_, _) => Refresh();
@@ -234,6 +237,7 @@ sealed class NetworkButton : Button
         FrameworkElement icon = s.Kind switch { Network.Kind.Wifi => Icons.Wifi(arcs), Network.Kind.None => Icons.NoNetwork(), _ => Icons.Cable() };
         icon.Opacity = s.Kind != Network.Kind.None && !s.Internet ? 0.45 : 1; // connected, but no internet: faded
         Content = icon;
+        System.Windows.Automation.AutomationProperties.SetName(this, s.Kind == Network.Kind.None ? L.T("Brak połączenia z siecią") : s.Name);
         ToolTip = s.Kind switch
         {
             Network.Kind.None => L.T("Brak połączenia z siecią"),

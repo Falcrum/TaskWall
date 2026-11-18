@@ -1137,36 +1137,54 @@ public sealed class SettingsWindow : DarkWindow
         return p;
     }
 
-    /// <summary>Settings → Pasek: the old bar over the board or the full-width one (its place, the Windows taskbar, the dock), what both show.</summary>
+    /// <summary>
+    /// Settings → Pasek: one choice of the bar (none, over the board, across the whole screen); the full-width bar's own options and
+    /// the dock's under it, indented, and shown only while they apply; then what every bar shows.
+    /// </summary>
     FrameworkElement BuildBar()
     {
         var p = new StackPanel();
-        p.Children.Add(Check(L.T("Pasek u góry ekranu"), S.ShowClock, v => S.ShowClock = v,
-            L.T("Wąski pasek nad tablicą, tak szeroki jak ona: pogoda teraz po lewej, godzina i data w środku (kliknięcie otwiera kalendarz miesiąca), obciążenie komputera po prawej.")));
-        p.Children.Add(Check(L.T("Pasek na całą szerokość ekranu (jak pasek zadań)"), S.AppBar, v => S.AppBar = v,
-            L.T("Zamiast paska nad tablicą: jeden pasek przez cały ekran – Start i pogoda po lewej, obciążenie, ikony zasobnika i zegar z kalendarzem po prawej. Windows rezerwuje dla niego miejsce jak dla paska zadań (zmaksymalizowane okna się pod niego nie wsuwają). Przy grze i filmie na pełnym ekranie chowa się i nic nie odświeża. Gdy TaskWall nagle się zamknie (awaria), osobny strażnik oddaje to miejsce.")));
-        var barPos = new ComboBox { Width = 200 };
-        barPos.Items.Add(new ComboBoxItem { Content = L.T("Góra ekranu"), Tag = true });
-        barPos.Items.Add(new ComboBoxItem { Content = L.T("Dół ekranu"), Tag = false });
-        barPos.SelectedIndex = S.AppBarTop ? 0 : 1;
-        barPos.SelectionChanged += (_, _) => { if (barPos.SelectedItem is ComboBoxItem it) { S.AppBarTop = (bool)it.Tag; App.Instance.ApplySettings(); } };
-        p.Children.Add(Pair(L.T("Położenie paska na całą szerokość"), barPos));
-        var barSize = new ComboBox { Width = 200 };
-        foreach (var (tag, label) in new[] { ("large", L.T("Duży")), ("medium", L.T("Średni")), ("small", L.T("Mały")) })
-            barSize.Items.Add(new ComboBoxItem { Content = label, Tag = tag });
-        barSize.SelectedItem = barSize.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == S.BarSize) ?? barSize.Items[1];
-        barSize.SelectionChanged += (_, _) => { if (barSize.SelectedItem is ComboBoxItem it) { S.BarSize = (string)it.Tag; App.Instance.ApplySettings(); } };
-        p.Children.Add(Pair(L.T("Wysokość paska na całą szerokość"), barSize, L.T("Duży: ikony docka 44 px. Średni: 32 px. Mały: niewiele wyższy niż kółka obciążenia (ikony 22 px). Napisy rosną i maleją razem z paskiem.")));
-        p.Children.Add(Check(L.T("Ukryj pasek zadań Windows"), S.HideTaskbar, v => S.HideTaskbar = v,
-            L.T("Działa razem z paskiem na całą szerokość: pasek zadań Windows znika i oddaje swoje miejsce (na wszystkich monitorach). Wraca, gdy wyłączysz pasek TaskWall, zamkniesz TaskWall albo ten nagle się zamknie (strażnik). Start otwierasz przyciskiem na pasku albo klawiszem Windows.")));
-        foreach (var line in DockSettings()) p.Children.Add(line);
-        p.Children.Add(Check(L.T("Pogoda teraz na pasku"), S.BarWeather, v => S.BarWeather = v, L.T("Potrzebuje miejscowości w sekcji Pogoda. Odświeżana co 30 minut.")));
+        var full = new StackPanel { Margin = new Thickness(26, 0, 0, 4) }; // the full-width bar's options
+        var any = new StackPanel();                                       // what any bar shows
+        void Show()
+        {
+            full.Visibility = S.AppBar ? Visibility.Visible : Visibility.Collapsed;
+            any.Visibility = S.AppBar || S.ShowClock ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        var kind = Combo(new[] { ("none", L.T("Brak paska")), ("board", L.T("Nad tablicą (szeroki jak tablica)")), ("full", L.T("Na całą szerokość ekranu (jak pasek zadań)")) },
+            S.AppBar ? "full" : S.ShowClock ? "board" : "none", tag =>
+            {
+                S.AppBar = tag == "full";
+                S.ShowClock = tag != "none";
+                Show();
+                App.Instance.ApplySettings();
+            }, 320);
+        p.Children.Add(Pair(L.T("Pasek"), kind,
+            L.T("Nad tablicą: wąski pasek tak szeroki jak tablica – pogoda, godzina z kalendarzem, obciążenie. Na całą szerokość: jeden pasek przez cały ekran, który może zastąpić pasek zadań Windows – Start, pogoda, dock, obciążenie, sieć, głośność, ukryte ikony zasobnika i zegar z kalendarzem. Windows rezerwuje dla niego miejsce (zmaksymalizowane okna się pod niego nie wsuwają); przy grze i filmie na pełnym ekranie chowa się; gdy TaskWall nagle się zamknie, osobny strażnik oddaje to miejsce.")));
+
+        full.Children.Add(Pair(L.T("Położenie"), Combo(new[] { ("top", L.T("Góra ekranu")), ("bottom", L.T("Dół ekranu")) }, S.AppBarTop ? "top" : "bottom",
+            tag => { S.AppBarTop = tag == "top"; App.Instance.ApplySettings(); })));
+        full.Children.Add(Pair(L.T("Wysokość"), Combo(new[] { ("large", L.T("Duży")), ("medium", L.T("Średni")), ("small", L.T("Mały")) }, S.BarSize,
+            tag => { S.BarSize = tag; App.Instance.ApplySettings(); }),
+            L.T("Duży: ikony docka 44 px. Średni: 32 px. Mały: niewiele wyższy niż kółka obciążenia (ikony 22 px). Napisy rosną i maleją razem z paskiem.")));
+        full.Children.Add(Check(L.T("Ukryj pasek zadań Windows"), S.HideTaskbar, v => S.HideTaskbar = v,
+            L.T("Pasek zadań Windows znika i oddaje swoje miejsce (na wszystkich monitorach). Wraca, gdy wyłączysz pasek TaskWall, zamkniesz TaskWall albo ten nagle się zamknie (strażnik). Start otwierasz przyciskiem na pasku albo klawiszem Windows.")));
+        var dock = new StackPanel { Margin = new Thickness(26, 0, 0, 0) };
+        full.Children.Add(Check(L.T("Dock na pasku"), S.Dock, v => { S.Dock = v; dock.Visibility = v ? Visibility.Visible : Visibility.Collapsed; },
+            L.T("Środek paska: przypięte programy, kreska, potem pozostałe uruchomione. Kliknięcie przywołuje okno programu (ponowne – chowa je; kilka okien – podglądy na żywo), środkowy przycisk otwiera nowe okno, prawy przypina, odpina i zamyka. Przypięte ikony przesuwasz przeciągnięciem.")));
+        foreach (var line in DockSettings()) dock.Children.Add(line);
+        dock.Visibility = S.Dock ? Visibility.Visible : Visibility.Collapsed;
+        full.Children.Add(dock);
+        p.Children.Add(full);
+
+        any.Children.Add(Check(L.T("Pogoda teraz na pasku"), S.BarWeather, v => S.BarWeather = v, L.T("Potrzebuje miejscowości w sekcji Pogoda. Odświeżana co 30 minut.")));
         // the load rings: one tick per kind, the order stays CPU, GPU, RAM, disk, network
         var meters = new WrapPanel();
         var names = new Dictionary<string, string> { ["cpu"] = "CPU", ["gpu"] = "GPU", ["ram"] = "RAM", ["disk"] = L.T("Dyski"), ["net"] = L.T("Sieć") };
-        foreach (var kind in SysMeters.Kinds)
+        foreach (var kindName in SysMeters.Kinds)
         {
-            var k = kind;
+            var k = kindName;
             var cb = new CheckBox { Content = names[k], IsChecked = S.Meters.Split(',').Contains(k), Margin = new Thickness(0, 5, 14, 5) };
             void Set(bool on)
             {
@@ -1179,32 +1197,84 @@ public sealed class SettingsWindow : DarkWindow
             cb.Unchecked += (_, _) => Set(false);
             meters.Children.Add(cb);
         }
-        p.Children.Add(Pair(L.T("Obciążenie na pasku"), meters,
+        any.Children.Add(Pair(L.T("Obciążenie na pasku"), meters,
             L.T("Kręgi wypełniają się jak w Menedżerze zadań: procesor, karta graficzna (najbardziej zajęty silnik), pamięć, najbardziej zajęty dysk (czas aktywności; wolne miejsce w podpowiedzi), sieć (ruch względem prędkości łącza). Odczyt co 2 sekundy, tylko gdy pasek jest widoczny.")));
-        p.Children.Add(Check(L.T("Zegar 24-godzinny"), S.Use24h, v => S.Use24h = v));
+        any.Children.Add(Check(L.T("Zegar 24-godzinny"), S.Use24h, v => S.Use24h = v));
+        p.Children.Add(any);
+        Show();
         return p;
     }
 
-    /// <summary>The dock's options (the full-width bar's middle sector).</summary>
+    /// <summary>A drop-down of (tag, label) choices, left-aligned like the other controls; <paramref name="set"/> gets the chosen tag.</summary>
+    static ComboBox Combo((string Tag, string Label)[] items, string current, Action<string> set, double width = 220)
+    {
+        var c = new ComboBox { Width = width, HorizontalAlignment = HorizontalAlignment.Left };
+        foreach (var (tag, label) in items) c.Items.Add(new ComboBoxItem { Content = label, Tag = tag });
+        c.SelectedItem = c.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == current) ?? c.Items[0];
+        c.SelectionChanged += (_, _) => { if (c.SelectedItem is ComboBoxItem it) set((string)it.Tag); };
+        return c;
+    }
+
+    /// <summary>The dock's options: the magnification, the thin dock, the pinned programs (added from a file, removed one by one).</summary>
     IEnumerable<FrameworkElement> DockSettings()
     {
-        yield return Check(L.T("Dock na pasku"), S.Dock, v => S.Dock = v,
-            L.T("Środek paska na całą szerokość: przypięte programy, kreska, potem pozostałe uruchomione. Kliknięcie przywołuje okno programu (ponowne – chowa je; kilka okien – podglądy na żywo), środkowy przycisk otwiera nowe okno, prawy przypina, odpina i zamyka. Przypięte ikony przesuwasz przeciągnięciem. Pasek robi się wtedy nieco wyższy (ikony 44 px)."));
-        var mag = new ComboBox { Width = 200 };
-        foreach (var (tag, label) in new[] { ("off", L.T("Wyłączone")), ("subtle", L.T("Subtelne (1,25×)")), ("full", L.T("Pełne (1,55×)")) })
-            mag.Items.Add(new ComboBoxItem { Content = label, Tag = tag });
-        mag.SelectedItem = mag.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == S.DockMagnify) ?? mag.Items[2];
-        mag.SelectionChanged += (_, _) => { if (mag.SelectedItem is ComboBoxItem it) { S.DockMagnify = (string)it.Tag; App.Instance.ApplySettings(); } };
-        yield return Pair(L.T("Powiększanie ikon docka"), mag, L.T("Ikona pod kursorem rośnie, a sąsiednie trochę mniej – jak w docku macOS."));
+        yield return Pair(L.T("Powiększanie ikon"), Combo(new[] { ("off", L.T("Wyłączone")), ("subtle", L.T("Subtelne (1,25×)")), ("full", L.T("Pełne (1,55×)")) }, S.DockMagnify,
+            tag => { S.DockMagnify = tag; App.Instance.ApplySettings(); }), L.T("Ikona pod kursorem rośnie, a sąsiednie trochę mniej – jak w docku macOS."));
         yield return Check(L.T("Cienki dock przy zmaksymalizowanym oknie"), S.DockThin, v => S.DockThin = v,
             L.T("Gdy na ekranie jest zmaksymalizowane okno, ikony docka maleją do 30 px (nic obok się nie przesuwa) i wracają do pełnej wielkości, gdy kursor zbliży się do paska."));
-        if (S.DockPins.Count > 0)
+        var pins = new StackPanel();
+        void FillPins()
         {
-            var row = new StackPanel { Orientation = Orientation.Horizontal };
-            row.Children.Add(new TextBlock { Text = L.F("Przypięte programy: {0}", S.DockPins.Count) + "  –  " + string.Join(", ", S.DockPins.Select(p => p.Name)), Foreground = Ui.Res("FgDim"), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 480 });
-            row.Children.Add(Btn(L.T("Odepnij wszystkie"), "LinkButton", (_, _) => { S.DockPins.Clear(); App.Instance.ApplySettings(); row.Visibility = Visibility.Collapsed; }));
-            yield return row;
+            pins.Children.Clear();
+            foreach (var pin in S.DockPins.ToList())
+            {
+                var row = new DockPanel { Margin = new Thickness(0, 1, 0, 1) };
+                var remove = Btn(L.T("Odepnij"), "LinkButton", (_, _) => { S.DockPins.Remove(pin); App.Instance.ApplySettings(); FillPins(); });
+                DockPanel.SetDock(remove, Dock.Right);
+                row.Children.Add(remove);
+                row.Children.Add(new TextBlock { Text = pin.Name.Length > 0 ? pin.Name : pin.Key, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = pin.Exe ?? pin.AppId, Foreground = Ui.Res("Fg") });
+                pins.Children.Add(row);
+            }
+            var add = Btn(L.T("Dodaj program…"), "SecondaryButton", (_, _) => { if (AddPin()) FillPins(); });
+            add.HorizontalAlignment = HorizontalAlignment.Left;
+            add.Margin = new Thickness(0, 6, 0, 0);
+            pins.Children.Add(add);
         }
+        FillPins();
+        yield return Pair(L.T("Przypięte programy"), pins, L.T("Kolejność zmieniasz przeciągając ikony na docku. Uruchomiony program przypniesz też prawym przyciskiem na jego ikonie."));
+    }
+
+    /// <summary>A program file or a shortcut chosen by hand → pinned to the dock (a shortcut by the program it points to, so its windows group under it).</summary>
+    bool AddPin()
+    {
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = L.T("Przypnij program do docka"),
+            Filter = L.T("Programy i skróty") + " (*.exe;*.lnk)|*.exe;*.lnk",
+            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu) is { Length: > 0 } sm ? System.IO.Path.Combine(sm, "Programs") : "",
+            DereferenceLinks = false,
+        };
+        if (dlg.ShowDialog(this) != true) return false;
+        string exe = dlg.FileName, args = "";
+        if (exe.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var shell = Type.GetTypeFromProgID("WScript.Shell");
+                dynamic ws = Activator.CreateInstance(shell!)!;
+                dynamic lnk = ws.CreateShortcut(exe);
+                if (((string)lnk.TargetPath) is { Length: > 0 } target) { exe = target; args = (string)lnk.Arguments ?? ""; }
+            }
+            catch (Exception ex) { Log.Error("dock pin shortcut", ex); }
+        }
+        var key = exe.ToLowerInvariant();
+        if (S.DockPins.Any(p => string.Equals(p.Key, key, StringComparison.OrdinalIgnoreCase))) return false;
+        string name;
+        try { name = System.Diagnostics.FileVersionInfo.GetVersionInfo(exe).FileDescription ?? ""; } catch { name = ""; }
+        if (string.IsNullOrWhiteSpace(name)) name = System.IO.Path.GetFileNameWithoutExtension(dlg.FileName);
+        S.DockPins.Add(new DockPin { Key = key, Exe = exe, Args = args.Length > 0 ? args : null, Name = name.Trim() });
+        App.Instance.ApplySettings();
+        return true;
     }
 
     FrameworkElement BuildGeneral()

@@ -852,6 +852,14 @@ public partial class App : Application
         _settingsWindow.Activate();
     }
 
+    /// <summary>The settings opened at one section (1: Pasek).</summary>
+    public void ShowSettings(int section)
+    {
+        ShowSettings();
+        var w = _settingsWindow;
+        Dispatcher.BeginInvoke(() => w?.OpenSection(section), DispatcherPriority.ApplicationIdle);
+    }
+
     public void ImportNotion() => ImportNotion(null);
 
     public void ImportNotion(string? path)
