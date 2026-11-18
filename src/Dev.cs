@@ -70,6 +70,8 @@ static class Dev
         else if (open?.StartsWith("palette") == true) App.Current.Dispatcher.BeginInvoke(() => App.Board?.DevPalette(open.Length > 8 ? open[8..] : ""), DispatcherPriority.ApplicationIdle);
         else if (open == "dock-hover") { var dt = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) }; dt.Tick += (_, _) => { dt.Stop(); App.Bar?.DevHover(); }; dt.Start(); }
         else if (open == "dock-preview") { var dp = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) }; dp.Tick += (_, _) => { dp.Stop(); App.Bar?.DevPreview(); }; dp.Start(); }
+        else if (open == "indicators") App.Current.Dispatcher.BeginInvoke(() => { var n = Network.Read(); Log.Error($"dev indicators: volume {Volume.Level:0.00} muted {Volume.Muted} device \"{Volume.DeviceName}\"; network {n.Kind} internet {n.Internet} signal {n.Signal} speed {n.SpeedBps}"); }, DispatcherPriority.ApplicationIdle);
+        else if (open == "panels") { var pt = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) }; pt.Tick += (_, _) => { pt.Stop(); App.Bar?.DevPanels(); }; pt.Start(); }
         else if (open == "tray") { var tt = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) }; tt.Tick += (_, _) => { tt.Stop(); App.Bar?.OpenTrayOverflow(); }; tt.Start(); } // the full-width bar's tray chevron
         else if (open == "calendar") App.Current.Dispatcher.BeginInvoke(() => App.ActiveCalendar?.Toggle(true), DispatcherPriority.ApplicationIdle);
         else if (open?.StartsWith("import=") == true)

@@ -1080,6 +1080,7 @@ public sealed class SettingsWindow : DarkWindow
         themeRow.Children.Add(restartTheme);
         p.Children.Add(Pair(L.T("Motyw"), themeRow));
         p.Children.Add(Check(L.T("Bez przezroczystości (pełne, matowe tło)"), S.Opaque, v => S.Opaque = v));
+        p.Children.Add(Check(L.T("Zaokrąglone narożniki"), S.RoundCorners, v => S.RoundCorners = v, L.T("Tablica, paski, kalendarz i podglądy z zaokrąglonymi rogami. Wyłączone: wszystko z prostymi narożnikami.")));
         var pattern = new ComboBox { Width = 220, HorizontalAlignment = HorizontalAlignment.Left };
         foreach (var (key, label) in new[] { ("none", L.T("brak")), ("fabric", L.T("materiał (szachownica pod kątem 45°)")), ("dots", L.T("drobne kropki")), ("grid", L.T("drobna kratka")) })
             pattern.Items.Add(new ComboBoxItem { Content = label, Tag = key });
@@ -1150,6 +1151,12 @@ public sealed class SettingsWindow : DarkWindow
         barPos.SelectedIndex = S.AppBarTop ? 0 : 1;
         barPos.SelectionChanged += (_, _) => { if (barPos.SelectedItem is ComboBoxItem it) { S.AppBarTop = (bool)it.Tag; App.Instance.ApplySettings(); } };
         p.Children.Add(Pair(L.T("Położenie paska na całą szerokość"), barPos));
+        var barSize = new ComboBox { Width = 200 };
+        foreach (var (tag, label) in new[] { ("large", L.T("Duży")), ("medium", L.T("Średni")), ("small", L.T("Mały")) })
+            barSize.Items.Add(new ComboBoxItem { Content = label, Tag = tag });
+        barSize.SelectedItem = barSize.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == S.BarSize) ?? barSize.Items[1];
+        barSize.SelectionChanged += (_, _) => { if (barSize.SelectedItem is ComboBoxItem it) { S.BarSize = (string)it.Tag; App.Instance.ApplySettings(); } };
+        p.Children.Add(Pair(L.T("Wysokość paska na całą szerokość"), barSize, L.T("Duży: ikony docka 44 px. Średni: 32 px. Mały: niewiele wyższy niż kółka obciążenia (ikony 22 px). Napisy rosną i maleją razem z paskiem.")));
         p.Children.Add(Check(L.T("Ukryj pasek zadań Windows"), S.HideTaskbar, v => S.HideTaskbar = v,
             L.T("Działa razem z paskiem na całą szerokość: pasek zadań Windows znika i oddaje swoje miejsce (na wszystkich monitorach). Wraca, gdy wyłączysz pasek TaskWall, zamkniesz TaskWall albo ten nagle się zamknie (strażnik). Start otwierasz przyciskiem na pasku albo klawiszem Windows.")));
         foreach (var line in DockSettings()) p.Children.Add(line);

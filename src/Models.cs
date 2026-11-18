@@ -790,6 +790,10 @@ public sealed class AppSettings
     public bool AppBarTop { get; set; } = true;
     /// <summary>With the full-width bar on: the Windows taskbar is hidden (auto-hide + hidden windows), back when the bar goes.</summary>
     public bool HideTaskbar { get; set; } = true;
+    /// <summary>The full-width bar's height: "large", "medium" or "small" (a little taller than a load ring).</summary>
+    public string BarSize { get; set; } = "medium";
+    /// <summary>Rounded corners on the board, the bars and the panels (off: square everywhere).</summary>
+    public bool RoundCorners { get; set; } = true;
     /// <summary>The dock in the full-width bar's middle: pinned and running programs (off by default).</summary>
     public bool Dock { get; set; }
     /// <summary>The dock's magnification under the pointer: "off", "subtle" (1.25×) or "full" (1.55×).</summary>

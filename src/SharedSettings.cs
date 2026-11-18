@@ -32,7 +32,7 @@ static class SharedSettings
         // screens and hardware differ per computer
         nameof(AppSettings.BoardMax), nameof(AppSettings.Gap), nameof(AppSettings.SecondMonitor), nameof(AppSettings.SecondView), nameof(AppSettings.Meters),
         // the full-width bar replaces this computer's taskbar: each computer chooses for itself
-        nameof(AppSettings.AppBar), nameof(AppSettings.AppBarTop), nameof(AppSettings.HideTaskbar),
+        nameof(AppSettings.AppBar), nameof(AppSettings.AppBarTop), nameof(AppSettings.HideTaskbar), nameof(AppSettings.BarSize),
         nameof(AppSettings.Dock), nameof(AppSettings.DockMagnify), nameof(AppSettings.DockThin), nameof(AppSettings.DockPins),
     };
 

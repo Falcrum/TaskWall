@@ -24,13 +24,27 @@ public sealed class ClockFace : Border
     /// <summary>Every ten minutes (the bar's "now" weather gets old).</summary>
     public event Action? TenMinutes;
 
-    public ClockFace()
+    readonly bool _dateFirst;
+
+    /// <param name="dateFirst">"ŚRODA 18 LISTOPAD 22:07", the date and the time in one size (the full-width bar); otherwise a big time and a small date after it</param>
+    public ClockFace(bool dateFirst = false)
     {
         _date.Foreground = Ui.Res("FgDim");
         _chevron.Foreground = Ui.Res("FgFaint");
         var clock = new StackPanel { Orientation = Orientation.Horizontal };
-        clock.Children.Add(_time);
-        clock.Children.Add(_date);
+        _dateFirst = dateFirst;
+        if (dateFirst)
+        {
+            _date.Margin = new Thickness(0);
+            _time.Margin = new Thickness(10, 0, 0, 0);
+            clock.Children.Add(_date);
+            clock.Children.Add(_time);
+        }
+        else
+        {
+            clock.Children.Add(_time);
+            clock.Children.Add(_date);
+        }
         clock.Children.Add(_chevron);
         Child = clock;
         Padding = new Thickness(12, 0, 10, 0);
@@ -47,6 +61,17 @@ public sealed class ClockFace : Border
 
     /// <summary>The chevron points up when the calendar opens above (a bar at the bottom of the screen).</summary>
     public bool OpensUp { set => _chevron.Text = value ? "▴" : "▾"; }
+
+    /// <summary>The date and the time in this size (the date-first form): the size of the temperature next to the weather symbol.</summary>
+    public double TextSize
+    {
+        set
+        {
+            if (!_dateFirst) return;
+            _time.FontSize = _date.FontSize = value;
+            Margin = new Thickness(0, 2, 0, 2);
+        }
+    }
 
     /// <summary>Stops the second timer (full screen, locked screen); <c>false</c> starts it again and shows the time at once.</summary>
     public void Pause(bool paused)
@@ -67,8 +92,9 @@ public sealed class ClockFace : Border
         if (time + date == _shown) return;
         bool newMinute = _shown.Length > 0;
         _shown = time + date;
-        _time.Text = time;
-        _date.Text = App.Settings.Use24h ? date : $"{date} · {now.ToString("tt", CultureInfo.InvariantCulture)}";
+        var tt = now.ToString("tt", CultureInfo.InvariantCulture);
+        _time.Text = _dateFirst && !App.Settings.Use24h ? $"{time} {tt}" : time;
+        _date.Text = App.Settings.Use24h || _dateFirst ? date : $"{date} · {tt}";
         if (newMinute && now.Minute % 10 == 0) TenMinutes?.Invoke();
     }
 }

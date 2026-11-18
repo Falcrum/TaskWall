@@ -56,6 +56,7 @@ static class WeatherService
         Timer.Tick += (_, _) => Refresh();
         Timer.Start();
         if (Fetched == null || DateTime.Now - Fetched > TimeSpan.FromMinutes(30)) Refresh();
+        else Changed?.Invoke(); // a fresh cache: the bars show it now, not only after the next fetch (up to 30 minutes)
     }
 
     public static async void Refresh()

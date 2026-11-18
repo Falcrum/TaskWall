@@ -27,7 +27,16 @@ public class GlassWindow : Window
     public static event Action? PeekEnded;
 
     /// <summary>Corner radius in window DIPs.</summary>
-    public double Radius { get; set; } = 22;
+    public double Radius { get => _radius; set { _radius = value; ApplyCorners(); } }
+    double _radius = 22;
+    /// <summary>The corners as drawn: <see cref="Radius"/>, or square everywhere (Settings → Wygląd → Zaokrąglone narożniki off).</summary>
+    double Round => App.Settings.RoundCorners ? Radius : 0;
+
+    /// <summary>The corners again (the setting changed).</summary>
+    public static void RefreshCorners()
+    {
+        foreach (var w in All.ToList()) { w.ApplyCorners(); w.UpdateRegion(); }
+    }
     public bool SquareTopCorners { get; set; }
     /// <summary>The thin frame only on these sides (the full-width bar: the side facing the board); null = all round.</summary>
     public Thickness? BorderSides { get => _borderSides; set { _borderSides = value; ApplyCorners(); } }
@@ -122,7 +131,8 @@ public class GlassWindow : Window
 
     void ApplyCorners()
     {
-        var r = SquareTopCorners ? new CornerRadius(0, 0, Radius, Radius) : new CornerRadius(Radius);
+        double rr = Round;
+        var r = SquareTopCorners ? new CornerRadius(0, 0, rr, rr) : new CornerRadius(rr);
         _glass.CornerRadius = r;
         _tint.CornerRadius = r;
         _pattern.CornerRadius = r;
@@ -139,7 +149,7 @@ public class GlassWindow : Window
             var g = new StreamGeometry();
             using (var c = g.Open())
             {
-                double r = Math.Min(Radius, Math.Min(w, h) / 2);
+                double r = Math.Min(Round, Math.Min(w, h) / 2);
                 c.BeginFigure(new Point(0, 0), true, true);
                 c.LineTo(new Point(w, 0), false, false);
                 c.LineTo(new Point(w, h - r), false, false);
@@ -150,7 +160,7 @@ public class GlassWindow : Window
             g.Freeze();
             _bodyHost.Clip = g;
         }
-        else _bodyHost.Clip = new RectangleGeometry(new Rect(0, 0, w, h), Radius, Radius);
+        else _bodyHost.Clip = new RectangleGeometry(new Rect(0, 0, w, h), Math.Min(Round, Math.Min(w, h) / 2), Math.Min(Round, Math.Min(w, h) / 2));
     }
 
     /// <summary>
@@ -211,7 +221,7 @@ public class GlassWindow : Window
         var r = PhysicalRect;
         if (r.Width <= 0) return;
         double scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
-        int d = (int)Math.Round(Radius * 2 * scale);
+        int d = (int)Math.Round(Round * 2 * scale);
         Native.SetWindowRgn(Hwnd, Native.CreateRoundRectRgn(0, 0, r.Width + 1, r.Height + 1, d, d), true);
     }
 

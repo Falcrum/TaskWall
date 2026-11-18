@@ -23,14 +23,20 @@ public sealed class WeatherBadge : StackPanel
     /// <summary>Only the sky in words, no feel / max-min / rain / wind (a narrow bar).</summary>
     public bool Narrow { get; set; }
 
+    /// <summary>Only the symbol and the temperature (a bar the dock fills): the rest in the tool tip.</summary>
+    public bool Compact { get; set; }
+
+    /// <summary>The temperature's size (the full-width bar's size).</summary>
+    public double TextSize { get; set; } = 17;
+
     public void Update()
     {
         Children.Clear();
         if (!App.Settings.BarWeather || WeatherService.Current is not { } w) return;
         var (symbol, desc) = WeatherService.Describe(w.Code);
         if (!w.Day && w.Code <= 2) symbol = "☾"; // clear or a few clouds at night
-        Children.Add(new TextBlock { Text = symbol, FontFamily = new FontFamily("Segoe UI Symbol"), FontSize = 17, Foreground = Ui.Res("AccentBrush"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) });
-        Children.Add(new TextBlock { Text = $"{Math.Round(w.Temp):0}°", FontSize = 17, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+        Children.Add(new TextBlock { Text = symbol, FontFamily = new FontFamily("Segoe UI Symbol"), FontSize = TextSize, Foreground = Ui.Res("AccentBrush"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) });
+        Children.Add(new TextBlock { Text = $"{Math.Round(w.Temp):0}°", FontSize = TextSize, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
         var line = new TextBlock { FontSize = 11, Foreground = Ui.Res("FgDim"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 2, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis };
         line.Inlines.Add(new Run(desc));
         if (!Narrow)
@@ -48,7 +54,7 @@ public sealed class WeatherBadge : StackPanel
                 line.Inlines.Add(new Run($" {Math.Round(wn):0} km/h") { Foreground = Ui.Res("FgFaint") });
             }
         }
-        Children.Add(line);
+        if (!Compact) Children.Add(line);
         var day = WeatherService.On(DateTime.Today);
         ToolTip = $"{App.Settings.Weather.City}\n{desc}, {Math.Round(w.Temp):0}°"
             + (w.Feels is { } ff ? "\n" + L.F("odczuwalna {0}°", Math.Round(ff)) : "")

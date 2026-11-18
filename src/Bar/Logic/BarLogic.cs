@@ -99,3 +99,22 @@ public static class CrashLoop
     public static bool TooMany(IEnumerable<DateTime> crashes, DateTime now, int max = 3, TimeSpan? window = null) =>
         Recent(crashes, now, window ?? TimeSpan.FromMinutes(10)).Count >= max;
 }
+
+/// <summary>The full-width bar's sizes (DIP before the UI scale) for Settings → Pasek → Wysokość paska.</summary>
+public static class BarMetrics
+{
+    /// <summary>The bar's height: large (taller with the dock, for 44 px icons), medium, small (a little more than a load ring).</summary>
+    public static double Height(string size, bool dock) => size switch { "large" => dock ? 56 : 48, "small" => 30, _ => 40 };
+
+    /// <summary>The dock's icons at rest: the bar's height less a margin above and below.</summary>
+    public static double Icon(string size) => size switch { "large" => 44, "small" => 22, _ => 32 };
+
+    /// <summary>The text of the clock, the date and the temperature.</summary>
+    public static double Font(string size) => size switch { "large" => 17, "small" => 13, _ => 15 };
+
+    /// <summary>The room past the bar that grown dock icons reach into: what the icon grows by, and a little.</summary>
+    public static double Headroom(string size, bool dock, double peak) => !dock || peak <= 1 ? 0 : Math.Ceiling(Icon(size) * (peak - 1)) + 4;
+
+    /// <summary>The corners: the board's radius, at most half the bar's height (a pill).</summary>
+    public static double Radius(double height, double boardRadius = 22) => Math.Min(boardRadius, height / 2);
+}

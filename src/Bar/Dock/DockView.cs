@@ -91,6 +91,9 @@ sealed class DockView : Canvas
     /// <summary>The bar's height (DIP): the icons stand on its middle line and grow away from the screen's edge.</summary>
     public double BarHeight { get; set; } = 56;
 
+    /// <summary>The icons at rest (DIP): the bar's size; the layout is worked out for 44 px and drawn at this.</summary>
+    public double IconSize { get; set; } = Magnify.IconRest;
+
     public DockView(BarWindow bar)
     {
         _bar = bar;
@@ -294,7 +297,7 @@ sealed class DockView : Canvas
     protected override Size MeasureOverride(Size constraint)
     {
         base.MeasureOverride(constraint);
-        return new Size(_entries.Count == 0 ? 0 : _restWidth + 2 * Reserve, BarHeight);
+        return new Size(_entries.Count == 0 ? 0 : IconSize / Magnify.IconRest * (_restWidth + 2 * Reserve), BarHeight);
     }
 
     // ---------- drawing ----------
@@ -333,6 +336,8 @@ sealed class DockView : Canvas
         bool still = _bell.Settled(now) && (!(S.DockThin && _thin) || _grow.Settled(now)) || !Anim.On;
         bool top = _bar.Top;
         double mid = BarHeight / 2;
+        double k = IconSize / Magnify.IconRest; // the arithmetic is in 44 px icons (as in Rustyfiles); drawn at the bar's size
+        double X(double v) => k * (Reserve + v);
         int icon = 0, line = 0;
         for (int i = 0; i < _slots.Count && i < f.Spans.Count; i++)
         {
@@ -340,8 +345,8 @@ sealed class DockView : Canvas
             if (_slots[i] == Slot.Separator)
             {
                 var l = _lines[line++];
-                l.Height = 24 * thinScale;
-                SetLeft(l, Reserve + x);
+                l.Height = 24 * k * thinScale;
+                SetLeft(l, X(x));
                 SetTop(l, mid - l.Height / 2);
                 continue;
             }
@@ -358,25 +363,25 @@ sealed class DockView : Canvas
             }
             double centre = x + w / 2 + offset;
             e.Shown = restCentre + offset;
-            double baseSize = Magnify.IconRest * thinScale, size = w * thinScale;
+            double baseSize = IconSize * thinScale, size = k * w * thinScale;
             // the icons stand on a line half an icon from the bar's middle and grow away from the screen's edge (into the board's side)
             double edge = top ? mid - baseSize / 2 : mid + baseSize / 2;
             e.Visual.Width = e.Visual.Height = size;
-            SetLeft(e.Visual, Reserve + centre - size / 2);
+            SetLeft(e.Visual, X(centre) - size / 2);
             SetTop(e.Visual, top ? edge : edge - size);
             // the mark: under the icon (at the screen's edge side)
             bool front = e.Windows.Any(t => t.Hwnd == _front);
             e.Mark.Width = e.Windows.Count == 0 ? 0 : front ? 16 : 5;
             e.Mark.Height = e.Windows.Count == 0 ? 0 : 3;
-            SetLeft(e.Mark, Reserve + centre - e.Mark.Width / 2);
-            SetTop(e.Mark, top ? 2 : BarHeight - 5);
+            SetLeft(e.Mark, X(centre) - e.Mark.Width / 2);
+            SetTop(e.Mark, top ? 1 : BarHeight - 4);
         }
         // while the icons are grown, the room above them catches the pointer (otherwise it passes through to the window under it)
         double head = _bar.Headroom;
         _catcher.Fill = presence > 0.01 ? new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)) : null;
-        _catcher.Width = Math.Max(0, f.Width);
+        _catcher.Width = Math.Max(0, k * f.Width);
         _catcher.Height = head;
-        SetLeft(_catcher, Reserve + f.Left);
+        SetLeft(_catcher, X(f.Left));
         SetTop(_catcher, top ? BarHeight : -head);
         return still;
     }
@@ -399,7 +404,7 @@ sealed class DockView : Canvas
     void OnMove(object sender, MouseEventArgs ev)
     {
         var p = ev.GetPosition(this);
-        _pointer = p.X - Reserve;
+        _pointer = p.X / (IconSize / Magnify.IconRest) - Reserve;
         if (_pressed != null && _dragging == null && _pressed.Pin != null && Math.Abs(p.X - _pressAt.X) > 6)
         {
             _dragging = _pressed;
@@ -464,7 +469,7 @@ sealed class DockView : Canvas
         if (e.Windows.Count == 0 || !e.Visual.IsVisible) return;
         _hovered = e;
         var c = e.Visual.PointToScreen(new Point(e.Visual.ActualWidth / 2, 0));
-        _preview.Present(e.Windows, c.X, _bar.StripRect, _bar.Top, VisualTreeHelper.GetDpi(_bar).DpiScaleX);
+        _preview.Present(e.Windows, c.X, _bar.FrameRect, _bar.Top, VisualTreeHelper.GetDpi(_bar).DpiScaleX);
     }
 
     void Menu(Entry e)

@@ -126,3 +126,39 @@ public class CrashLoopTests
     public void TwoCrashesAreNotALoop() =>
         Assert.False(CrashLoop.TooMany(new[] { Now.AddMinutes(-1), Now }, Now));
 }
+
+public class BarMetricsTests
+{
+    [Fact]
+    public void SizesFitTheirIcons()
+    {
+        foreach (var size in new[] { "large", "medium", "small" })
+        {
+            Assert.True(BarMetrics.Icon(size) < BarMetrics.Height(size, dock: true), size);
+            Assert.True(BarMetrics.Height(size, true) >= BarMetrics.Height(size, false));
+        }
+        Assert.True(BarMetrics.Height("small", false) > 22, "a little more than a load ring (22)");
+        Assert.True(BarMetrics.Height("large", true) > BarMetrics.Height("medium", true) && BarMetrics.Height("medium", true) > BarMetrics.Height("small", true));
+    }
+
+    [Fact]
+    public void HeadroomHoldsTheGrownIcon()
+    {
+        Assert.Equal(0, BarMetrics.Headroom("large", dock: false, 1.55));
+        Assert.Equal(0, BarMetrics.Headroom("large", dock: true, 1.0));
+        foreach (var size in new[] { "large", "medium", "small" })
+        {
+            double icon = BarMetrics.Icon(size), bar = BarMetrics.Height(size, true);
+            // the grown icon stands on the rest line half an icon from the middle: it reaches icon*1.55 from there
+            double reach = bar / 2 - icon / 2 + icon * 1.55;
+            Assert.True(reach <= bar + BarMetrics.Headroom(size, true, 1.55), size);
+        }
+    }
+
+    [Fact]
+    public void RadiusIsAtMostAPill()
+    {
+        Assert.Equal(15, BarMetrics.Radius(30));
+        Assert.Equal(22, BarMetrics.Radius(56));
+    }
+}

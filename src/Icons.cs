@@ -79,6 +79,44 @@ static class Icons
     }
 
     /// <summary>‹ and › of the top bar.</summary>
+    /// <summary>A speaker: 0–3 waves for the volume, a cross when muted.</summary>
+    public static FrameworkElement Speaker(int waves, bool muted, double s = 18)
+    {
+        var parts = new System.Collections.Generic.List<UIElement> { Line("M4,9.5 H7.5 L12,5.5 V18.5 L7.5,14.5 H4 Z", 1.6) };
+        if (muted) parts.Add(Line("M15.5,9.5 L20.5,14.5 M20.5,9.5 L15.5,14.5", 1.7));
+        else
+        {
+            if (waves >= 1) parts.Add(Line("M15,9.5 A3.6,3.6 0 0 1 15,14.5", 1.6));
+            if (waves >= 2) parts.Add(Line("M17.4,7.2 A6.6,6.6 0 0 1 17.4,16.8", 1.6));
+            if (waves >= 3) parts.Add(Line("M19.8,4.9 A9.6,9.6 0 0 1 19.8,19.1", 1.6));
+        }
+        return Box(s, parts.ToArray());
+    }
+
+    /// <summary>Wi-Fi: a dot and arcs, the arcs the signal has (0–3) full, the rest faint.</summary>
+    public static FrameworkElement Wifi(int arcs, double s = 18)
+    {
+        var dim = new Path { Data = Geometry.Parse("M12,19.2 m-1.4,0 a1.4,1.4 0 1 0 2.8,0 a1.4,1.4 0 1 0 -2.8,0"), Opacity = 1 };
+        dim.SetBinding(Shape.FillProperty, Fg());
+        var parts = new System.Collections.Generic.List<UIElement> { dim };
+        string[] arc = { "M8.6,15.6 A4.8,4.8 0 0 1 15.4,15.6", "M5.8,12.6 A8.8,8.8 0 0 1 18.2,12.6", "M3,9.6 A12.8,12.8 0 0 1 21,9.6" };
+        for (int i = 0; i < 3; i++)
+        {
+            var a = Line(arc[i], 1.8);
+            if (i >= arcs) a.Opacity = 0.28;
+            parts.Add(a);
+        }
+        return Box(s, parts.ToArray());
+    }
+
+    /// <summary>A cable connection: a screen with a plug line.</summary>
+    public static FrameworkElement Cable(double s = 18) => Box(s, Line("M4,5 H20 V15 H4 Z M12,15 V19 M8,19.5 H16", 1.6));
+
+    /// <summary>No connection (or no internet): a globe crossed out.</summary>
+    public static FrameworkElement NoNetwork(double s = 18) => Box(s,
+        Line("M12,4 A8,8 0 1 0 12.01,4 Z M4,12 H20 M12,4 C9,7 9,17 12,20 M12,4 C15,7 15,17 12,20", 1.4),
+        Line("M4.5,19.5 L19.5,4.5", 1.8));
+
     /// <summary>Start: four rounded squares (the Windows Start button's idea, not its logo).</summary>
     public static FrameworkElement Start(double s = 18) => Box(s,
         Fill("M4,5.5 A1.5,1.5 0 0 1 5.5,4 H10.6 V10.6 H4 Z M13.4,4 H18.5 A1.5,1.5 0 0 1 20,5.5 V10.6 H13.4 Z M4,13.4 H10.6 V20 H5.5 A1.5,1.5 0 0 1 4,18.5 Z M13.4,13.4 H20 V18.5 A1.5,1.5 0 0 1 18.5,20 H13.4 Z"));

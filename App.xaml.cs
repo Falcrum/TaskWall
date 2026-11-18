@@ -460,6 +460,7 @@ public partial class App : Application
         }
         _clock.SetScale(Settings.UiScale);
         _clock.ApplySettings();
+        GlassWindow.RefreshCorners();
         _bar?.SetScale(Settings.UiScale);
         _bar?.ApplySettings();
         LayoutWindows();
@@ -582,8 +583,7 @@ public partial class App : Application
             try { if (Settings.HideTaskbar) WindowsTaskbar.Hide(); else WindowsTaskbar.Restore(); }
             catch (Exception ex) { Log.Error("taskbar", ex); }
             var b = mon.Bounds;
-            double head = BarWindow.HeadroomFor(Settings.Dock, Settings.DockMagnify);
-            try { strip = _bar.Dock(new PxRect(b.X, b.Y, b.Width, b.Height), Settings.AppBarTop, P(BarWindow.HeightFor(Settings.Dock) * ui), P(head * ui), s, head); }
+            try { strip = _bar.Dock(new PxRect(b.X, b.Y, b.Width, b.Height), Settings.AppBarTop, Math.Clamp(Settings.Gap, 0, 40), ui, s); }
             catch (Exception ex) { Log.Error("bar dock", ex); }
             mon = Monitors.Pick(Settings.Monitor);
         }
@@ -621,11 +621,11 @@ public partial class App : Application
             int cw = P(CalendarWindow.TabWidth * ui);
             _clock.Calendar.PlacePhysical(wa.X + (wa.Width - cw) / 2, wa.Y + barH + P(6), cw, P(CalendarWindow.CalendarHeight * ui), s);
         }
-        if (_bar != null && strip is { } st)
+        if (_bar != null && strip != null && _bar.FrameRect is var st)
         {
             // the month opens from the clock at the bar's right end: under it (bar at the top) or over it (at the bottom)
             int cw = P(CalendarWindow.TabWidth * ui), ch = P(CalendarWindow.CalendarHeight * ui);
-            _bar.Calendar.PlacePhysical(st.Right - cw - P(12), Settings.AppBarTop ? st.Bottom + P(6) : st.Y - P(6) - ch, cw, ch, s);
+            _bar.Calendar.PlacePhysical(st.Right - cw, Settings.AppBarTop ? st.Bottom + P(6) : st.Y - P(6) - ch, cw, ch, s);
         }
         if (_second != null && SecondScreen() is { } m2)
         {
@@ -735,7 +735,7 @@ public partial class App : Application
             if (_bar != null)
             {
                 // the full-width bar and its calendar: the same frosted wallpaper
-                var sr = _bar.StripRect; // the glass: the reserved strip, not the dock's room past it
+                var sr = _bar.FrameRect; // the glass itself: not its gap from the edge, not the dock's room past it
                 var fr = new Int32Rect(sr.X, sr.Y, sr.Width, sr.Height);
                 _bar.SetGlass(Settings.Blur && fr.Width > 0 ? Wallpaper.RenderGlass(src, fr, blurPx) : null);
                 var fk = _bar.Calendar.PhysicalRect;
