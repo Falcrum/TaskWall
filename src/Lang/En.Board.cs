@@ -709,6 +709,8 @@ static partial class L
         ("Karta", "Adapter"),
         ("Ustawienia sieci…", "Network settings…"),
         ("Sieci Wi-Fi…", "Wi-Fi networks…"),
+        ("Urządzenie wyjściowe", "Output device"),
+        ("Brak urządzeń wyjściowych", "No output devices"),
         ("Pasek na całą szerokość trzy razy zakończył się awarią w ciągu 10 minut – tym razem TaskWall startuje bez niego (ze zwykłym paskiem nad tablicą). Szczegóły w error.log.", "The full-width bar crashed three times in 10 minutes – this time TaskWall starts without it (with the usual bar over the board). Details in error.log."),
     };
 }

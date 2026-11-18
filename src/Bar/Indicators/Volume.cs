@@ -129,6 +129,77 @@ static class Volume
         catch { return ""; }
     }
 
+    [ComImport, Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IMMDeviceCollection
+    {
+        [PreserveSig] int GetCount(out uint count);
+        [PreserveSig] int Item(uint index, out IMMDevice device);
+    }
+
+    // Windows' own way to change the default device (what its sound settings and the volume flyout use): not documented, but the
+    // same interface since Windows 7 – SoundSwitch, EarTrumpet and others use it
+    [ComImport, Guid("870af99c-171d-4f9e-af0d-e63df40c2bc9")] class PolicyConfigCom { }
+
+    [ComImport, Guid("f8679f50-850a-41cf-9c72-430f290290c8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IPolicyConfig
+    {
+        [PreserveSig] int GetMixFormat(IntPtr a, IntPtr b);
+        [PreserveSig] int GetDeviceFormat(IntPtr a, int b, IntPtr c);
+        [PreserveSig] int ResetDeviceFormat(IntPtr a);
+        [PreserveSig] int SetDeviceFormat(IntPtr a, IntPtr b, IntPtr c);
+        [PreserveSig] int GetProcessingPeriod(IntPtr a, int b, IntPtr c, IntPtr d);
+        [PreserveSig] int SetProcessingPeriod(IntPtr a, IntPtr b);
+        [PreserveSig] int GetShareMode(IntPtr a, IntPtr b);
+        [PreserveSig] int SetShareMode(IntPtr a, IntPtr b);
+        [PreserveSig] int GetPropertyValue(IntPtr a, IntPtr b, IntPtr c);
+        [PreserveSig] int SetPropertyValue(IntPtr a, IntPtr b, IntPtr c);
+        [PreserveSig] int SetDefaultEndpoint([MarshalAs(UnmanagedType.LPWStr)] string id, int role);
+        [PreserveSig] int SetEndpointVisibility([MarshalAs(UnmanagedType.LPWStr)] string id, int visible);
+    }
+
+    /// <summary>An output device: its id and its name ("Głośniki (Realtek)", "Słuchawki (G PRO X 2)").</summary>
+    public sealed record Device(string Id, string Name);
+
+    /// <summary>The output devices that are plugged in and on, and the id of the default one.</summary>
+    public static (System.Collections.Generic.List<Device> Devices, string? Default) Outputs()
+    {
+        var list = new System.Collections.Generic.List<Device>();
+        string? current = null;
+        try
+        {
+            Endpoint();
+            if (_devices == null) return (list, null);
+            if (_devices.GetDefaultAudioEndpoint(0, 1, out var def) == 0 && def != null && def.GetId(out var defId) == 0) current = defId;
+            if (_devices.EnumAudioEndpoints(0 /* eRender */, 1 /* DEVICE_STATE_ACTIVE */, out var p) != 0 || p == IntPtr.Zero) return (list, current);
+            var all = (IMMDeviceCollection)Marshal.GetObjectForIUnknown(p);
+            Marshal.Release(p);
+            all.GetCount(out var n);
+            for (uint i = 0; i < n; i++)
+                if (all.Item(i, out var d) == 0 && d != null && d.GetId(out var id) == 0)
+                    list.Add(new Device(id, Name(d) is { Length: > 0 } nm ? nm : id));
+        }
+        catch (Exception ex) { Log.Error("audio devices", ex); }
+        return (list, current);
+    }
+
+    /// <summary>Whether Windows gives out the interface that changes the default device (checked without changing anything).</summary>
+    public static bool CanSwitch()
+    {
+        try { var p = (IPolicyConfig)new PolicyConfigCom(); Marshal.ReleaseComObject(p); return true; }
+        catch { return false; }
+    }
+
+    /// <summary>Makes <paramref name="id"/> the default output for everything (the console, multimedia and communications roles).</summary>
+    public static void SetDefault(string id)
+    {
+        try
+        {
+            var policy = (IPolicyConfig)new PolicyConfigCom();
+            for (int role = 0; role < 3; role++) policy.SetDefaultEndpoint(id, role);
+        }
+        catch (Exception ex) { Log.Error("audio default device", ex); }
+    }
+
     /// <summary>The default speakers changed: let go of the old ones, take the new ones.</summary>
     public static void Reopen()
     {

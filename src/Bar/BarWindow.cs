@@ -155,7 +155,7 @@ public sealed class BarWindow : GlassWindow
         right.Children.Add(_network);
         _volumeButton = new VolumeButton(this);
         right.Children.Add(_volumeButton);
-        _tray = IconButton(Icons.Caret(true), L.T("Ukryte ikony zasobnika"), (_, _) => OpenTrayOverflow());
+        _tray = IconButton(Icons.Caret(true), L.T("Ukryte ikony zasobnika"), (_, _) => ToggleTray());
         _tray.Margin = new Thickness(2, 0, 2, 0);
         right.Children.Add(_tray);
         right.Children.Add(Separator());
@@ -355,69 +355,148 @@ public sealed class BarWindow : GlassWindow
         }
     }
 
+    // ---------- the tray's hidden icons ----------
+
+    bool _trayOpen, _trayCut;
+    IntPtr _trayWindow;
+    DateTime _trayClosedAt;
+    DispatcherTimer? _trayTimer;
+    Native.WinEventProc? _trayFrontProc;
+    IntPtr _trayFrontHook;
+
+    static IntPtr FindOverflow()
+    {
+        var w = Native.FindWindow("TopLevelWindowForOverflowXamlIsland", null);
+        return w != IntPtr.Zero ? w : Native.FindWindow("NotifyIconOverflowWindow", null);
+    }
+
+    /// <summary>The chevron's click: opens the hidden icons, or – when they are open, or just closed by this very click – leaves them shut.</summary>
+    void ToggleTray()
+    {
+        if (_trayOpen || (DateTime.Now - _trayClosedAt).TotalMilliseconds < 400) { CloseTray(); return; }
+        OpenTrayOverflow();
+    }
+
+    /// <summary>The chevron turns over (up ↔ down) when the panel opens and closes, as on the Windows 11 taskbar.</summary>
+    void TurnCaret(bool open)
+    {
+        if (_tray.Content is not FrameworkElement icon) return;
+        icon.RenderTransformOrigin = new Point(0.5, 0.5);
+        if (icon.RenderTransform is not RotateTransform turn) icon.RenderTransform = turn = new RotateTransform();
+        double to = open ? 180 : 0;
+        if (Anim.On) turn.BeginAnimation(RotateTransform.AngleProperty, new System.Windows.Media.Animation.DoubleAnimation(to, TimeSpan.FromMilliseconds(200)) { EasingFunction = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut } });
+        else { turn.BeginAnimation(RotateTransform.AngleProperty, null); turn.Angle = to; }
+    }
+
+    // the window cut to nothing (an empty region): open or closing, it is never seen anywhere but at the chevron
+    void CutTray() { if (_trayCut || _trayWindow == IntPtr.Zero) return; _trayCut = true; Native.SetWindowRgn(_trayWindow, Native.CreateRectRgn(0, 0, 0, 0), false); }
+    void UncutTray() { if (!_trayCut || _trayWindow == IntPtr.Zero) return; _trayCut = false; Native.SetWindowRgn(_trayWindow, IntPtr.Zero, true); }
+
+    /// <summary>Where the window stands: right-aligned to the chevron, just past the bar's glass.</summary>
+    (int X, int Y) TrayTarget(Native.RECT r)
+    {
+        var anchor = _tray.PointToScreen(new Point(_tray.ActualWidth, 0)); // physical pixels: the chevron's right edge
+        int gap = (int)Math.Round(6 * VisualTreeHelper.GetDpi(this).DpiScaleY);
+        int width = r.Right - r.Left, height = r.Bottom - r.Top;
+        return (Math.Max(FrameRect.X, (int)Math.Round(anchor.X) - width), _top ? FrameRect.Bottom + gap : FrameRect.Y - height - gap);
+    }
+
     /// <summary>
-    /// The hidden icons of the Windows tray: Win+B moves the focus to the tray's chevron, Enter opens it – Windows puts
-    /// that window over its own taskbar, so it is moved to this bar's chevron as soon as it shows (Windows 11:
-    /// TopLevelWindowForOverflowXamlIsland, Windows 10: NotifyIconOverflowWindow).
+    /// The hidden icons of the Windows tray: Win+B moves the focus to the tray's chevron, Enter opens it. Windows puts that
+    /// window over its own taskbar, so it is cut to nothing until it stands at this bar's chevron, and cut again the moment it
+    /// starts to close (another window in front, or it moves away for its closing animation) – no flash at the taskbar's place
+    /// either way (Windows 11: TopLevelWindowForOverflowXamlIsland, Windows 10: NotifyIconOverflowWindow).
     /// </summary>
     public void OpenTrayOverflow()
     {
-        // Windows shows that window over its own taskbar first: until it stands at this bar's chevron it is cut to nothing
-        // (an empty window region – it keeps opening, nobody sees it), so it never flashes at the bottom of the screen
-        static IntPtr Find()
-        {
-            var w = Native.FindWindow("TopLevelWindowForOverflowXamlIsland", null);
-            return w != IntPtr.Zero ? w : Native.FindWindow("NotifyIconOverflowWindow", null);
-        }
-        var anchor = _tray.PointToScreen(new Point(_tray.ActualWidth, 0)); // physical pixels: the chevron's right edge
-        var frame = FrameRect;
-        int gap = (int)Math.Round(6 * VisualTreeHelper.GetDpi(this).DpiScaleY);
-        (int X, int Y) Target(Native.RECT r)
-        {
-            int width = r.Right - r.Left, height = r.Bottom - r.Top;
-            return (Math.Max(frame.X, (int)Math.Round(anchor.X) - width), _top ? frame.Bottom + gap : frame.Y - height - gap);
-        }
         const uint Move = Native.SWP_NOSIZE | Native.SWP_NOZORDER | Native.SWP_NOACTIVATE;
-        var w = Find();
-        bool cut = false;
-        void Cut(IntPtr h) { if (cut) return; cut = true; Native.SetWindowRgn(h, Native.CreateRectRgn(0, 0, 0, 0), false); }
-        void Uncut(IntPtr h) { if (!cut) return; cut = false; Native.SetWindowRgn(h, IntPtr.Zero, true); }
-        if (w != IntPtr.Zero)
+        _trayTimer?.Stop();
+        _trayWindow = FindOverflow();
+        if (_trayWindow != IntPtr.Zero)
         {
-            Cut(w);
-            if (Native.GetWindowRect(w, out var before) && before.Right > before.Left)
+            CutTray();
+            if (Native.GetWindowRect(_trayWindow, out var before) && before.Right > before.Left)
             {
-                var (x0, y0) = Target(before);
-                Native.SetWindowPos(w, IntPtr.Zero, x0, y0, 0, 0, Move);
+                var (x0, y0) = TrayTarget(before);
+                Native.SetWindowPos(_trayWindow, IntPtr.Zero, x0, y0, 0, 0, Move);
             }
         }
         Keys.Press(Keys.LWin, Keys.B);
+        _trayOpen = true;
+        TurnCaret(true);
         int ticks = 0, still = 0;
-        var t = new DispatcherTimer(DispatcherPriority.Send) { Interval = TimeSpan.FromMilliseconds(15) };
-        t.Tick += (_, _) =>
+        bool shown = false;
+        _trayTimer = new DispatcherTimer(DispatcherPriority.Send) { Interval = TimeSpan.FromMilliseconds(15) };
+        _trayTimer.Tick += (_, _) =>
         {
             ticks++;
             if (ticks == 4) Keys.Press(Keys.Return);
             if (ticks < 4) return;
-            if (w == IntPtr.Zero) w = Find();
-            if (w != IntPtr.Zero && Native.IsWindowVisible(w) && Native.GetWindowRect(w, out var r) && r.Right > r.Left)
+            if (_trayWindow == IntPtr.Zero) _trayWindow = FindOverflow();
+            bool visible = _trayWindow != IntPtr.Zero && Native.IsWindowVisible(_trayWindow) && Native.GetWindowRect(_trayWindow, out var r) && r.Right > r.Left;
+            if (!visible)
             {
-                Cut(w);
-                var (x, y) = Target(r);
-                if (r.Left != x || r.Top != y) { Native.SetWindowPos(w, IntPtr.Zero, x, y, 0, 0, Move); still = 0; }
-                // shown again only once Windows has stopped placing it (two quiet ticks at the chevron)
-                else if (++still >= 2) { Uncut(w); t.Stop(); }
+                // closed (or never opened: no chevron when every icon is on the taskbar)
+                if (shown || ticks > 120) { CloseTray(); }
+                return;
             }
-            if (ticks > 120) { if (w != IntPtr.Zero) Uncut(w); t.Stop(); } // didn't open (no chevron: every icon on the taskbar)
+            Native.GetWindowRect(_trayWindow, out var now);
+            var (x, y) = TrayTarget(now);
+            bool there = now.Left == x && now.Top == y;
+            if (!shown)
+            {
+                CutTray();
+                if (!there) { Native.SetWindowPos(_trayWindow, IntPtr.Zero, x, y, 0, 0, Move); still = 0; }
+                // shown only once Windows has stopped placing it (two quiet ticks at the chevron)
+                else if (++still >= 2) { UncutTray(); shown = true; WatchTrayFront(true); }
+            }
+            else if (!there) CutTray(); // moving away: its closing animation starts at the taskbar's place – not seen
         };
-        t.Start();
+        _trayTimer.Start();
+    }
+
+    /// <summary>While the panel is open: another window in front means it is closing – cut at once, before its animation shows.</summary>
+    void WatchTrayFront(bool on)
+    {
+        if (on && _trayFrontHook == IntPtr.Zero)
+        {
+            // (an event that arrives late – the taskbar focused by Win+B before the panel opened – is not a close: the panel is still in front)
+            _trayFrontProc = (hook, evt, hwnd, idObject, idChild, thread, time) => { if (_trayOpen && hwnd != _trayWindow && Native.GetForegroundWindow() != _trayWindow) CutTray(); };
+            _trayFrontHook = Native.SetWinEventHook(0x0003, 0x0003, IntPtr.Zero, _trayFrontProc, 0, 0, Native.WINEVENT_OUTOFCONTEXT);
+        }
+        else if (!on && _trayFrontHook != IntPtr.Zero)
+        {
+            Native.UnhookWinEvent(_trayFrontHook);
+            _trayFrontHook = IntPtr.Zero;
+        }
+    }
+
+    /// <summary>The panel shut (or shutting): no more watching, the chevron back; the window's cut lifted once it is hidden.</summary>
+    void CloseTray()
+    {
+        bool wasOpen = _trayOpen;
+        _trayOpen = false;
+        WatchTrayFront(false);
+        if (wasOpen) { _trayClosedAt = DateTime.Now; TurnCaret(false); }
+        if (_trayWindow != IntPtr.Zero && Native.IsWindowVisible(_trayWindow))
+        {
+            // still on screen: closed by the chevron – cut, then Escape; the cut is lifted when it has hidden
+            CutTray();
+            Keys.Press(Keys.Escape);
+            var wait = new DispatcherTimer(DispatcherPriority.Send) { Interval = TimeSpan.FromMilliseconds(30) };
+            int n = 0;
+            wait.Tick += (_, _) => { if (!Native.IsWindowVisible(_trayWindow) || ++n > 40) { wait.Stop(); UncutTray(); } };
+            wait.Start();
+        }
+        else UncutTray();
+        _trayTimer?.Stop();
     }
 }
 
 /// <summary>Key presses sent to Windows (the Start menu, the tray's chevron).</summary>
 static class Keys
 {
-    public const byte LWin = 0x5B, B = 0x42, Return = 0x0D;
+    public const byte LWin = 0x5B, B = 0x42, Return = 0x0D, Escape = 0x1B;
     const uint KEYEVENTF_KEYUP = 2;
 
     [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);

@@ -87,7 +87,7 @@ sealed class VolumeButton : Button
         Style = (Style)Application.Current.Resources["BarIcon"];
         VerticalAlignment = VerticalAlignment.Center;
         Volume.Changed += () => Dispatcher.BeginInvoke(Show);
-        Volume.DeviceChanged += () => Dispatcher.BeginInvoke(() => { Volume.Reopen(); Show(); });
+        Volume.DeviceChanged += () => Dispatcher.BeginInvoke(() => { Volume.Reopen(); Show(); FillOutputs(); if (_deviceName != null) _deviceName.Text = Volume.DeviceName; });
         Click += (_, _) => { if (_panel.IsVisible || _panel.JustClosed) { _panel.Hide(); return; } OpenPanel(); };
         MouseUp += (_, e) => { if (e.ChangedButton == MouseButton.Middle) { Volume.Muted = !Volume.Muted; e.Handled = true; } };
         PreviewMouseWheel += (_, e) => { if (Volume.Level is { } l) Volume.Level = l + Math.Sign(e.Delta) * 0.02; e.Handled = true; };
@@ -108,10 +108,37 @@ sealed class VolumeButton : Button
         if (_mute != null) _mute.Content = Icons.Speaker(waves, muted);
     }
 
+    StackPanel? _outputs;
+    TextBlock? _deviceName;
+
+    void FillOutputs()
+    {
+        if (_outputs == null) return;
+        _outputs.Children.Clear();
+        var (devices, current) = Volume.Outputs();
+        foreach (var d in devices)
+        {
+            bool on = d.Id == current;
+            var dot = new Border { Width = 6, Height = 6, CornerRadius = new CornerRadius(3), Margin = new Thickness(2, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center, Background = on ? Ui.Res("AccentBrush") : Brushes.Transparent };
+            var name = new TextBlock { Text = d.Name, FontSize = 12.5, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, FontWeight = on ? FontWeights.SemiBold : FontWeights.Normal, Foreground = Ui.Res(on ? "Fg" : "FgDim"), ToolTip = d.Name };
+            var line = new DockPanel();
+            DockPanel.SetDock(dot, Dock.Left);
+            line.Children.Add(dot);
+            line.Children.Add(name);
+            var item = new Border { Child = line, Padding = new Thickness(6, 6, 6, 6), CornerRadius = new CornerRadius(6), Cursor = on ? null : Cursors.Hand };
+            Anim.HoverBackground(item, Colors.Transparent, Th.Ink(0x14));
+            var id = d.Id;
+            if (!on) item.MouseLeftButtonUp += (_, _) => Volume.SetDefault(id); // DeviceChanged follows: the icon, the slider and this list
+            _outputs.Children.Add(item);
+        }
+        if (devices.Count == 0) _outputs.Children.Add(BarPanel.Text(L.T("Brak urządzeń wyjściowych"), 12, "FgFaint"));
+    }
+
     void OpenPanel()
     {
-        var root = new StackPanel { Width = 280 };
-        root.Children.Add(BarPanel.Text(Volume.DeviceName.Length > 0 ? Volume.DeviceName : L.T("Głośniki"), 11.5, "FgDim"));
+        var root = new StackPanel { Width = 300 };
+        _deviceName = BarPanel.Text(Volume.DeviceName.Length > 0 ? Volume.DeviceName : L.T("Głośniki"), 11.5, "FgDim");
+        root.Children.Add(_deviceName);
         var row = new DockPanel { Margin = new Thickness(0, 8, 0, 0) };
         _mute = new Button { Style = (Style)Application.Current.Resources["BarIcon"], ToolTip = L.T("Wycisz / włącz dźwięk"), VerticalAlignment = VerticalAlignment.Center };
         _mute.Click += (_, _) => Volume.Muted = !Volume.Muted;
@@ -124,6 +151,12 @@ sealed class VolumeButton : Button
         _slider.ValueChanged += (_, e) => { if (!_slider.IsLoaded) return; _setting = true; Volume.Level = e.NewValue / 100; _setting = false; };
         row.Children.Add(_slider);
         root.Children.Add(row);
+        // the output devices, the default one marked – a click makes another the default (like Windows' own volume panel)
+        root.Children.Add(BarPanel.Text(L.T("Urządzenie wyjściowe"), 11.5, "FgDim"));
+        ((FrameworkElement)root.Children[^1]).Margin = new Thickness(0, 12, 0, 4);
+        _outputs = new StackPanel();
+        FillOutputs();
+        root.Children.Add(_outputs);
         root.Children.Add(BarPanel.Link(L.T("Ustawienia dźwięku…"), "ms-settings:sound"));
         Show();
         _panel.Open(root, this, _bar);
