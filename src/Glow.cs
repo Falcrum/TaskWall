@@ -9,7 +9,7 @@ namespace TaskWall;
 /// </summary>
 static class Glow
 {
-    public static bool Enabled => App.Settings.Glow;
+    public static bool Enabled => App.Settings.Glow && !Th.Studio; // the flat dark theme has no light
 
     static Color Accent => Application.Current.Resources["AccentBrush"] is SolidColorBrush b ? b.Color : Colors.White;
 

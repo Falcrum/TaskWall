@@ -105,6 +105,8 @@ public sealed class BarWindow : GlassWindow
     readonly CalendarWindow _calendar = new();
     readonly Border _glow = new();
     readonly Border _middle = new();
+    readonly Border _search;
+    readonly TextBlock _searchText = new() { Text = L.T("Szukaj"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
     readonly SectorPanel _sectors = new() { Margin = new Thickness(10, 0, 12, 0) };
     readonly Button _tray;
     readonly NetworkButton _network;
@@ -141,8 +143,10 @@ public sealed class BarWindow : GlassWindow
         // ----- left: Start, the weather -----
         var left = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         var start = IconButton(Icons.Start(), L.T("Start"), (_, _) => ToggleStart());
+        _search = SearchField();
         WatchStart();
         left.Children.Add(start);
+        left.Children.Add(_search);
         left.Children.Add(Separator());
         left.Children.Add(_weather);
 
@@ -175,7 +179,8 @@ public sealed class BarWindow : GlassWindow
         _sectors.MaxLevel = 3;
         _sectors.ApplyLevel = level =>
         {
-            _weather.Narrow = level >= 1;
+            _weather.Compact = level >= 2;
+            _searchText.Visibility = level >= 2 ? Visibility.Collapsed : Visibility.Visible; // a magnifier only when the dock needs the room
             _weather.Compact = level >= 2;
             _weather.Update();
             bool narrowMeters = level >= 3;
@@ -230,6 +235,43 @@ public sealed class BarWindow : GlassWindow
         System.Windows.Automation.AutomationProperties.SetName(b, tip);
         b.Click += click;
         return b;
+    }
+
+    /// <summary>
+    /// A search field next to Start, like the taskbar's: a click opens the search Settings → Pasek → Wyszukiwarka names by its
+    /// shortcut (PowerToys Command Palette – Win+Alt+Space – by default), which then takes the typing.
+    /// </summary>
+    Border SearchField()
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        var icon = Icons.Search(14);
+        row.Children.Add(icon);
+        _searchText.SetResourceReference(TextBlock.ForegroundProperty, "FgFaint");
+        row.Children.Add(_searchText);
+        var field = new Border
+        {
+            Child = row, Padding = new Thickness(10, 0, 14, 0), Margin = new Thickness(4, 0, 0, 0), MinHeight = 28, MinWidth = 32, CornerRadius = new CornerRadius(14),
+            VerticalAlignment = VerticalAlignment.Center, Cursor = Cursors.Hand, ToolTip = L.F("Szukaj ({0})", App.Settings.SearchKeys),
+            BorderThickness = new Thickness(1),
+        };
+        field.SetResourceReference(Border.BorderBrushProperty, "FieldBorder");
+        field.Background = Ui.Brush(Th.Ink(0x0C));
+        field.MouseEnter += (_, _) => field.Background = Ui.Brush(Th.Ink(0x18));
+        field.MouseLeave += (_, _) => field.Background = Ui.Brush(Th.Ink(0x0C));
+        field.MouseLeftButtonUp += (_, e) => { e.Handled = true; OpenSearch(); };
+        System.Windows.Automation.AutomationProperties.SetName(field, L.T("Szukaj"));
+        return field;
+    }
+
+    /// <summary>The search of the settings, by its shortcut.</summary>
+    static void OpenSearch()
+    {
+        switch (App.Settings.SearchKeys)
+        {
+            case "Alt+Space": Keys.Press(Keys.Alt, Keys.Space); break;
+            case "Win+S": Keys.Press(Keys.LWin, Keys.S); break;
+            default: Keys.Press(Keys.LWin, Keys.Alt, Keys.Space); break;
+        }
     }
 
     static FrameworkElement Separator() => new Border { Width = 1, Height = 20, Margin = new Thickness(12, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center, Background = Ui.Brush(Th.Ink(0x22)) };
@@ -579,7 +621,7 @@ public sealed class BarWindow : GlassWindow
 /// <summary>Key presses sent to Windows (the Start menu, the tray's chevron).</summary>
 static class Keys
 {
-    public const byte LWin = 0x5B, B = 0x42, Return = 0x0D, Escape = 0x1B;
+    public const byte LWin = 0x5B, B = 0x42, S = 0x53, Return = 0x0D, Escape = 0x1B, Alt = 0x12, Space = 0x20;
     const uint KEYEVENTF_KEYUP = 2;
 
     [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);

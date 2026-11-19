@@ -30,7 +30,7 @@ public class GlassWindow : Window
     public double Radius { get => _radius; set { _radius = value; ApplyCorners(); } }
     double _radius = 22;
     /// <summary>The corners as drawn: <see cref="Radius"/>, or square everywhere (Settings → Wygląd → Zaokrąglone narożniki off).</summary>
-    double Round => App.Settings.RoundCorners ? Radius : 0;
+    double Round => App.Settings.RoundCorners ? Th.Corner(Radius) : 0;
 
     /// <summary>The corners again (the setting changed).</summary>
     public static void RefreshCorners()

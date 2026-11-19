@@ -1062,8 +1062,9 @@ public sealed class SettingsWindow : DarkWindow
     {
         var p = new StackPanel();
         // theme: applied when the app starts (all windows are built in it)
-        var theme = new ComboBox { Width = 240 };
-        foreach (var (code, label) in new[] { ("dark", L.T("Ciemny")), ("light", L.T("Jasny (do jasnych tapet)")), ("auto", L.T("Automatycznie z jasności tapety")) })
+        var theme = new ComboBox { Width = 330, HorizontalAlignment = HorizontalAlignment.Left };
+        // Glass: the dark tint over the blurred wallpaper (the theme TaskWall had so far, "dark" in the settings file); Dark: flat graphite
+        foreach (var (code, label) in new[] { ("light", L.T("Jasny (do jasnych tapet)")), ("dark", L.T("Glass – szkło na rozmytej tapecie")), ("studio", L.T("Ciemny – płaski, grafitowy")), ("auto", L.T("Automatycznie z jasności tapety (jasny albo Glass)")) })
             theme.Items.Add(new ComboBoxItem { Content = label, Tag = code });
         theme.SelectedItem = theme.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == S.Theme) ?? theme.Items[0];
         var restartTheme = Btn(L.T("Uruchom ponownie"), "SecondaryButton", (_, _) => App.Instance.Restart());
@@ -1078,7 +1079,7 @@ public sealed class SettingsWindow : DarkWindow
         var themeRow = new StackPanel { Orientation = Orientation.Horizontal };
         themeRow.Children.Add(theme);
         themeRow.Children.Add(restartTheme);
-        p.Children.Add(Pair(L.T("Motyw"), themeRow));
+        p.Children.Add(Pair(L.T("Motyw"), themeRow, L.T("Jasny i Glass: szkło na rozmytej tapecie (jasne albo ciemne). Ciemny: płaskie, grafitowe panele z cienkimi liniami i małymi zaokrągleniami, bez tapety pod spodem i bez poświaty – ustawienia szkła, wzoru tła i poświaty go nie dotyczą. Zmiana motywu wymaga ponownego uruchomienia.")));
         p.Children.Add(Check(L.T("Bez przezroczystości (pełne, matowe tło)"), S.Opaque, v => S.Opaque = v));
         p.Children.Add(Check(L.T("Zaokrąglone narożniki"), S.RoundCorners, v => S.RoundCorners = v, L.T("Tablica, paski, kalendarz i podglądy z zaokrąglonymi rogami. Wyłączone: wszystko z prostymi narożnikami.")));
         var pattern = new ComboBox { Width = 220, HorizontalAlignment = HorizontalAlignment.Left };
@@ -1171,6 +1172,9 @@ public sealed class SettingsWindow : DarkWindow
         full.Children.Add(Pair(L.T("Szerokość"), Combo(new[] { ("board", L.T("Jak tablica")), ("screen", L.T("Cały ekran")) }, S.BarWidth,
             tag => { S.BarWidth = tag; App.Instance.ApplySettings(); }),
             L.T("Jak tablica: szkło paska zaczyna się i kończy tam, gdzie tablica, więc ich krawędzie się zgadzają. Cały ekran: od brzegu do brzegu (z odstępem). Windows i tak rezerwuje cały pas ekranu.")));
+        full.Children.Add(Pair(L.T("Wyszukiwarka"), Combo(new[] { ("Win+Alt+Space", L.T("Paleta poleceń PowerToys (Win+Alt+Spacja)")), ("Alt+Space", L.T("PowerToys Run (Alt+Spacja)")), ("Win+S", L.T("Wyszukiwanie Windows (Win+S)")) }, S.SearchKeys,
+            tag => { S.SearchKeys = tag; App.Instance.ApplySettings(); }, 330),
+            L.T("Pole „Szukaj” obok Startu otwiera tę wyszukiwarkę jej skrótem – wpisujesz już w niej. Paleta poleceń i PowerToys Run wymagają zainstalowanego PowerToys.")));
         full.Children.Add(Check(L.T("Ukryj pasek zadań Windows"), S.HideTaskbar, v => S.HideTaskbar = v,
             L.T("Pasek zadań Windows znika i oddaje swoje miejsce (na wszystkich monitorach). Wraca, gdy wyłączysz pasek TaskWall, zamkniesz TaskWall albo ten nagle się zamknie (strażnik). Start otwierasz przyciskiem na pasku albo klawiszem Windows.")));
         var dock = new StackPanel { Margin = new Thickness(26, 0, 0, 0) };

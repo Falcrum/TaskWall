@@ -798,6 +798,8 @@ public sealed class AppSettings
     public bool RoundCorners { get; set; } = true;
     /// <summary>The load rings in their own colours "always", or only "high" (80 % and more; quiet grey below).</summary>
     public string MeterColors { get; set; } = "high";
+    /// <summary>What the bar's search field opens, by its shortcut: "Win+Alt+Space" (PowerToys Command Palette), "Alt+Space" (PowerToys Run), "Win+S" (Windows search).</summary>
+    public string SearchKeys { get; set; } = "Win+Alt+Space";
     /// <summary>The dock in the full-width bar's middle: pinned and running programs (off by default).</summary>
     public bool Dock { get; set; }
     /// <summary>The dock's magnification under the pointer: "off", "subtle" (1.25×) or "full" (1.55×).</summary>

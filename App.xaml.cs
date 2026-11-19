@@ -50,6 +50,15 @@ public partial class App : Application
     /// <summary>The month calendar of the bar on screen (the full-width one or the old one over the board).</summary>
     public static CalendarWindow? ActiveCalendar => Instance._bar?.Calendar ?? Instance._clock?.Calendar;
     public static BarWindow? Bar => Instance._bar;
+
+    /// <summary>
+    /// The gap round the board and the bars (Settings → Ekran → Odstęp). With square corners there is none: the board and the bar
+    /// stand flush with the screen's edges and with each other, like a docked panel – a gap only makes sense round rounded glass.
+    /// </summary>
+    static double GapDip => Settings.RoundCorners ? Math.Clamp(Settings.Gap, 0, 40) : 0;
+
+    /// <summary>The wallpaper blurred behind the glass: the Glass and the light themes (the dark one is flat and opaque).</summary>
+    static bool UseGlass => Settings.Blur && !Th.Studio;
     SettingsWindow? _settingsWindow;
     TrayIcon? _tray;
     Mutex? _mutex;
@@ -548,8 +557,14 @@ public partial class App : Application
         Resources["GlassTint"] = new SolidColorBrush(!Settings.Opaque ? Th.Glass(a)
             : _surfaceTint is { } st ? (Th.Light ? Wallpaper.Surface(st, 0.95, 0.05) : Wallpaper.Surface(st, 0.095, 0.28)) : Th.Glass(255));
         Resources["GlassPattern"] = Pattern(Settings.Pattern, Settings.PatternVisibility, Settings.PatternScale);
+        if (Th.Studio)
+        {
+            // the dark theme (in the style of Shader Studio): flat graphite surfaces, no wallpaper, no pattern – whatever the glass settings say
+            Resources["GlassTint"] = new SolidColorBrush(Th.Glass(255));
+            Resources["GlassPattern"] = Brushes.Transparent;
+        }
         // menus, tool tips and dialogs: the hue of the wallpaper behind the board, so they sit with the glass
-        if (_surfaceTint is { } tint)
+        else if (_surfaceTint is { } tint)
         {
             Resources["MenuBg"] = new SolidColorBrush(Th.Light ? Wallpaper.Surface(tint, 0.975, 0.06) : Wallpaper.Surface(tint, 0.13, 0.32));
             Resources["DialogBg"] = new SolidColorBrush(Th.Light ? Wallpaper.Surface(tint, 0.955, 0.06) : Wallpaper.Surface(tint, 0.105, 0.30));
@@ -588,11 +603,11 @@ public partial class App : Application
             if (Settings.BarWidth == "board")
             {
                 var w0 = Monitors.Pick(Settings.Monitor).Work;
-                int e0 = P(Math.Clamp(Settings.Gap, 0, 40));
+                int e0 = P(GapDip);
                 int bw0 = Settings.BoardMax ? w0.Width - 2 * e0 : (int)Math.Round(w0.Width * Math.Clamp(Settings.WidthPercent, 30, 100) / 100);
                 span = (w0.X + (w0.Width - bw0) / 2, bw0);
             }
-            try { strip = _bar.Dock(new PxRect(b.X, b.Y, b.Width, b.Height), Settings.AppBarTop, Math.Clamp(Settings.Gap, 0, 40), ui, s, span); }
+            try { strip = _bar.Dock(new PxRect(b.X, b.Y, b.Width, b.Height), Settings.AppBarTop, GapDip, ui, s, span); }
             catch (Exception ex) { Log.Error("bar dock", ex); }
             mon = Monitors.Pick(Settings.Monitor);
         }
@@ -611,7 +626,7 @@ public partial class App : Application
         // the board as set, or (the button next to "hide") the whole screen under the top bar
         bool max = Settings.BoardMax;
         // one gap everywhere: under the bar, above the taskbar, at the sides of a whole-screen board
-        int edge = P(Math.Clamp(Settings.Gap, 0, 40)); // Settings → Ekran → Odstęp
+        int edge = P(GapDip); // Settings → Ekran → Odstęp
         int bw = max ? wa.Width - 2 * edge : (int)Math.Round(wa.Width * Math.Clamp(Settings.WidthPercent, 30, 100) / 100);
         double weekH = wa.Height / s * Math.Clamp(Settings.WeekHeightPercent, 5, 100) / 100;
         int barH = P(ClockWindow.BarHeight * ui);
@@ -639,7 +654,7 @@ public partial class App : Application
         if (_second != null && SecondScreen() is { } m2)
         {
             // the second screen: the whole of it
-            int e2 = (int)Math.Round(Math.Clamp(Settings.Gap, 0, 40) * m2.Scale);
+            int e2 = (int)Math.Round(GapDip * m2.Scale);
             _second.PlacePhysical(m2.Work.X + e2, m2.Work.Y + e2, m2.Work.Width - 2 * e2, m2.Work.Height - 2 * e2, m2.Scale);
         }
 
@@ -697,7 +712,8 @@ public partial class App : Application
         double blurPx = Math.Clamp(Settings.BlurStrength, 0, 100) * 1.3 * mon.Scale;
         var br = b.PhysicalRect;
         // without blur the board shows the plain wallpaper at half resolution
-        b.SetGlass(Settings.Blur ? Wallpaper.RenderGlass(src, br, blurPx) : Wallpaper.RenderGlass(src, br, 0, 0.5));
+        // (the dark theme: flat, no wallpaper behind the board at all)
+        b.SetGlass(Th.Studio ? null : Settings.Blur ? Wallpaper.RenderGlass(src, br, blurPx) : Wallpaper.RenderGlass(src, br, 0, 0.5));
         // sharp squares behind the rounded corners: redone only when the board moved or the wallpaper changed
         int c = (int)Math.Ceiling(b.Radius * mon.Scale) + 2;
         var key = $"{src.GetHashCode()}|{br.X},{br.Y},{br.Width},{br.Height}|{c}";
@@ -734,7 +750,7 @@ public partial class App : Application
         try
         {
             var r = w.PhysicalRect;
-            if (!Settings.Blur || r.Width <= 0) { w.SetGlass(null); return; }
+            if (!UseGlass || r.Width <= 0) { w.SetGlass(null); return; }
             var mon = Monitors.Pick(Settings.Monitor);
             w.SetGlass(Wallpaper.RenderGlass(Wallpaper.Resolve(mon), r, Math.Clamp(Settings.BlurStrength, 0, 100) * 1.3 * mon.Scale));
         }
@@ -754,17 +770,17 @@ public partial class App : Application
             if (_second != null && SecondScreen() is { } m2) PaintBoard(_second, m2, Wallpaper.Resolve(m2), ref _cornerKey2);
 
             var cr = _clock.PhysicalRect;
-            _clock.SetGlass(Settings.Blur && cr.Width > 0 ? Wallpaper.RenderGlass(src, cr, blurPx) : null);
+            _clock.SetGlass(UseGlass && cr.Width > 0 ? Wallpaper.RenderGlass(src, cr, blurPx) : null);
             var kr = _clock.Calendar.PhysicalRect;
-            _clock.Calendar.SetGlass(Settings.Blur && kr.Width > 0 ? Wallpaper.RenderGlass(src, kr, blurPx) : null);
+            _clock.Calendar.SetGlass(UseGlass && kr.Width > 0 ? Wallpaper.RenderGlass(src, kr, blurPx) : null);
             if (_bar != null)
             {
                 // the full-width bar and its calendar: the same frosted wallpaper
                 var sr = _bar.FrameRect; // the glass itself: not its gap from the edge, not the dock's room past it
                 var fr = new Int32Rect(sr.X, sr.Y, sr.Width, sr.Height);
-                _bar.SetGlass(Settings.Blur && fr.Width > 0 ? Wallpaper.RenderGlass(src, fr, blurPx) : null);
+                _bar.SetGlass(UseGlass && fr.Width > 0 ? Wallpaper.RenderGlass(src, fr, blurPx) : null);
                 var fk = _bar.Calendar.PhysicalRect;
-                _bar.Calendar.SetGlass(Settings.Blur && fk.Width > 0 ? Wallpaper.RenderGlass(src, fk, blurPx) : null);
+                _bar.Calendar.SetGlass(UseGlass && fk.Width > 0 ? Wallpaper.RenderGlass(src, fk, blurPx) : null);
             }
 
             if (Wallpaper.Average(src, br) is { } avg && avg != _surfaceTint)

@@ -741,6 +741,17 @@ static partial class L
         ("Kolory kółek", "Ring colours"),
         ("Tylko przy dużym obciążeniu", "Only under heavy load"),
         ("Zawsze", "Always"),
+        // 0.47: three themes, the search field, no gap with square corners
+        ("Glass – szkło na rozmytej tapecie", "Glass – glass over the blurred wallpaper"),
+        ("Ciemny – płaski, grafitowy", "Dark – flat graphite"),
+        ("Automatycznie z jasności tapety (jasny albo Glass)", "Automatically from the wallpaper's brightness (light or Glass)"),
+        ("Jasny i Glass: szkło na rozmytej tapecie (jasne albo ciemne). Ciemny: płaskie, grafitowe panele z cienkimi liniami i małymi zaokrągleniami, bez tapety pod spodem i bez poświaty – ustawienia szkła, wzoru tła i poświaty go nie dotyczą. Zmiana motywu wymaga ponownego uruchomienia.", "Light and Glass: glass over the blurred wallpaper (light or dark). Dark: flat graphite panels with fine lines and small corners, no wallpaper behind and no glow – the glass, pattern and glow settings don't apply to it. Changing the theme needs a restart."),
+        ("Wyszukiwarka", "Search"),
+        ("Paleta poleceń PowerToys (Win+Alt+Spacja)", "PowerToys Command Palette (Win+Alt+Space)"),
+        ("PowerToys Run (Alt+Spacja)", "PowerToys Run (Alt+Space)"),
+        ("Wyszukiwanie Windows (Win+S)", "Windows search (Win+S)"),
+        ("Pole „Szukaj” obok Startu otwiera tę wyszukiwarkę jej skrótem – wpisujesz już w niej. Paleta poleceń i PowerToys Run wymagają zainstalowanego PowerToys.", "The Search field next to Start opens this search by its shortcut – you type in it. The Command Palette and PowerToys Run need PowerToys installed."),
+        ("Szukaj ({0})", "Search ({0})"),
         ("Tylko przy dużym obciążeniu: kółka są spokojnie szare i dostają swój kolor (CPU pomarańczowy, GPU zielony …) od 80%. Zawsze: każde w swoim kolorze.", "Only under heavy load: the rings are a quiet grey and take their colour (CPU orange, GPU green …) from 80 %. Always: each in its own colour."),
         ("Pasek na całą szerokość trzy razy zakończył się awarią w ciągu 10 minut – tym razem TaskWall startuje bez niego (ze zwykłym paskiem nad tablicą). Szczegóły w error.log.", "The full-width bar crashed three times in 10 minutes – this time TaskWall starts without it (with the usual bar over the board). Details in error.log."),
     };
