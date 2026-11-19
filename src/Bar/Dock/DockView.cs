@@ -327,7 +327,7 @@ sealed class DockView : Canvas
         e.Visual.MouseUp += (_, ev) => { if (ev.ChangedButton == MouseButton.Middle) { ev.Handled = true; Launch(e); } };
         e.Visual.MouseRightButtonUp += (_, ev) => { ev.Handled = true; Menu(e); };
         e.Badge.Child = e.BadgeText;
-        e.Badge.Background = new SolidColorBrush(Color.FromRgb(0xE5, 0x48, 0x4D));
+        e.Badge.SetResourceReference(Border.BackgroundProperty, "AccentBrush"); // TaskWall's accent (follows a change of it)
         e.Badge.BorderBrush = new SolidColorBrush(Color.FromArgb(0x70, 0, 0, 0));
         e.Badge.RenderTransform = new ScaleTransform(1, 1);
         Children.Add(e.Visual);
@@ -442,14 +442,14 @@ sealed class DockView : Canvas
             // the counter: on the icon's upper corner (away from the screen's edge), growing with the icon
             if (e.Count.Any)
             {
-                double h = Math.Max(13, Math.Round(size * (e.Count.N > 0 ? 0.46 : 0.28)));
+                double h = Math.Max(13, Math.Round(size * (e.Count.N > 0 ? 0.54 : 0.3)));
                 string text = e.Count.N > 99 ? "99+" : e.Count.N > 0 ? e.Count.N.ToString() : "";
                 double bw = text.Length <= 1 ? h : h * (text.Length == 2 ? 1.4 : 1.8);
                 e.Badge.Width = bw;
                 e.Badge.Height = h;
                 e.Badge.CornerRadius = new CornerRadius(h / 2);
                 e.Badge.BorderThickness = new Thickness(Math.Max(1, h / 14));
-                e.BadgeText.FontSize = h * 0.66;
+                e.BadgeText.FontSize = h * 0.68;
                 e.BadgeText.Margin = new Thickness(0, -h * 0.06, 0, 0);
                 double iconTop = top ? edge + size : edge - size; // the far side from the screen's edge
                 double inset = size * 0.08;
@@ -494,6 +494,9 @@ sealed class DockView : Canvas
             e.Count = c;
             e.Badge.Visibility = c.Any ? Visibility.Visible : Visibility.Collapsed;
             e.BadgeText.Text = c.N > 99 ? "99+" : c.N > 0 ? c.N.ToString() : "";
+            // the number white on a dark or vivid accent, dark on a light one (the grey-white accent)
+            if (Ui.Res("AccentBrush") is SolidColorBrush acc)
+                e.BadgeText.Foreground = 0.2126 * acc.Color.R + 0.7152 * acc.Color.G + 0.0722 * acc.Color.B > 170 ? new SolidColorBrush(Color.FromRgb(0x1A, 0x1A, 0x1C)) : Brushes.White;
             System.Windows.Automation.AutomationProperties.SetName(e.Visual, c.N > 0 ? L.F("{0} – powiadomienia: {1}", e.Name, c.N) : e.Name);
             // a new one: the counter pops (a short spring of its size)
             if (grew && Anim.On && e.Badge.RenderTransform is ScaleTransform st)

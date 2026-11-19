@@ -179,7 +179,7 @@ public sealed class SettingsWindow : DarkWindow
         _accountBody.Child = p;
 
         // name
-        var name = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = acc.Name, MaxLength = 20, Width = 260, HorizontalAlignment = HorizontalAlignment.Left };
+        var name = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = acc.Name, MaxLength = 20, Width = 240, HorizontalAlignment = HorizontalAlignment.Right };
         void CommitName()
         {
             var v = name.Text.Trim();
@@ -191,19 +191,19 @@ public sealed class SettingsWindow : DarkWindow
         }
         name.LostKeyboardFocus += (_, _) => CommitName();
         name.KeyDown += (_, e) => { if (e.Key == Key.Enter) CommitName(); };
-        p.Children.Add(Pair(L.T("Nazwa konta"), name));
 
         // folder
-        p.Children.Add(Sub(L.T("Folder danych")));
-        p.Children.Add(FolderRow(id));
+        var folder = new StackPanel();
+        folder.Children.Add(FolderRow(id));
         _syncStatus = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0), Foreground = Ui.Res("FgFaint"), Tag = store };
-        p.Children.Add(_syncStatus);
+        folder.Children.Add(_syncStatus);
         UpdateStatus();
+        p.Children.Add(Group(L.T("Konto"), Row(L.T("Nazwa konta"), null, name), Stacked(L.T("Folder danych"), L.T("Tu są zadania, kopie dzienne i raporty konta. Folder na Dysku Google albo w OneDrive synchronizuje komputery."), folder)));
 
         // calendars
-        p.Children.Add(Sub(L.T("Kalendarze Google"), L.T("Adres iCal: Kalendarz Google → Ustawienia → kalendarz → Integracja kalendarza → Tajny adres w formacie iCal. Adres jest zapisywany tylko na tym komputerze.")));
-        var feeds = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
-        p.Children.Add(feeds);
+        var cal = new StackPanel();
+        var feeds = new StackPanel();
+        cal.Children.Add(feeds);
         void FillFeeds()
         {
             feeds.Children.Clear();
@@ -250,7 +250,7 @@ public sealed class SettingsWindow : DarkWindow
         add.Children.Add(feedUrl);
         add.Children.Add(kind);
         add.Children.Add(addBtn);
-        p.Children.Add(add);
+        cal.Children.Add(add);
         var calRow = new DockPanel { Margin = new Thickness(0, 6, 0, 0) };
         var refresh = Btn(L.T("Odśwież kalendarze"), "LinkButton", (_, _) => App.Instance.RefreshCalendars());
         refresh.Margin = new Thickness(-7, 0, 0, 0);
@@ -258,14 +258,15 @@ public sealed class SettingsWindow : DarkWindow
         calRow.Children.Add(refresh);
         _calStatus = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Foreground = Ui.Res("FgFaint"), Margin = new Thickness(8, 0, 0, 0) };
         calRow.Children.Add(_calStatus);
-        p.Children.Add(calRow);
+        cal.Children.Add(calRow);
         UpdateCalStatus();
+        p.Children.Add(Group(L.T("Kalendarze Google"), L.T("Adres iCal: Kalendarz Google → Ustawienia → kalendarz → Integracja kalendarza → Tajny adres w formacie iCal. Adres jest zapisywany tylko na tym komputerze."), cal));
 
 
         // categories (stored in this account's board.json, so they sync with its other computers)
-        p.Children.Add(Sub(L.T("Kategorie"), L.T("Etykieta [Nazwa] na początku zadania. Przypisanie: prawy przycisk → Kategoria, etykiety pod polem nowego zadania albo #nazwa.")));
-        var cats = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
-        p.Children.Add(cats);
+        var catBox = new StackPanel();
+        var cats = new StackPanel();
+        catBox.Children.Add(cats);
         FillCategories(store, cats);
         var addCat = Btn(L.T("+ Dodaj kategorię"), "SecondaryButton", (_, _) =>
         {
@@ -277,12 +278,13 @@ public sealed class SettingsWindow : DarkWindow
         });
         addCat.HorizontalAlignment = HorizontalAlignment.Left;
         addCat.Margin = new Thickness(0, 6, 0, 0);
-        p.Children.Add(addCat);
+        catBox.Children.Add(addCat);
+        p.Children.Add(Group(L.T("Kategorie"), L.T("Etykieta [Nazwa] na początku zadania. Przypisanie: prawy przycisk → Kategoria, etykiety pod polem nowego zadania albo #nazwa."), catBox));
 
         // day marks (HO, BŚU, Urlop …) – also per account, synced like the categories
-        p.Children.Add(Sub(L.T("Oznaczenia dni"), L.T("Kod w nagłówku dnia (np. HO, BŚU, Urlop). Ustawianie: prawy przycisk na dniu; stały cykl: przycisk Cykl…. Uwzględniane w widoku roku i eksporcie CSV.")));
-        var marks = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
-        p.Children.Add(marks);
+        var markBox = new StackPanel();
+        var marks = new StackPanel();
+        markBox.Children.Add(marks);
         FillMarks(store, marks);
         var addMark = Btn(L.T("+ Dodaj oznaczenie"), "SecondaryButton", (_, _) =>
         {
@@ -295,11 +297,11 @@ public sealed class SettingsWindow : DarkWindow
         });
         addMark.HorizontalAlignment = HorizontalAlignment.Left;
         addMark.Margin = new Thickness(0, 6, 0, 0);
-        p.Children.Add(addMark);
+        markBox.Children.Add(addMark);
+        p.Children.Add(Group(L.T("Oznaczenia dni"), L.T("Kod w nagłówku dnia (np. HO, BŚU, Urlop). Ustawianie: prawy przycisk na dniu; stały cykl: przycisk Cykl…. Uwzględniane w widoku roku i eksporcie CSV."), markBox));
 
         // clearing this account's data (goes to the other computers too)
-        p.Children.Add(Sub(L.T("Wyczyść dane"), L.T("Usuwa dane konta, również na innych komputerach synchronizujących ten folder. Zadania i oznaczenia można przywrócić przez Ctrl+Z lub z kopii dziennej.")));
-        var clearRow = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+        var clearRow = new WrapPanel { Margin = new Thickness(0, 0, 0, -8) };
         void ClearButton(string label, Func<int> count, Func<int> clear, string what)
         {
             var b = Btn(label, "SecondaryButton", (_, _) =>
@@ -340,7 +342,7 @@ public sealed class SettingsWindow : DarkWindow
         });
         restore.Margin = new Thickness(0, 0, 8, 8);
         clearRow.Children.Add(restore);
-        p.Children.Add(clearRow);
+        p.Children.Add(Group(L.T("Wyczyść dane"), L.T("Usuwa dane konta, również na innych komputerach synchronizujących ten folder. Zadania i oznaczenia można przywrócić przez Ctrl+Z lub z kopii dziennej."), clearRow));
     }
 
     FrameworkElement FolderRow(string layer)
@@ -550,10 +552,7 @@ public sealed class SettingsWindow : DarkWindow
                 b.Background = on ? new SolidColorBrush(Th.Ink(0x30)) : Brushes.Transparent;
                 b.Foreground = on ? Ui.Res("Fg") : Ui.Res("FgDim");
             }
-            var p = new StackPanel();
-            p.Children.Add(Sub("Notion"));
-            p.Children.Add(BuildNotion(S.AccountFor(current), App.StoreFor(current)));
-            body.Child = p;
+            body.Child = BuildNotion(S.AccountFor(current), App.StoreFor(current));
         }
         foreach (var acc in S.Accounts)
         {
@@ -573,7 +572,6 @@ public sealed class SettingsWindow : DarkWindow
     {
         var link = acc.Notion; // token and options of the account; its database is the first one
         var p = new StackPanel();
-        p.Children.Add(Note(L.T("Wczytuje zadania z baz Notion do backlogu konta (tylko odczyt). Wymaga osobistego tokenu Notion. Token jest szyfrowany dla bieżącego użytkownika Windows i zapisywany tylko na tym komputerze; na innym komputerze należy podać ten sam albo nowy token.")));
 
         // the token is never shown: a saved one appears as ******** (typing / pasting replaces it)
         const string Mask = "************************";
@@ -619,49 +617,25 @@ public sealed class SettingsWindow : DarkWindow
         };
         ShowTokenState();
         Verify();
-        p.Children.Add(Pair(L.T("Osobisty token"), tokenRow, needed: link.TokenProtected == null && acc.NotionSources.Any(l => l.Database.Length > 0)));
-        p.Children.Add(tokenState);
+        var tokenBox = new StackPanel();
+        tokenBox.Children.Add(tokenRow);
+        tokenState.Margin = new Thickness(0, 5, 0, 0);
+        tokenBox.Children.Add(tokenState);
+        var tokenField = Stacked(L.T("Osobisty token"), L.T("Szyfrowany dla bieżącego użytkownika Windows i zapisywany tylko na tym komputerze; inny komputer potrzebuje tego samego albo nowego tokenu."), tokenBox,
+            needed: link.TokenProtected == null && acc.NotionSources.Any(l => l.Database.Length > 0));
 
-        var every = new ComboBox { Width = 90, Margin = new Thickness(8, 0, 0, 0) };
-        foreach (var m in new[] { 5, 10, 15, 30, 60, 120, 240 }) every.Items.Add(new ComboBoxItem { Content = m < 60 ? $"{m} min" : $"{m / 60} h", Tag = m });
-        every.SelectedItem = every.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (int)i.Tag == link.Minutes) ?? every.Items[1];
-        every.SelectionChanged += (_, _) => { if (every.SelectedItem is ComboBoxItem it) { link.Minutes = (int)it.Tag; SettingsStore.Save(S); } };
-        var auto = new CheckBox { Content = L.T("Synchronizuj przy starcie programu i co"), IsChecked = link.Auto, VerticalAlignment = VerticalAlignment.Center };
-        auto.Checked += (_, _) => { link.Auto = true; SettingsStore.Save(S); };
-        auto.Unchecked += (_, _) => { link.Auto = false; SettingsStore.Save(S); };
-        var autoRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 4) };
-        autoRow.Children.Add(auto);
-        autoRow.Children.Add(every);
-        p.Children.Add(autoRow);
-        var viewFilter = new CheckBox { Content = L.T("Używaj filtrów i sortowania widoku z linku (zalecane)"), IsChecked = link.UseViewFilter, Margin = new Thickness(0, 4, 0, 4) };
-        viewFilter.Checked += (_, _) => { link.UseViewFilter = true; SettingsStore.Save(S); };
-        viewFilter.Unchecked += (_, _) => { link.UseViewFilter = false; SettingsStore.Save(S); };
-        p.Children.Add(viewFilter);
-        var limit = new ComboBox { Width = 110, Margin = new Thickness(8, 0, 0, 0) };
-        foreach (var n in new[] { 100, 250, 500, 1000, 2000 }) limit.Items.Add(new ComboBoxItem { Content = n.ToString(), Tag = n });
-        limit.SelectedItem = limit.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (int)i.Tag == link.MaxPages) ?? limit.Items[2];
-        limit.SelectionChanged += (_, _) => { if (limit.SelectedItem is ComboBoxItem it) { link.MaxPages = (int)it.Tag; SettingsStore.Save(S); } };
-        var limitRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 4) };
-        limitRow.Children.Add(new TextBlock { Text = L.T("Nie wczytuj, jeśli widok ma więcej zadań niż"), Foreground = Ui.Res("Fg"), VerticalAlignment = VerticalAlignment.Center });
-        limitRow.Children.Add(limit);
-        p.Children.Add(limitRow);
-        var mine = new CheckBox { Content = L.T("Tylko zadania przypisane do mnie (pole osoby zawiera moje konto)"), IsChecked = link.OnlyMine, Margin = new Thickness(0, 4, 0, 4) };
-        mine.Checked += (_, _) => { link.OnlyMine = true; SettingsStore.Save(S); };
-        mine.Unchecked += (_, _) => { link.OnlyMine = false; SettingsStore.Save(S); };
-        p.Children.Add(mine);
-        var done = new CheckBox { Content = L.T("Zakończone w Notion oznaczaj jako zrobione"), IsChecked = link.SyncDone, Margin = new Thickness(0, 4, 0, 4) };
-        done.Checked += (_, _) => { link.SyncDone = true; SettingsStore.Save(S); };
-        done.Unchecked += (_, _) => { link.SyncDone = false; SettingsStore.Save(S); };
-        p.Children.Add(done);
-
+        var every = Combo(new[] { 5, 10, 15, 30, 60, 120, 240 }.Select(m => (m.ToString(), m < 60 ? $"{m} min" : $"{m / 60} h")).ToArray(), link.Minutes.ToString(),
+            k => { link.Minutes = int.Parse(k); SettingsStore.Save(S); }, 110);
+        var limit = Combo(new[] { 100, 250, 500, 1000, 2000 }.Select(n => (n.ToString(), n.ToString())).ToArray(), link.MaxPages.ToString(),
+            k => { link.MaxPages = int.Parse(k); SettingsStore.Save(S); }, 110);
         // ----- the databases (one per project), each with a short name shown on its tasks -----
-        p.Children.Add(Sub(L.T("Projekty i bazy Notion"), L.T("Każdy projekt ma krótką nazwę i kolor – widać je na jego zadaniach, a komenda @nazwa (np. @FoA) przypisuje projekt własnemu zadaniu. Link do bazy Notion jest opcjonalny; z linkiem wczytywane są zadania tej bazy. Link do widoku: w Notion nazwa widoku nad tabelą → Copy link to view.")));
+        var projects = new StackPanel();
         var howTo = Btn(L.T("Jak skopiować link do widoku (pomoc Notion) ↗"), "LinkButton", (_, _) => GlassWindow.OpenUrl("https://www.notion.com/help/views-filters-and-sorts"));
         howTo.HorizontalAlignment = HorizontalAlignment.Left;
-        howTo.Margin = new Thickness(-7, 2, 0, 6);
-        p.Children.Add(howTo);
+        howTo.Margin = new Thickness(-7, -4, 0, 4);
+        projects.Children.Add(howTo);
         var list = new StackPanel();
-        p.Children.Add(list);
+        projects.Children.Add(list);
         var refreshers = new List<Action>();
         void FillSources()
         {
@@ -670,6 +644,8 @@ public sealed class SettingsWindow : DarkWindow
             list.Children.Add(BuildNotionSource(acc, store, link, null, refreshers));
             foreach (var extra in acc.NotionMore.ToList())
                 list.Children.Add(BuildNotionSource(acc, store, extra, () => { acc.NotionMore.Remove(extra); SettingsStore.Save(S); FillSources(); }, refreshers));
+            // a line between two projects, none above the first
+            if (list.Children[0] is Border first) { first.BorderThickness = new Thickness(0); first.Padding = new Thickness(0, 4, 0, 10); }
         }
         FillSources();
         var add = Btn(L.T("+ Dodaj projekt"), "LinkButton", (_, _) =>
@@ -680,10 +656,10 @@ public sealed class SettingsWindow : DarkWindow
             FillSources();
         });
         add.HorizontalAlignment = HorizontalAlignment.Left;
-        add.Margin = new Thickness(-7, 0, 0, 6);
-        p.Children.Add(add);
+        add.Margin = new Thickness(-7, 0, 0, 0);
+        projects.Children.Add(add);
 
-        var syncRow = new DockPanel { Margin = new Thickness(0, 6, 0, 0) };
+        var syncRow = new DockPanel();
         var result = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Foreground = Ui.Res("FgFaint"), Margin = new Thickness(10, 0, 0, 0), Text = link.LastResult ?? "" };
         Button? now = null;
         now = Btn(L.T("Synchronizuj teraz"), "SecondaryButton", async (_, _) =>
@@ -701,14 +677,24 @@ public sealed class SettingsWindow : DarkWindow
         DockPanel.SetDock(now, Dock.Left);
         syncRow.Children.Add(now);
         syncRow.Children.Add(result);
-        p.Children.Add(syncRow);
+
+        p.Children.Add(Group("Notion", L.T("Wczytuje zadania z baz Notion do backlogu konta (tylko odczyt)."),
+            tokenField,
+            Toggle(L.T("Synchronizuj automatycznie"), L.T("Przy starcie programu i co wybrany czas."), link.Auto, v => { link.Auto = v; SettingsStore.Save(S); }),
+            When(Row(L.T("Co ile"), null, every), () => link.Auto),
+            Toggle(L.T("Filtry i sortowanie widoku z linku"), L.T("Zalecane: wczytywane jest to, co pokazuje widok w Notion."), link.UseViewFilter, v => { link.UseViewFilter = v; SettingsStore.Save(S); }),
+            Row(L.T("Limit zadań"), L.T("Nie wczytuj, jeśli widok ma więcej zadań."), limit),
+            Toggle(L.T("Tylko zadania przypisane do mnie"), L.T("Pole osoby zawiera moje konto."), link.OnlyMine, v => { link.OnlyMine = v; SettingsStore.Save(S); }),
+            Toggle(L.T("Zakończone w Notion oznaczaj jako zrobione"), null, link.SyncDone, v => { link.SyncDone = v; SettingsStore.Save(S); }),
+            syncRow));
+        p.Children.Add(Group(L.T("Projekty i bazy Notion"), L.T("Każdy projekt ma krótką nazwę i kolor – widać je na jego zadaniach, a @nazwa (np. @FoA) przypisuje projekt własnemu zadaniu. Z linkiem do bazy wczytywane są jej zadania."), projects));
         return p;
     }
 
     /// <summary>One Notion database: name + colour (marks its tasks), link, statuses to read, last result.</summary>
     FrameworkElement BuildNotionSource(Account acc, BoardStore store, NotionLink link, Action? remove, List<Action> refreshers)
     {
-        var card = new Border { CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Th.Ink(0x16)), Padding = new Thickness(10, 8, 10, 8), Margin = new Thickness(0, 4, 0, 6) };
+        var card = new Border { BorderThickness = new Thickness(0, 1, 0, 0), BorderBrush = new SolidColorBrush(Th.Ink(0x10)), Padding = new Thickness(0, 10, 0, 10) };
         var p = new StackPanel();
         card.Child = p;
 
@@ -1408,15 +1394,19 @@ public sealed class SettingsWindow : DarkWindow
     }
 
     /// <summary>A group: a small heading (none for the section's first choice) and one card holding the rows, a fine line between them.</summary>
-    FrameworkElement Group(string? title, params FrameworkElement[] rows)
+    FrameworkElement Group(string? title, params FrameworkElement[] rows) => Group(title, (string?)null, rows);
+
+    /// <summary>A group with a short line under its heading saying what the card is for (accounts, connections).</summary>
+    FrameworkElement Group(string? title, string? hint, params FrameworkElement[] rows)
     {
         var outer = new StackPanel { Margin = new Thickness(0, title == null ? 4 : 14, 0, 0) };
         if (title != null)
         {
             var head = Label(L.Up(title), 10.5, "FgDim", FontWeights.Bold);
-            head.Margin = new Thickness(2, 0, 0, 6);
+            head.Margin = new Thickness(2, 0, 0, hint == null ? 6 : 2);
             outer.Children.Add(head);
         }
+        if (HintText(hint) is { } h) { h.Margin = new Thickness(2, 0, 0, 7); outer.Children.Add(h); }
         var list = new StackPanel();
         foreach (var r in rows)
         {
@@ -1471,10 +1461,19 @@ public sealed class SettingsWindow : DarkWindow
     }
 
     /// <summary>A row with a wide control (a list, a text field): under the name, the whole width.</summary>
-    static FrameworkElement Stacked(string label, string? hint, FrameworkElement control)
+    static FrameworkElement Stacked(string label, string? hint, FrameworkElement control, bool needed = false)
     {
         var sp = new StackPanel();
         sp.Children.Add(Caption(label, HintText(hint)));
+        if (needed && sp.Children[0] is StackPanel cap && cap.Children[0] is TextBlock name)
+        {
+            // the name and "UZUPEŁNIJ" side by side
+            cap.Children.RemoveAt(0);
+            var head = new StackPanel { Orientation = Orientation.Horizontal };
+            head.Children.Add(name);
+            head.Children.Add(Needed());
+            cap.Children.Insert(0, head);
+        }
         control.Margin = new Thickness(0, 8, 0, 0);
         sp.Children.Add(control);
         return sp;
