@@ -20,8 +20,11 @@ public sealed class SettingsWindow : DarkWindow
     readonly StackPanel _sections = new() { Margin = new Thickness(20, 16, 20, 20) };
     readonly List<(Border header, Border body, TextBlock chevron)> _accordion = new();
     readonly List<Action> _openers = new();
+    readonly Dictionary<string, int> _sectionIndex = new();
     /// <summary>Opens a section by its position (dev screenshots).</summary>
     public void OpenSection(int index) { if (index >= 0 && index < _openers.Count) _openers[index](); }
+    /// <summary>Opens a section by its key ("bar", "weather", "connections" …).</summary>
+    public void OpenSection(string key) { if (_sectionIndex.TryGetValue(key, out var i)) _openers[i](); }
     readonly DispatcherTimer _statusTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     string _account = App.Settings.Layer;
     readonly Border _accountBody = new();
@@ -37,10 +40,10 @@ public sealed class SettingsWindow : DarkWindow
         Content = new ScrollViewer { Content = _sections, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
 
         // what a fresh install still needs, at the top (each one is also marked "UZUPEŁNIJ" in its section)
-        var todo = new List<(string What, int Section)>();
+        var todo = new List<(string What, string Section)>();
         foreach (var a in S.Accounts.Where(a => a.NotionSources.Any(l => l.Database.Length > 0) && a.Notion.TokenProtected == null))
-            todo.Add((L.F("token Notion konta „{0}”", a.Name), 2));
-        if (S.Weather.Enabled && !S.Weather.Ready) todo.Add((L.T("miasto do prognozy pogody"), 3));
+            todo.Add((L.F("token Notion konta „{0}”", a.Name), "connections"));
+        if (S.Weather.Enabled && !S.Weather.Ready) todo.Add((L.T("miasto do prognozy pogody"), "weather"));
         if (todo.Count > 0)
         {
             var box = new Border
@@ -52,8 +55,8 @@ public sealed class SettingsWindow : DarkWindow
             list.Children.Add(Label(L.T("Do uzupełnienia"), 12, "Fg", FontWeights.Bold));
             foreach (var (what, section) in todo)
             {
-                int s = section;
-                var go = Btn("→ " + what, "LinkButton", (_, _) => _openers[s]());
+                var s = section;
+                var go = Btn("→ " + what, "LinkButton", (_, _) => OpenSection(s));
                 go.HorizontalAlignment = HorizontalAlignment.Left;
                 list.Children.Add(go);
             }
@@ -61,15 +64,16 @@ public sealed class SettingsWindow : DarkWindow
             _sections.Children.Add(box);
         }
 
-        AddSection(L.T("Ogólne"), L.T("język, autostart, alarmy i przypomnienia, linki Notion, skrót klawiszowy"), BuildGeneral);
-        AddSection(L.T("Pasek"), L.T("pasek nad tablicą albo na całą szerokość ekranu, pasek zadań Windows, dock, pogoda, obciążenie, zegar"), BuildBar);
-        AddSection(L.T("Konta"), L.T("Praca i Prywatne: folder, kalendarze Google, kategorie, oznaczenia dni"), BuildAccounts);
-        AddSection(L.T("Połączenia"), L.T("Notion: automatyczne wczytywanie zadań z bazy"), BuildConnections);
-        AddSection(L.T("Pogoda"), L.T("prognoza w nagłówkach dni, lokalizacja"), BuildWeather);
-        AddSection(L.T("Ekran i rozmiar"), L.T("monitor, skala, szerokość i wysokość tablicy"), BuildScreen);
-        AddSection(L.T("Tablica"), L.T("weekendy, widok roku, zaległe zadania, backlog"), BuildBoard);
-        AddSection(L.T("Wygląd"), L.T("matowe szkło, przyciemnienie, kolor akcentu, animacje"), BuildLook);
-        AddSection(L.T("Info"), L.T("wersja, instalacja i deinstalacja"), BuildInstall);
+        // from what is changed most to what is set once
+        AddSection("general", L.T("Ogólne"), L.T("język, autostart, skrót klawiszowy, alarmy i przypomnienia"), BuildGeneral);
+        AddSection("look", L.T("Wygląd"), L.T("motyw, kolor akcentu, przezroczystość, wzór tła"), BuildLook);
+        AddSection("board", L.T("Tablica"), L.T("weekendy, przenoszenie zadań, godziny pracy, backlog"), BuildBoard);
+        AddSection("screen", L.T("Ekran i rozmiar"), L.T("monitor, drugi ekran, skala, szerokość i wysokość tablicy"), BuildScreen);
+        AddSection("bar", L.T("Pasek i dock"), L.T("pasek nad tablicą albo pasek z dockiem zamiast paska zadań Windows"), BuildBar);
+        AddSection("weather", L.T("Pogoda"), L.T("prognoza w nagłówkach dni, lokalizacja"), BuildWeather);
+        AddSection("accounts", L.T("Konta"), L.T("Praca i Prywatne: folder, kalendarze Google, kategorie, oznaczenia dni"), BuildAccounts);
+        AddSection("connections", L.T("Połączenia"), L.T("Notion: automatyczne wczytywanie zadań z bazy"), BuildConnections);
+        AddSection("info", L.T("Info"), L.T("wersja, aktualizacje, kopia zapasowa"), BuildInstall);
 
         var footer = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 18, 0, 0) };
         footer.Children.Add(Btn(L.T("Importuj z Notion…"), "SecondaryButton", (_, _) => App.Instance.ImportNotion()));
@@ -85,8 +89,9 @@ public sealed class SettingsWindow : DarkWindow
 
     // ---------- accordion ----------
 
-    void AddSection(string title, string subtitle, Func<FrameworkElement> build, bool open = false)
+    void AddSection(string key, string title, string subtitle, Func<FrameworkElement> build, bool open = false)
     {
+        _sectionIndex[key] = _openers.Count;
         // one card per section (like the day cells of the board): header, and the body inside the same card when open
         var chevron = new TextBlock { Text = "", FontFamily = Ui.Font("IconFont"), FontSize = 11, Foreground = Ui.Res("FgDim"), VerticalAlignment = VerticalAlignment.Center };
         var head = new DockPanel();
@@ -110,6 +115,7 @@ public sealed class SettingsWindow : DarkWindow
         void Open()
         {
             if (!built) { body.Child = build(); built = true; }
+            Sync(); // a setting changed in another section can show or hide rows here
             foreach (var (h, b, c) in _accordion)
             {
                 bool me = ReferenceEquals(b, body);
@@ -467,17 +473,11 @@ public sealed class SettingsWindow : DarkWindow
     {
         var w = S.Weather;
         var p = new StackPanel();
-        p.Children.Add(Note(L.T("Prognoza na 16 dni (Open-Meteo, bez konta): symbol pogody, temperatura maks. / min., szansa opadów i wiatr w nagłówku dnia. Do serwisu wysyłane są wyłącznie współrzędne miasta.")));
         var status = Label("", 11.5, "FgDim");
         void ShowStatus() => status.Text = !w.Ready ? L.T("Wybierz miasto, aby włączyć prognozę.")
             : WeatherService.Error != null ? L.F("Błąd: {0}", WeatherService.Error)
             : WeatherService.Fetched is { } f ? L.F("{0} · pobrano {1}", w.City, f.ToString("HH:mm")) : w.City;
-        if (w.Enabled && !w.Ready) p.Children.Add(Sub(L.T("Miejscowość"), null, needed: true));
-        p.Children.Add(Check(L.T("Pokazuj pogodę w nagłówkach dni"), w.Enabled, v => { w.Enabled = v; if (v) WeatherService.Refresh(); }));
-        p.Children.Add(Check(L.T("Opady: szansa (0–100%) i przewidywana ilość (mm)"), w.ShowRain, v => w.ShowRain = v));
-        p.Children.Add(Check(L.T("Prędkość wiatru (km/h)"), w.ShowWind, v => w.ShowWind = v));
-
-        var row = new DockPanel { Margin = new Thickness(0, 8, 0, 0) };
+        var row = new DockPanel();
         var city = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = w.City };
         var results = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
         async void Search()
@@ -511,13 +511,22 @@ public sealed class SettingsWindow : DarkWindow
         row.Children.Add(find);
         row.Children.Add(city);
         city.KeyDown += (_, e) => { if (e.Key == Key.Enter) Search(); };
-        p.Children.Add(Pair(L.T("Miasto"), row));
-        p.Children.Add(results);
-        p.Children.Add(status);
         var refresh = Btn(L.T("Odśwież prognozę"), "LinkButton", (_, _) => WeatherService.Refresh());
         refresh.HorizontalAlignment = HorizontalAlignment.Left;
-        refresh.Margin = new Thickness(-7, 4, 0, 0);
-        p.Children.Add(refresh);
+        refresh.Margin = new Thickness(-7, 2, 0, 0);
+        var place = new StackPanel();
+        place.Children.Add(row);
+        place.Children.Add(results);
+        status.Margin = new Thickness(0, 6, 0, 0);
+        place.Children.Add(status);
+        place.Children.Add(refresh);
+        var cityRow = Stacked(L.T("Miejscowość"), L.T("Do serwisu trafiają tylko jej współrzędne."), place);
+        p.Children.Add(Group(L.T("Prognoza"),
+            Toggle(L.T("Pogoda w nagłówkach dni"), L.T("Symbol, temperatura maks. / min. na 16 dni (Open-Meteo, bez konta)."), w.Enabled, v => { w.Enabled = v; if (v) WeatherService.Refresh(); }),
+            When(Toggle(L.T("Opady"), L.T("Szansa (0–100%) i przewidywana ilość (mm)."), w.ShowRain, v => w.ShowRain = v), () => w.Enabled),
+            When(Toggle(L.T("Wiatr"), L.T("Prędkość w km/h."), w.ShowWind, v => w.ShowWind = v), () => w.Enabled),
+            cityRow));
+        if (w.Enabled && !w.Ready) p.Children.Add(Sub(L.T("Miejscowość"), L.T("Wpisz miasto i wybierz je z listy, aby włączyć prognozę."), needed: true));
         WeatherService.Changed += ShowStatus;
         Closed += (_, _) => WeatherService.Changed -= ShowStatus;
         ShowStatus();
@@ -964,55 +973,58 @@ public sealed class SettingsWindow : DarkWindow
     }
 
     // ---------- other sections ----------
+    //
+    // Every section is a few groups: a small heading and one card of rows. A row is the setting's name with one short line under
+    // it saying what it does, and the control on the right (a switch, a drop-down, a slider); a wide control (a list, a text
+    // field) comes under the name. Options that change nothing in the current state are hidden, not indented: they appear in
+    // the same card when they start to matter (see When / Sync).
 
     FrameworkElement BuildScreen()
     {
         var p = new StackPanel();
         var monitors = Monitors.All();
-        var monCombo = new ComboBox { Width = 320, HorizontalAlignment = HorizontalAlignment.Left };
+        var monCombo = new ComboBox { Width = 300, HorizontalAlignment = HorizontalAlignment.Right };
         for (int i = 0; i < monitors.Count; i++)
             monCombo.Items.Add(new ComboBoxItem { Content = monitors[i].Label(i), Tag = monitors[i].Device });
         int idx = monitors.FindIndex(m => m.Device == S.Monitor);
         monCombo.SelectedIndex = Math.Max(0, idx >= 0 ? idx : monitors.FindIndex(m => m.Primary));
         monCombo.SelectionChanged += (_, _) => { if (monCombo.SelectedItem is ComboBoxItem it) { S.Monitor = (string)it.Tag; App.Instance.ApplySettings(); } };
-        p.Children.Add(Pair("Monitor", monCombo));
         // a second board on another screen, with a view of its own (picked on that board, remembered)
-        var second = new ComboBox { Width = 320, HorizontalAlignment = HorizontalAlignment.Left };
+        var second = new ComboBox { Width = 300, HorizontalAlignment = HorizontalAlignment.Right };
         second.Items.Add(new ComboBoxItem { Content = L.T("Brak"), Tag = "" });
         for (int i = 0; i < monitors.Count; i++)
             second.Items.Add(new ComboBoxItem { Content = monitors[i].Label(i), Tag = monitors[i].Device });
         second.SelectedItem = second.Items.Cast<ComboBoxItem>().FirstOrDefault(it => (string)it.Tag == S.SecondMonitor) ?? second.Items[0];
         second.SelectionChanged += (_, _) => { if (second.SelectedItem is ComboBoxItem it) { S.SecondMonitor = (string)it.Tag; App.Instance.ApplySettings(); } };
-        p.Children.Add(Pair(L.T("Drugi ekran"), second,
-            L.T("Druga tablica na całym drugim ekranie, z własnym widokiem – np. DZIEŃ tutaj, a TIMELINE tam. Widok wybierasz na niej samej, zapamiętuje się. Zmiany z jednej tablicy od razu widać na drugiej. Ten sam ekran co główna tablica = bez drugiej tablicy.")));
-        p.Children.Add(SliderRow(L.T("Skala całości"), 80, 220, S.UiScale * 100, v => S.UiScale = Math.Round(v) / 100, v => $"{v:0}%"));
-        p.Children.Add(SliderRow(L.T("Szerokość tablicy"), 40, 100, S.WidthPercent, v => S.WidthPercent = v, v => $"{v:0}%"));
-        p.Children.Add(SliderRow(L.T("Wysokość tygodnia"), 10, 100, S.WeekHeightPercent, v => S.WeekHeightPercent = v, v => v >= 99 ? L.T("od zegara do paska zadań") : L.F("{0:0}% ekranu", v)));
-        p.Children.Add(SliderRow(L.T("Położenie w pionie"), 0, 100, S.VerticalPercent, v => S.VerticalPercent = v, v => $"{v:0}%"));
-        p.Children.Add(SliderRow(L.T("Odstęp od krawędzi"), 0, 40, S.Gap, v => S.Gap = Math.Round(v), v => $"{Math.Round(v):0} px"));
-        p.Children.Add(SliderRow(L.T("Rozmiar tekstu zadań"), 10, 17, S.FontSize, v => S.FontSize = Math.Round(v * 2) / 2, v => $"{Math.Round(v * 2) / 2:0.0}"));
+        p.Children.Add(Group(L.T("Monitory"),
+            Row(L.T("Monitor"), null, monCombo),
+            Row(L.T("Drugi ekran"), L.T("Druga tablica z własnym widokiem, np. Dzień tutaj, a Timeline tam. Zmiany widać od razu na obu."), second)));
+        p.Children.Add(Group(L.T("Rozmiar i położenie"),
+            Row(L.T("Skala całości"), null, Slider(80, 220, S.UiScale * 100, v => S.UiScale = Math.Round(v) / 100, v => $"{v:0}%")),
+            Row(L.T("Szerokość tablicy"), null, Slider(40, 100, S.WidthPercent, v => S.WidthPercent = v, v => $"{v:0}%")),
+            Row(L.T("Wysokość tygodnia"), L.T("Do końca: od zegara aż do paska."), Slider(10, 100, S.WeekHeightPercent, v => S.WeekHeightPercent = v, v => v >= 99 ? L.T("do końca") : $"{v:0}%")),
+            Row(L.T("Położenie w pionie"), null, Slider(0, 100, S.VerticalPercent, v => S.VerticalPercent = v, v => $"{v:0}%")),
+            When(Row(L.T("Odstęp od krawędzi"), L.T("Przy prostych narożnikach tablica przylega do krawędzi bez odstępu."), Slider(0, 40, S.Gap, v => S.Gap = Math.Round(v), v => $"{Math.Round(v):0} px")), () => S.RoundCorners)));
         return p;
     }
 
     FrameworkElement BuildBoard()
     {
         var p = new StackPanel();
-        p.Children.Add(Check(L.T("Pokazuj weekendy"), S.ShowWeekends, v => S.ShowWeekends = v));
         // one choice for folding done tasks into "✓ 3 zrobione": never, on past days, everywhere
-        var fold = new ComboBox { Width = 220, HorizontalAlignment = HorizontalAlignment.Left };
-        foreach (var (key, label) in new[] { ("none", L.T("nie")), ("past", L.T("w minionych dniach")), ("all", L.T("we wszystkich dniach")) })
-            fold.Items.Add(new ComboBoxItem { Content = label, Tag = key });
-        fold.SelectedIndex = S.CollapseDone ? 2 : S.FoldPastDone ? 1 : 0;
-        fold.SelectionChanged += (_, _) =>
-        {
-            var k = (fold.SelectedItem as ComboBoxItem)?.Tag as string;
-            S.CollapseDone = k == "all";
-            S.FoldPastDone = k == "past";
-            App.Instance.ApplySettings();
-        };
-        p.Children.Add(Pair(L.T("Zwijaj zrobione zadania"), fold, L.T("Zrobione zadania dnia w jednej linii („✓ 3 zrobione”) – rozwija ją kliknięcie.")));
+        var fold = Combo(new[] { ("none", L.T("nie")), ("past", L.T("w minionych dniach")), ("all", L.T("we wszystkich dniach")) },
+            S.CollapseDone ? "all" : S.FoldPastDone ? "past" : "none", k => { S.CollapseDone = k == "all"; S.FoldPastDone = k == "past"; App.Instance.ApplySettings(); });
+        p.Children.Add(Group(L.T("Widok"),
+            Toggle(L.T("Pokazuj weekendy"), null, S.ShowWeekends, v => S.ShowWeekends = v),
+            Toggle(L.T("Przycisk widoku roku (365 dni)"), null, S.ShowYearButton, v => S.ShowYearButton = v),
+            Row(L.T("Zwijaj zrobione zadania"), L.T("Zrobione zadania dnia w jednej linii „✓ 3 zrobione” – rozwija ją kliknięcie."), fold)));
+        p.Children.Add(Group(L.T("Zadania"),
+            Toggle(L.T("Przenoś niezrobione zadania na dziś"), L.T("Niezrobione zadania z minionych dni same trafiają na dziś."), S.AutoRollover, v => S.AutoRollover = v),
+            Toggle(L.T("Zadania w trakcie na kolejne dni"), L.T("W trakcie, review i testy przechodzą na kolejne dni robocze aż do zrobienia (bez weekendów, świąt i urlopu)."), S.StretchActive, v => S.StretchActive = v),
+            Toggle(L.T("Podsumowanie poprzedniego tygodnia"), L.T("Przy pierwszym uruchomieniu w tygodniu."), S.WeeklySummary, v => S.WeeklySummary = v)));
+
         // default working hours (the day view; a day can have its own – drag the edges there)
-        var hours = new StackPanel { Orientation = Orientation.Horizontal };
+        var hours = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         static TimeSpan? ParseHour(string s) =>
             TimeSpan.TryParseExact(s.Trim(), new[] { @"h\:mm", @"hh\:mm", "%h" }, System.Globalization.CultureInfo.InvariantCulture, out var t) && t < TimeSpan.FromHours(24) ? t : null;
         TextBox HourBox(Func<string> current, Action<string> set, bool end)
@@ -1031,9 +1043,8 @@ public sealed class SettingsWindow : DarkWindow
         hours.Children.Add(HourBox(() => S.WorkStart, v => S.WorkStart = v, false));
         hours.Children.Add(new TextBlock { Text = "  –  ", VerticalAlignment = VerticalAlignment.Center, Foreground = Ui.Res("FgDim") });
         hours.Children.Add(HourBox(() => S.WorkEnd, v => S.WorkEnd = v, true));
-        p.Children.Add(Pair(L.T("Godziny pracy"), hours, L.T("Domyślne godziny w widoku dnia. Każdy dzień może mieć własne – przeciągnij ich krawędzie na osi. Weekendy i święta nie mają godzin pracy: dodaj nadgodziny prawym przyciskiem na osi.")));
         // a lunch break on every working day ("12:00-12:30"; empty: none)
-        var lunch = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Width = 120, Text = S.Lunch, HorizontalAlignment = HorizontalAlignment.Left };
+        var lunch = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Width = 120, Text = S.Lunch, HorizontalAlignment = HorizontalAlignment.Right };
         lunch.LostKeyboardFocus += (_, _) =>
         {
             var text = lunch.Text.Trim().Replace("–", "-").Replace(" ", "");
@@ -1042,19 +1053,15 @@ public sealed class SettingsWindow : DarkWindow
             { S.Lunch = $"{p.Start:hh\\:mm}-{p.End:hh\\:mm}"; lunch.Text = S.Lunch; App.Instance.ApplySettings(); }
             else lunch.Text = S.Lunch; // not a time range: back to what is set
         };
-        p.Children.Add(Pair(L.T("Przerwa na lunch"), lunch, L.T("Np. 12:00-12:30 – pojawia się co dzień roboczy na osi dnia i nie liczy się do czasu pracy. Pusto: bez lunchu. Dany dzień może ją przesunąć albo usunąć (prawy przycisk na niej).")));
-        p.Children.Add(Check(L.T("Widok dnia: notatnik po lewej, oś godzin po prawej"), S.DayNotesLeft, v => S.DayNotesLeft = v));
-        p.Children.Add(Check(L.T("Podsumowanie poprzedniego tygodnia przy pierwszym uruchomieniu w tygodniu"), S.WeeklySummary, v => S.WeeklySummary = v));
-        p.Children.Add(Check(L.T("Przycisk widoku roku (365 dni)"), S.ShowYearButton, v => S.ShowYearButton = v));
-        p.Children.Add(Check(L.T("Automatycznie przenoś niezrobione zadania z minionych dni na dziś"), S.AutoRollover, v => S.AutoRollover = v));
-        p.Children.Add(Check(L.T("Zadania w trakcie przechodzą na kolejne dni robocze"), S.StretchActive, v => S.StretchActive = v, L.T("Zadania w trakcie, review i testach same przechodzą na kolejne dni robocze, aż do zrobienia – w historii i raportach widać każdy dzień pracy. Weekendy, święta i urlop są pomijane.")));
-        var mode = new ComboBox { Width = 320, HorizontalAlignment = HorizontalAlignment.Left };
-        mode.Items.Add(new ComboBoxItem { Content = L.T("Wysuwany po kliknięciu (na szerokość weekendu)"), Tag = "drawer" });
-        mode.Items.Add(new ComboBoxItem { Content = L.T("Przypięty z prawej strony"), Tag = "pinned" });
-        mode.SelectedIndex = S.BacklogMode == "pinned" ? 1 : 0;
-        mode.SelectionChanged += (_, _) => { if (mode.SelectedItem is ComboBoxItem it) { S.BacklogMode = (string)it.Tag; App.Instance.ApplySettings(); } };
-        p.Children.Add(Pair(L.T("Backlog i archiwum"), mode));
-        p.Children.Add(SliderRow(L.T("Szerokość (przypięty)"), 220, 560, S.BacklogWidth, v => S.BacklogWidth = v, v => $"{v:0} px"));
+        p.Children.Add(Group(L.T("Widok dnia"),
+            Row(L.T("Godziny pracy"), L.T("Domyślne; każdy dzień może mieć własne – przeciągnij krawędzie na osi."), hours),
+            Row(L.T("Przerwa na lunch"), L.T("Np. 12:00-12:30, co dzień roboczy; nie liczy się do pracy. Pusto: bez lunchu."), lunch),
+            Toggle(L.T("Notatnik po lewej, oś godzin po prawej"), null, S.DayNotesLeft, v => S.DayNotesLeft = v)));
+
+        p.Children.Add(Group(L.T("Backlog i archiwum"),
+            Row(L.T("Backlog"), null, Combo(new[] { ("drawer", L.T("Wysuwany po kliknięciu")), ("pinned", L.T("Przypięty z prawej strony")) }, S.BacklogMode == "pinned" ? "pinned" : "drawer",
+                k => { S.BacklogMode = k; App.Instance.ApplySettings(); }, 240)),
+            When(Row(L.T("Szerokość backlogu"), null, Slider(220, 560, S.BacklogWidth, v => S.BacklogWidth = v, v => $"{v:0} px")), () => S.BacklogMode == "pinned")));
         return p;
     }
 
@@ -1062,61 +1069,23 @@ public sealed class SettingsWindow : DarkWindow
     {
         var p = new StackPanel();
         // theme: applied when the app starts (all windows are built in it)
-        var theme = new ComboBox { Width = 330, HorizontalAlignment = HorizontalAlignment.Left };
         // Glass: the dark tint over the blurred wallpaper (the theme TaskWall had so far, "dark" in the settings file); Dark: flat graphite
-        foreach (var (code, label) in new[] { ("light", L.T("Jasny (do jasnych tapet)")), ("dark", L.T("Glass – szkło na rozmytej tapecie")), ("studio", L.T("Ciemny – neutralny grafit")), ("auto", L.T("Automatycznie z jasności tapety (jasny albo Glass)")) })
-            theme.Items.Add(new ComboBoxItem { Content = label, Tag = code });
-        theme.SelectedItem = theme.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == S.Theme) ?? theme.Items[0];
         var restartTheme = Btn(L.T("Uruchom ponownie"), "SecondaryButton", (_, _) => App.Instance.Restart());
         restartTheme.Visibility = Visibility.Collapsed;
-        theme.SelectionChanged += (_, _) =>
-        {
-            if (theme.SelectedItem is not ComboBoxItem it) return;
-            S.Theme = (string)it.Tag;
-            SettingsStore.Save(S);
-            restartTheme.Visibility = Visibility.Visible;
-        };
-        var themeRow = new StackPanel { Orientation = Orientation.Horizontal };
-        themeRow.Children.Add(theme);
-        themeRow.Children.Add(restartTheme);
-        p.Children.Add(Pair(L.T("Motyw"), themeRow, L.T("Jasny i Glass: szkło na rozmytej tapecie (jasne albo ciemne, z odcieniem tapety). Ciemny: neutralne, grafitowe kolory bez odcienia tapety, cienkie linie, małe zaokrąglenia i bez poświaty. Przezroczystość, rozmycie i wzór tła działają w każdym motywie – zupełnie płaski Ciemny daje „Bez przezroczystości”. Zmiana motywu wymaga ponownego uruchomienia.")));
-        p.Children.Add(Check(L.T("Bez przezroczystości (pełne, matowe tło)"), S.Opaque, v => S.Opaque = v));
-        p.Children.Add(Check(L.T("Zaokrąglone narożniki"), S.RoundCorners, v => S.RoundCorners = v, L.T("Tablica, paski, kalendarz i podglądy z zaokrąglonymi rogami. Wyłączone: wszystko z prostymi narożnikami.")));
-        var pattern = new ComboBox { Width = 220, HorizontalAlignment = HorizontalAlignment.Left };
-        foreach (var (key, label) in new[] { ("none", L.T("brak")), ("fabric", L.T("materiał (szachownica pod kątem 45°)")), ("dots", L.T("drobne kropki")), ("grid", L.T("drobna kratka")) })
-            pattern.Items.Add(new ComboBoxItem { Content = label, Tag = key });
-        pattern.SelectedItem = pattern.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == S.Pattern) ?? pattern.Items[0];
-        pattern.SelectionChanged += (_, _) => { if (pattern.SelectedItem is ComboBoxItem it) { S.Pattern = (string)it.Tag; App.Instance.ApplySettings(); } };
-        p.Children.Add(Pair(L.T("Wzór tła"), pattern));
-        // the task state: a bar that fills up, or a round icon (the shape says the state, the colours help)
-        var stateIcon = new ComboBox { Width = 260, HorizontalAlignment = HorizontalAlignment.Left };
-        foreach (var (tag, label) in new[] { ("bar", L.T("Pasek (wypełnia się)")), ("circle", L.T("Koło (jak Linear / Jira)")) })
-            stateIcon.Items.Add(new ComboBoxItem { Content = label, Tag = tag });
-        stateIcon.SelectedItem = stateIcon.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == S.StateIcon) ?? stateIcon.Items[0];
-        stateIcon.SelectionChanged += (_, _) => { if (stateIcon.SelectedItem is ComboBoxItem it) { S.StateIcon = (string)it.Tag; App.Instance.ApplySettings(); } };
-        p.Children.Add(Pair(L.T("Znacznik stanu zadania"), stateIcon,
-            L.T("Pasek: pusty → ¼ w trakcie → ½ review → ¾ testy → pełny zrobione, hold w paski. Koło: pusty pierścień, ćwiartka, połowa, trzy czwarte, pełne z ✓, hold z ‖ – kształt czytelny także bez kolorów.")));
-        p.Children.Add(Check(L.T("Poświata"), S.Glow, v => S.Glow = v,
-            L.T("Miękka łuna w kolorze akcentu u góry tablicy, przechodząca w górny pasek.")));
-        p.Children.Add(SliderRow(L.T("Widoczność wzoru"), 0, 300, S.PatternVisibility * 100, v => S.PatternVisibility = v / 100, v => $"{v:0}%"));
-        p.Children.Add(SliderRow(L.T("Skala wzoru"), 25, 100, S.PatternScale * 100, v => S.PatternScale = v / 100, v => $"{v:0}%"));
-        p.Children.Add(Check(L.T("Matowe szkło (rozmyta tapeta pod tablicą)"), S.Blur, v => S.Blur = v));
-        p.Children.Add(Check(L.T("Animacje"), S.Animations, v => S.Animations = v));
-        p.Children.Add(Check(L.T("Podpisy przy ikonach górnego paska"), S.BarCaptions, v => S.BarCaptions = v));
-        p.Children.Add(SliderRow(L.T("Rozmycie"), 0, 100, S.BlurStrength, v => S.BlurStrength = v, v => $"{v:0}"));
-        p.Children.Add(SliderRow(L.T("Przyciemnienie"), 0, 95, S.TintOpacity * 100, v => S.TintOpacity = v / 100, v => $"{v:0}%"));
-        var refresh = Btn(L.T("Odśwież tapetę"), "SecondaryButton", (_, _) => App.Instance.RefreshWallpaper());
-        refresh.HorizontalAlignment = HorizontalAlignment.Left;
-        refresh.Margin = new Thickness(0, 4, 0, 8);
-        refresh.ToolTip = L.T("Wczytaj tapetę ponownie, np. po zmianie przez pokaz slajdów albo Windows Spotlight");
-        p.Children.Add(refresh);
+        restartTheme.HorizontalAlignment = HorizontalAlignment.Right;
+        restartTheme.Margin = new Thickness(0, 6, 0, 0);
+        var theme = Combo(new[] { ("light", L.T("Jasny")), ("dark", L.T("Glass")), ("studio", L.T("Ciemny")), ("auto", L.T("Jasny albo Glass – z jasności tapety")) }, S.Theme,
+            k => { S.Theme = k; SettingsStore.Save(S); restartTheme.Visibility = Visibility.Visible; }, 260);
+        var themeBox = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right };
+        themeBox.Children.Add(theme);
+        themeBox.Children.Add(restartTheme);
 
-        var swatches = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
+        var swatches = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right };
         void Mark(Border sel) { foreach (Border b in swatches.Children) b.BorderThickness = new Thickness(0); sel.BorderThickness = new Thickness(2); }
         var auto = new Border
         {
-            Width = 26, Height = 26, CornerRadius = new CornerRadius(13), Margin = new Thickness(0, 0, 10, 0), Cursor = Cursors.Hand,
-            BorderBrush = Brushes.White, BorderThickness = new Thickness(S.Accent == "auto" ? 2 : 0),
+            Width = 24, Height = 24, CornerRadius = new CornerRadius(12), Margin = new Thickness(6, 0, 0, 0), Cursor = Cursors.Hand,
+            BorderBrush = Ui.Res("Fg"), BorderThickness = new Thickness(S.Accent == "auto" ? 2 : 0),
             Background = new LinearGradientBrush(Color.FromRgb(0xF2, 0xA6, 0x5A), Color.FromRgb(0x5B, 0x8C, 0xFF), 45),
             ToolTip = L.T("Automatycznie z tapety"),
             Child = new TextBlock { Text = "A", FontWeight = FontWeights.Bold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
@@ -1127,111 +1096,131 @@ public sealed class SettingsWindow : DarkWindow
         {
             var sw = new Border
             {
-                Width = 26, Height = 26, CornerRadius = new CornerRadius(13), Margin = new Thickness(0, 0, 10, 0),
+                Width = 24, Height = 24, CornerRadius = new CornerRadius(12), Margin = new Thickness(6, 0, 0, 0),
                 Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)), Cursor = Cursors.Hand,
-                BorderBrush = Brushes.White, BorderThickness = new Thickness(string.Equals(S.Accent, hex, StringComparison.OrdinalIgnoreCase) ? 2 : 0),
+                BorderBrush = Ui.Res("Fg"), BorderThickness = new Thickness(string.Equals(S.Accent, hex, StringComparison.OrdinalIgnoreCase) ? 2 : 0),
             };
             sw.MouseLeftButtonUp += (_, _) => { S.Accent = hex; Mark(sw); App.Instance.ApplySettings(); };
             swatches.Children.Add(sw);
         }
-        p.Children.Add(Pair(L.T("Kolor akcentu"), swatches));
+        p.Children.Add(Group(L.T("Motyw"),
+            Row(L.T("Motyw"), L.T("Jasny i Glass: szkło z odcieniem tapety. Ciemny: neutralny grafit, cienkie linie. Zmiana po ponownym uruchomieniu."), themeBox),
+            Row(L.T("Kolor akcentu"), null, swatches),
+            Toggle(L.T("Zaokrąglone narożniki"), L.T("Wyłączone: proste rogi, a tablica i paski przylegają do krawędzi ekranu."), S.RoundCorners, v => S.RoundCorners = v),
+            When(Toggle(L.T("Poświata"), L.T("Miękka łuna w kolorze akcentu u góry tablicy."), S.Glow, v => S.Glow = v), () => !Th.Studio),
+            Toggle(L.T("Animacje"), null, S.Animations, v => S.Animations = v)));
+
+        var refresh = Btn(L.T("Odśwież"), "SecondaryButton", (_, _) => App.Instance.RefreshWallpaper());
+        refresh.Margin = new Thickness(0);
+        p.Children.Add(Group(L.T("Przezroczystość"),
+            Toggle(L.T("Bez przezroczystości"), L.T("Pełne, matowe tło zamiast szkła na tapecie."), S.Opaque, v => S.Opaque = v),
+            When(Row(L.T("Przyciemnienie"), null, Slider(0, 95, S.TintOpacity * 100, v => S.TintOpacity = v / 100, v => $"{v:0}%")), () => !S.Opaque),
+            When(Toggle(L.T("Matowe szkło"), L.T("Rozmyta tapeta pod tablicą."), S.Blur, v => S.Blur = v), () => !S.Opaque),
+            When(Row(L.T("Rozmycie"), null, Slider(0, 100, S.BlurStrength, v => S.BlurStrength = v, v => $"{v:0}")), () => !S.Opaque && S.Blur),
+            When(Row(L.T("Tapeta"), L.T("Wczytaj ją ponownie, np. po zmianie przez pokaz slajdów albo Spotlight."), refresh), () => !S.Opaque)));
+
+        p.Children.Add(Group(L.T("Wzór tła"),
+            Row(L.T("Wzór"), null, Combo(new[] { ("none", L.T("brak")), ("fabric", L.T("materiał (szachownica pod kątem 45°)")), ("dots", L.T("drobne kropki")), ("grid", L.T("drobna kratka")) }, S.Pattern,
+                k => { S.Pattern = k; App.Instance.ApplySettings(); }, 260)),
+            When(Row(L.T("Widoczność wzoru"), null, Slider(0, 300, S.PatternVisibility * 100, v => S.PatternVisibility = v / 100, v => $"{v:0}%")), () => S.Pattern != "none"),
+            When(Row(L.T("Skala wzoru"), null, Slider(25, 100, S.PatternScale * 100, v => S.PatternScale = v / 100, v => $"{v:0}%")), () => S.Pattern != "none")));
+
+        // the task state: a bar that fills up, or a round icon (the shape says the state, the colours help)
+        p.Children.Add(Group(L.T("Tablica"),
+            Row(L.T("Znacznik stanu zadania"), L.T("Pasek wypełnia się z postępem; koło jak w Linear / Jira – czytelne też bez kolorów."),
+                Combo(new[] { ("bar", L.T("Pasek (wypełnia się)")), ("circle", L.T("Koło (jak Linear / Jira)")) }, S.StateIcon, k => { S.StateIcon = k; App.Instance.ApplySettings(); }, 220)),
+            Row(L.T("Rozmiar tekstu zadań"), null, Slider(10, 17, S.FontSize, v => S.FontSize = Math.Round(v * 2) / 2, v => $"{Math.Round(v * 2) / 2:0.0}")),
+            Toggle(L.T("Podpisy przy ikonach górnego paska"), null, S.BarCaptions, v => S.BarCaptions = v)));
         return p;
     }
 
     /// <summary>
-    /// Settings → Pasek: one choice of the bar (none, over the board, across the whole screen); the full-width bar's own options and
-    /// the dock's under it, indented, and shown only while they apply; then what every bar shows.
+    /// Settings → Pasek i dock: one choice of the bar (none, the small one over the board, the bar with the dock that takes the place
+    /// of Windows' taskbar); under it only what applies to the bar chosen.
     /// </summary>
     FrameworkElement BuildBar()
     {
         var p = new StackPanel();
-        var full = new StackPanel { Margin = new Thickness(26, 0, 0, 4) }; // the full-width bar's options
-        var any = new StackPanel();                                       // what any bar shows
-        void Show()
+        bool Full() => S.AppBar;
+        bool AnyBar() => S.AppBar || S.ShowClock;
+        string Kind() => S.AppBar ? "full" : S.ShowClock ? "board" : "none";
+
+        var kindHint = Label("", 11.5, "FgFaint");
+        kindHint.TextWrapping = TextWrapping.Wrap;
+        void KindHint() => kindHint.Text = Kind() switch
         {
-            full.Visibility = S.AppBar ? Visibility.Visible : Visibility.Collapsed;
-            any.Visibility = S.AppBar || S.ShowClock ? Visibility.Visible : Visibility.Collapsed;
-        }
+            "full" => L.T("Pasek przez cały ekran zamiast paska zadań Windows: Start, wyszukiwarka, dock, zasobnik, sieć, głośność, zegar. Windows rezerwuje dla niego miejsce, przy pełnym ekranie się chowa."),
+            "board" => L.T("Wąski pasek tak szeroki jak tablica: pogoda, godzina z kalendarzem, obciążenie."),
+            _ => L.T("Bez paska – sama tablica."),
+        };
+        KindHint();
+        var kind = Combo(new[] { ("none", L.T("Brak paska")), ("board", L.T("Nad tablicą")), ("full", L.T("Z dockiem – zamiast paska zadań")) }, Kind(), tag =>
+        {
+            S.AppBar = tag == "full";
+            S.ShowClock = tag != "none";
+            KindHint();
+            App.Instance.ApplySettings();
+        }, 260);
+        p.Children.Add(Group(null, RowWith(L.T("Pasek"), kindHint, kind)));
 
-        var kind = Combo(new[] { ("none", L.T("Brak paska")), ("board", L.T("Nad tablicą (szeroki jak tablica)")), ("full", L.T("Na całą szerokość ekranu (jak pasek zadań)")) },
-            S.AppBar ? "full" : S.ShowClock ? "board" : "none", tag =>
-            {
-                S.AppBar = tag == "full";
-                S.ShowClock = tag != "none";
-                Show();
-                App.Instance.ApplySettings();
-            }, 320);
-        p.Children.Add(Pair(L.T("Pasek"), kind,
-            L.T("Nad tablicą: wąski pasek tak szeroki jak tablica – pogoda, godzina z kalendarzem, obciążenie. Na całą szerokość: jeden pasek przez cały ekran, który może zastąpić pasek zadań Windows – Start, pogoda, dock, obciążenie, sieć, głośność, ukryte ikony zasobnika i zegar z kalendarzem. Windows rezerwuje dla niego miejsce (zmaksymalizowane okna się pod niego nie wsuwają); przy grze i filmie na pełnym ekranie chowa się; gdy TaskWall nagle się zamknie, osobny strażnik oddaje to miejsce.")));
+        p.Children.Add(When(Group(L.T("Pasek z dockiem"),
+            Row(L.T("Położenie"), null, Combo(new[] { ("top", L.T("Góra ekranu")), ("bottom", L.T("Dół ekranu")) }, S.AppBarTop ? "top" : "bottom",
+                tag => { S.AppBarTop = tag == "top"; App.Instance.ApplySettings(); })),
+            Row(L.T("Wysokość"), L.T("Ikony docka: 36, 28 albo 20 px; napisy i kółka rosną razem z paskiem."), Combo(new[] { ("large", L.T("Duży")), ("medium", L.T("Średni")), ("small", L.T("Mały")) }, S.BarSize,
+                tag => { S.BarSize = tag; App.Instance.ApplySettings(); })),
+            Row(L.T("Szerokość"), L.T("Szkło paska równo z krawędziami tablicy albo od brzegu do brzegu ekranu."), Combo(new[] { ("board", L.T("Jak tablica")), ("screen", L.T("Cały ekran")) }, S.BarWidth,
+                tag => { S.BarWidth = tag; App.Instance.ApplySettings(); })),
+            Row(L.T("Wyszukiwarka"), L.T("Pole „Szukaj” obok Startu otwiera ją jej skrótem. Paleta i PowerToys Run wymagają PowerToys."),
+                Combo(new[] { ("Win+Alt+Space", L.T("Paleta poleceń PowerToys (Win+Alt+Spacja)")), ("Alt+Space", L.T("PowerToys Run (Alt+Spacja)")), ("Win+S", L.T("Wyszukiwanie Windows (Win+S)")) }, S.SearchKeys,
+                    tag => { S.SearchKeys = tag; App.Instance.ApplySettings(); }, 300)),
+            Toggle(L.T("Ukryj pasek zadań Windows"), L.T("Wraca, gdy wyłączysz ten pasek albo zamkniesz TaskWall – także po awarii."), S.HideTaskbar, v => S.HideTaskbar = v)), Full));
 
-        full.Children.Add(Pair(L.T("Położenie"), Combo(new[] { ("top", L.T("Góra ekranu")), ("bottom", L.T("Dół ekranu")) }, S.AppBarTop ? "top" : "bottom",
-            tag => { S.AppBarTop = tag == "top"; App.Instance.ApplySettings(); })));
-        full.Children.Add(Pair(L.T("Wysokość"), Combo(new[] { ("large", L.T("Duży")), ("medium", L.T("Średni")), ("small", L.T("Mały")) }, S.BarSize,
-            tag => { S.BarSize = tag; App.Instance.ApplySettings(); }),
-            L.T("Duży: ikony docka 36 px. Średni: 28 px. Mały: niewiele wyższy niż kółka obciążenia (ikony 20 px). Napisy i kółka rosną i maleją razem z paskiem.")));
-        full.Children.Add(Pair(L.T("Szerokość"), Combo(new[] { ("board", L.T("Jak tablica")), ("screen", L.T("Cały ekran")) }, S.BarWidth,
-            tag => { S.BarWidth = tag; App.Instance.ApplySettings(); }),
-            L.T("Jak tablica: szkło paska zaczyna się i kończy tam, gdzie tablica, więc ich krawędzie się zgadzają. Cały ekran: od brzegu do brzegu (z odstępem). Windows i tak rezerwuje cały pas ekranu.")));
-        full.Children.Add(Pair(L.T("Wyszukiwarka"), Combo(new[] { ("Win+Alt+Space", L.T("Paleta poleceń PowerToys (Win+Alt+Spacja)")), ("Alt+Space", L.T("PowerToys Run (Alt+Spacja)")), ("Win+S", L.T("Wyszukiwanie Windows (Win+S)")) }, S.SearchKeys,
-            tag => { S.SearchKeys = tag; App.Instance.ApplySettings(); }, 330),
-            L.T("Pole „Szukaj” obok Startu otwiera tę wyszukiwarkę jej skrótem – wpisujesz już w niej. Paleta poleceń i PowerToys Run wymagają zainstalowanego PowerToys.")));
-        full.Children.Add(Check(L.T("Ukryj pasek zadań Windows"), S.HideTaskbar, v => S.HideTaskbar = v,
-            L.T("Pasek zadań Windows znika i oddaje swoje miejsce (na wszystkich monitorach). Wraca, gdy wyłączysz pasek TaskWall, zamkniesz TaskWall albo ten nagle się zamknie (strażnik). Start otwierasz przyciskiem na pasku albo klawiszem Windows.")));
-        var dock = new StackPanel { Margin = new Thickness(26, 0, 0, 0) };
-        full.Children.Add(Check(L.T("Dock na pasku"), S.Dock, v => { S.Dock = v; dock.Visibility = v ? Visibility.Visible : Visibility.Collapsed; },
-            L.T("Środek paska: przypięte programy, kreska, potem pozostałe uruchomione. Kliknięcie przywołuje okno programu (ponowne – chowa je; kilka okien – podglądy na żywo), środkowy przycisk otwiera nowe okno, prawy przypina, odpina i zamyka. Przypięte ikony przesuwasz przeciągnięciem.")));
-        foreach (var line in DockSettings()) dock.Children.Add(line);
-        dock.Visibility = S.Dock ? Visibility.Visible : Visibility.Collapsed;
-        full.Children.Add(dock);
-        p.Children.Add(full);
+        p.Children.Add(When(Group(L.T("Dock"), DockSettings().ToArray()), Full));
 
-        any.Children.Add(Check(L.T("Pogoda teraz na pasku"), S.BarWeather, v => S.BarWeather = v, L.T("Potrzebuje miejscowości w sekcji Pogoda. Odświeżana co 30 minut.")));
         // the load rings: one tick per kind, the order stays CPU, GPU, RAM, disk, network
-        var meters = new WrapPanel();
+        var meters = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right };
         var names = new Dictionary<string, string> { ["cpu"] = "CPU", ["gpu"] = "GPU", ["ram"] = "RAM", ["disk"] = L.T("Dyski"), ["net"] = L.T("Sieć") };
         foreach (var kindName in SysMeters.Kinds)
         {
             var k = kindName;
-            var cb = new CheckBox { Content = names[k], IsChecked = S.Meters.Split(',').Contains(k), Margin = new Thickness(0, 5, 14, 5) };
-            void Set(bool on)
+            var chip = new System.Windows.Controls.Primitives.ToggleButton { Content = names[k], Style = (Style)Application.Current.Resources["Chip"], IsChecked = S.Meters.Split(',').Contains(k), Margin = new Thickness(6, 0, 0, 0) };
+            chip.Click += (_, _) =>
             {
                 var set = S.Meters.Split(',', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
-                if (on) set.Add(k); else set.Remove(k);
+                if (chip.IsChecked == true) set.Add(k); else set.Remove(k);
                 S.Meters = string.Join(",", SysMeters.Kinds.Where(set.Contains));
                 App.Instance.ApplySettings();
-            }
-            cb.Checked += (_, _) => Set(true);
-            cb.Unchecked += (_, _) => Set(false);
-            meters.Children.Add(cb);
+                Sync();
+            };
+            meters.Children.Add(chip);
         }
-        any.Children.Add(Pair(L.T("Obciążenie na pasku"), meters,
-            L.T("Kręgi wypełniają się jak w Menedżerze zadań: procesor, karta graficzna (najbardziej zajęty silnik), pamięć, najbardziej zajęty dysk (czas aktywności; wolne miejsce w podpowiedzi), sieć (ruch względem prędkości łącza). Odczyt co 2 sekundy, tylko gdy pasek jest widoczny.")));
-        any.Children.Add(Pair(L.T("Kolory kółek"), Combo(new[] { ("high", L.T("Tylko przy dużym obciążeniu")), ("always", L.T("Zawsze")) }, S.MeterColors,
-            tag => { S.MeterColors = tag; App.Instance.ApplySettings(); }, 260),
-            L.T("Tylko przy dużym obciążeniu: kółka są spokojnie szare i dostają swój kolor (CPU pomarańczowy, GPU zielony …) od 80%. Zawsze: każde w swoim kolorze.")));
-        any.Children.Add(Check(L.T("Zegar 24-godzinny"), S.Use24h, v => S.Use24h = v));
-        p.Children.Add(any);
-        Show();
+        p.Children.Add(When(Group(L.T("Na pasku"),
+            Toggle(L.T("Pogoda teraz"), L.T("Miejscowość ustawiasz w sekcji Pogoda; odświeżana co 30 minut."), S.BarWeather, v => S.BarWeather = v),
+            Row(L.T("Obciążenie"), L.T("Kręgi jak w Menedżerze zadań, odczyt co 2 s, tylko gdy pasek jest widoczny."), meters),
+            When(Row(L.T("Kolory kółek"), L.T("Spokojnie szare i w swoim kolorze dopiero od 80% – albo zawsze w kolorze."),
+                Combo(new[] { ("high", L.T("Przy dużym obciążeniu")), ("always", L.T("Zawsze")) }, S.MeterColors, tag => { S.MeterColors = tag; App.Instance.ApplySettings(); })), () => S.Meters.Length > 0),
+            Toggle(L.T("Zegar 24-godzinny"), null, S.Use24h, v => S.Use24h = v)), AnyBar));
         return p;
     }
 
-    /// <summary>A drop-down of (tag, label) choices, left-aligned like the other controls; <paramref name="set"/> gets the chosen tag.</summary>
-    static ComboBox Combo((string Tag, string Label)[] items, string current, Action<string> set, double width = 220)
+    /// <summary>A drop-down of (tag, label) choices; <paramref name="set"/> gets the chosen tag, then the dependent rows follow.</summary>
+    ComboBox Combo((string Tag, string Label)[] items, string current, Action<string> set, double width = 200)
     {
-        var c = new ComboBox { Width = width, HorizontalAlignment = HorizontalAlignment.Left };
+        var c = new ComboBox { Width = width, HorizontalAlignment = HorizontalAlignment.Right };
         foreach (var (tag, label) in items) c.Items.Add(new ComboBoxItem { Content = label, Tag = tag });
         c.SelectedItem = c.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == current) ?? c.Items[0];
-        c.SelectionChanged += (_, _) => { if (c.SelectedItem is ComboBoxItem it) set((string)it.Tag); };
+        c.SelectionChanged += (_, _) => { if (c.SelectedItem is ComboBoxItem it) { set((string)it.Tag); Sync(); } };
         return c;
     }
 
-    /// <summary>The dock's options: the magnification, the thin dock, the pinned programs (added from a file, removed one by one).</summary>
+    /// <summary>The dock's rows: on / off, then (while on) the magnification, the thin dock, the counters, the pinned programs.</summary>
     IEnumerable<FrameworkElement> DockSettings()
     {
-        yield return Pair(L.T("Powiększanie ikon"), Combo(new[] { ("off", L.T("Wyłączone")), ("subtle", L.T("Subtelne (1,25×)")), ("full", L.T("Pełne (1,55×)")) }, S.DockMagnify,
-            tag => { S.DockMagnify = tag; App.Instance.ApplySettings(); }), L.T("Ikona pod kursorem rośnie, a sąsiednie trochę mniej – jak w docku macOS."));
-        yield return Check(L.T("Cienki dock przy zmaksymalizowanym oknie"), S.DockThin, v => S.DockThin = v,
-            L.T("Gdy na ekranie jest zmaksymalizowane okno, ikony docka maleją do 30 px (nic obok się nie przesuwa) i wracają do pełnej wielkości, gdy kursor zbliży się do paska."));
+        yield return Toggle(L.T("Dock"), L.T("Przypięte i uruchomione programy na środku paska. Kliknięcie przywołuje okno, środkowy przycisk otwiera nowe, prawy przypina i zamyka."), S.Dock, v => S.Dock = v);
+        yield return When(Row(L.T("Powiększanie ikon"), L.T("Ikona pod kursorem rośnie, sąsiednie trochę mniej – jak w docku macOS."),
+            Combo(new[] { ("off", L.T("Wyłączone")), ("subtle", L.T("Subtelne (1,25×)")), ("full", L.T("Pełne (1,55×)")) }, S.DockMagnify, tag => { S.DockMagnify = tag; App.Instance.ApplySettings(); })), () => S.Dock);
+        yield return When(Toggle(L.T("Liczniki powiadomień"), L.T("Czerwone kółko z liczbą powiadomień czekających w programie (Centrum powiadomień Windows, licznik programu, tytuł okna)."), S.DockBadges, v => S.DockBadges = v), () => S.Dock);
+        yield return When(Toggle(L.T("Cienki dock przy zmaksymalizowanym oknie"), L.T("Mniejsze ikony, gdy okno zajmuje ekran; pełne, gdy kursor zbliży się do paska."), S.DockThin, v => S.DockThin = v), () => S.Dock);
         var pins = new StackPanel();
         void FillPins()
         {
@@ -1245,13 +1234,14 @@ public sealed class SettingsWindow : DarkWindow
                 row.Children.Add(new TextBlock { Text = pin.Name.Length > 0 ? pin.Name : pin.Key, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = pin.Exe ?? pin.AppId, Foreground = Ui.Res("Fg") });
                 pins.Children.Add(row);
             }
+            if (S.DockPins.Count == 0) pins.Children.Add(Label(L.T("Nic nie jest przypięte."), 11.5, "FgFaint"));
             var add = Btn(L.T("Dodaj program…"), "SecondaryButton", (_, _) => { if (AddPin()) FillPins(); });
             add.HorizontalAlignment = HorizontalAlignment.Left;
             add.Margin = new Thickness(0, 6, 0, 0);
             pins.Children.Add(add);
         }
         FillPins();
-        yield return Pair(L.T("Przypięte programy"), pins, L.T("Kolejność zmieniasz przeciągając ikony na docku. Uruchomiony program przypniesz też prawym przyciskiem na jego ikonie."));
+        yield return When(Stacked(L.T("Przypięte programy"), L.T("Kolejność zmieniasz przeciągając ikony na docku; uruchomiony program przypniesz prawym przyciskiem na jego ikonie."), pins), () => S.Dock);
     }
 
     /// <summary>A program file or a shortcut chosen by hand → pinned to the dock (a shortcut by the program it points to, so its windows group under it).</summary>
@@ -1291,43 +1281,43 @@ public sealed class SettingsWindow : DarkWindow
     {
         var p = new StackPanel();
         // language: applied after a restart (all windows are built in it)
-        var lang = new ComboBox { Width = 200 };
-        lang.Items.Add(new ComboBoxItem { Content = "Polski", Tag = "pl" });
-        lang.Items.Add(new ComboBoxItem { Content = "English", Tag = "en" });
-        lang.SelectedIndex = S.Language == "en" ? 1 : 0;
         var restart = Btn(L.T("Uruchom ponownie"), "SecondaryButton", (_, _) => App.Instance.Restart());
         restart.Visibility = Visibility.Collapsed;
-        lang.SelectionChanged += (_, _) =>
+        restart.Margin = new Thickness(0, 0, 8, 0);
+        var lang = Combo(new[] { ("pl", "Polski"), ("en", "English") }, S.Language == "en" ? "en" : "pl", k =>
         {
-            if (lang.SelectedItem is not ComboBoxItem it) return;
-            S.Language = (string)it.Tag;
+            S.Language = k;
             SettingsStore.Save(S);
             restart.Visibility = S.Language == (L.En ? "en" : "pl") ? Visibility.Collapsed : Visibility.Visible;
-        };
-        var langRow = new StackPanel { Orientation = Orientation.Horizontal };
-        langRow.Children.Add(lang);
+        }, 160);
+        var langRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         langRow.Children.Add(restart);
-        p.Children.Add(Pair("Język / Language", langRow));
-        p.Children.Add(Check(L.T("Uruchamiaj razem z Windows"), S.StartWithWindows, v => S.StartWithWindows = v));
-        p.Children.Add(Check(L.T("Dźwięk alarmów"), S.AlarmSound, v => S.AlarmSound = v));
-        var remind = new ComboBox { Width = 200, HorizontalAlignment = HorizontalAlignment.Left };
-        foreach (var (m, label) in new[] { (-1, L.T("Wyłączone")), (0, L.T("W chwili rozpoczęcia")), (5, L.T("5 min przed")), (10, L.T("10 min przed")), (15, L.T("15 min przed")) })
-            remind.Items.Add(new ComboBoxItem { Content = label, Tag = m });
-        remind.SelectedItem = remind.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (int)i.Tag == S.TaskReminder) ?? remind.Items[2];
-        remind.SelectionChanged += (_, _) => { if (remind.SelectedItem is ComboBoxItem it) { S.TaskReminder = (int)it.Tag; SettingsStore.Save(S); AlarmService.Reschedule(); } };
-        p.Children.Add(Pair(L.T("Przypomnienie o zadaniach z godziną (np. 14-16)"), remind));
-        p.Children.Add(Check(L.T("Otwieraj linki w aplikacji Notion (zamiast w przeglądarce)"), S.OpenNotionInApp, v => S.OpenNotionInApp = v));
-        var hot = new ComboBox { Width = 320, HorizontalAlignment = HorizontalAlignment.Left };
-        foreach (var (key, label) in new[] { ("Ctrl+Shift+Space", L.T("Ctrl + Shift + Spacja")), ("Ctrl+Alt+D", "Ctrl + Alt + D"), ("Ctrl+Alt+T", "Ctrl + Alt + T"), ("Win+Shift+D", "Win + Shift + D"), ("", L.T("Wyłączony")) })
-            hot.Items.Add(new ComboBoxItem { Content = label, Tag = key });
-        hot.SelectedItem = hot.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == S.Hotkey) ?? hot.Items[0];
+        langRow.Children.Add(lang);
+
         var warn = Label(L.T("Ten skrót jest zajęty przez inny program – wybierz inny."), 11.5, "FgDim");
         warn.Foreground = new SolidColorBrush(Color.FromRgb(0xF2, 0xA6, 0x5A));
+        warn.TextWrapping = TextWrapping.Wrap;
+        warn.MaxWidth = 240;
+        warn.Margin = new Thickness(0, 4, 0, 0);
         void UpdateWarn() => warn.Visibility = App.Instance.HotkeyTaken ? Visibility.Visible : Visibility.Collapsed;
-        hot.SelectionChanged += (_, _) => { if (hot.SelectedItem is ComboBoxItem it) { S.Hotkey = (string)it.Tag; App.Instance.ApplySettings(); UpdateWarn(); } };
+        var hot = Combo(new[] { ("Ctrl+Shift+Space", L.T("Ctrl + Shift + Spacja")), ("Ctrl+Alt+D", "Ctrl + Alt + D"), ("Ctrl+Alt+T", "Ctrl + Alt + T"), ("Win+Shift+D", "Win + Shift + D"), ("", L.T("Wyłączony")) }, S.Hotkey,
+            k => { S.Hotkey = k; App.Instance.ApplySettings(); UpdateWarn(); }, 200);
         UpdateWarn();
-        p.Children.Add(Pair(L.T("Skrót klawiszowy"), hot, L.T("Pokazuje tablicę na wierzchu z polem nowego zadania na dziś; Esc chowa.")));
-        p.Children.Add(warn);
+        var hotBox = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right };
+        hotBox.Children.Add(hot);
+        hotBox.Children.Add(warn);
+
+        p.Children.Add(Group(L.T("Program"),
+            Row("Język / Language", null, langRow),
+            Toggle(L.T("Uruchamiaj razem z Windows"), null, S.StartWithWindows, v => S.StartWithWindows = v),
+            Row(L.T("Skrót klawiszowy"), L.T("Pokazuje tablicę na wierzchu z polem nowego zadania na dziś; Esc chowa."), hotBox)));
+        var remind = Combo(new[] { ("-1", L.T("Wyłączone")), ("0", L.T("W chwili rozpoczęcia")), ("5", L.T("5 min przed")), ("10", L.T("10 min przed")), ("15", L.T("15 min przed")) },
+            S.TaskReminder.ToString(), k => { S.TaskReminder = int.Parse(k); SettingsStore.Save(S); AlarmService.Reschedule(); });
+        p.Children.Add(Group(L.T("Alarmy i przypomnienia"),
+            Toggle(L.T("Dźwięk alarmów"), null, S.AlarmSound, v => S.AlarmSound = v),
+            Row(L.T("Przypomnienie o zadaniach z godziną"), L.T("Zadania z godziną w treści, np. „14-16 przegląd”."), remind)));
+        p.Children.Add(Group("Notion",
+            Toggle(L.T("Otwieraj linki w aplikacji Notion"), L.T("Zamiast w przeglądarce."), S.OpenNotionInApp, v => S.OpenNotionInApp = v)));
         return p;
     }
 
@@ -1335,35 +1325,25 @@ public sealed class SettingsWindow : DarkWindow
     {
         var p = new StackPanel();
         var installed = Installer.IsInstalled;
-        p.Children.Add(Label(installed
-            ? L.F("TaskWall jest zainstalowany w {0}. Odinstalujesz go stąd albo w Ustawieniach Windows → Aplikacje.", Installer.InstallDir)
-            : L.T("Ta kopia nie jest zainstalowana. Instalacja kopiuje program do folderu użytkownika, dodaje skrót w menu Start i wpis w „Aplikacje i funkcje” (bez uprawnień administratora)."), 11.5, "FgDim"));
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
         var btn = installed
             ? Btn(L.T("Odinstaluj…"), "SecondaryButton", (_, _) => Installer.Uninstall(this))
             : Btn(L.T("Zainstaluj w systemie"), "PrimaryButton", (_, _) => Installer.InstallFromRunningCopy(this));
         btn.Margin = new Thickness(0);
-        row.Children.Add(btn);
-        p.Children.Add(row);
-        var ver = Label(L.F("Wersja {0}  ·  dane: foldery kont  ·  ustawienia: %APPDATA%\\TaskWall", Installer.Version), 11, "FgFaint");
-        ver.Margin = new Thickness(0, 10, 0, 0);
-        p.Children.Add(ver);
         // updates through the cloud folder
         var setup = Updater.SetupPath;
         var shared = setup != null ? Updater.VersionOf(setup) : null;
-        var upd = Label(setup == null ? L.T("Aktualizacje: brak folderu danych.")
-            : shared == null ? L.F("Aktualizacje: brak instalatora w folderze danych ({0}). Zainstalowana kopia zapisuje go automatycznie.", setup)
-            : L.F("Aktualizacje: instalator w folderze danych – wersja {0}. Komputery ze starszą wersją proponują aktualizację przy starcie.", shared.ToString(3)), 11, "FgFaint");
-        upd.Margin = new Thickness(0, 8, 0, 4);
-        p.Children.Add(upd);
-        var check = Btn(L.T("Sprawdź aktualizację"), "SecondaryButton", (_, _) => Updater.Check(askAgain: true));
-        check.HorizontalAlignment = HorizontalAlignment.Left;
+        var check = Btn(L.T("Sprawdź"), "SecondaryButton", (_, _) => Updater.Check(askAgain: true));
         check.Margin = new Thickness(0);
-        p.Children.Add(check);
+        p.Children.Add(Group(L.T("Program"),
+            Row(L.F("Wersja {0}", Installer.Version), installed
+                ? L.F("Zainstalowany w {0}. Odinstalujesz go stąd albo w Ustawieniach Windows → Aplikacje.", Installer.InstallDir)
+                : L.T("Ta kopia nie jest zainstalowana. Instalacja kopiuje program do folderu użytkownika, dodaje skrót w menu Start i wpis w „Aplikacje i funkcje” (bez uprawnień administratora)."), btn),
+            Row(L.T("Aktualizacje"), setup == null ? L.T("Brak folderu danych.")
+                : shared == null ? L.F("Brak instalatora w folderze danych ({0}). Zainstalowana kopia zapisuje go automatycznie.", setup)
+                : L.F("Instalator w folderze danych – wersja {0}. Komputery ze starszą wersją proponują aktualizację przy starcie.", shared.ToString(3)), check)));
 
         // backup: everything in one ZIP; restoring merges (the newer version of each task wins)
-        p.Children.Add(Sub(L.T("Kopia zapasowa"), L.T("Jeden plik ZIP z danymi wszystkich kont (zadania, kopie dzienne, raporty) i ustawieniami. Przywracanie scala zadania z tablicą – nowsza wersja każdego zadania wygrywa, nic nie jest nadpisywane w ciemno.")));
-        var bRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+        var bRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         var exp = Btn(L.T("Zapisz kopię…"), "SecondaryButton", (_, _) =>
         {
             var dlg = new Microsoft.Win32.SaveFileDialog { FileName = Backup.DefaultName, Filter = "ZIP (*.zip)|*.zip", InitialDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Documents") };
@@ -1371,9 +1351,9 @@ public sealed class SettingsWindow : DarkWindow
             try { Backup.Export(dlg.FileName); MessageBox.Show(this, L.F("Zapisano kopię:\n{0}", dlg.FileName), "TaskWall"); }
             catch (Exception ex) { Log.Error("backup", ex); MessageBox.Show(this, L.T("Nie udało się zapisać pliku:") + "\n" + ex.Message, "TaskWall"); }
         });
-        exp.Margin = new Thickness(0);
+        exp.Margin = new Thickness(0, 0, 8, 0);
         bRow.Children.Add(exp);
-        bRow.Children.Add(Btn(L.T("Przywróć z kopii…"), "SecondaryButton", (_, _) =>
+        var imp = Btn(L.T("Przywróć z kopii…"), "SecondaryButton", (_, _) =>
         {
             var dlg = new Microsoft.Win32.OpenFileDialog { Filter = "ZIP (*.zip)|*.zip" };
             if (dlg.ShowDialog(this) != true) return;
@@ -1384,26 +1364,162 @@ public sealed class SettingsWindow : DarkWindow
                 MessageBox.Show(this, n > 0 ? L.F("Scalono zadania z kopii ({0} kont). Ctrl+Z na tablicy cofa.", n) : L.T("W tej kopii nie ma danych kont."), "TaskWall");
             }
             catch (Exception ex) { Log.Error("restore backup", ex); MessageBox.Show(this, L.T("Nie udało się odczytać kopii:") + "\n" + ex.Message, "TaskWall"); }
-        }));
-        p.Children.Add(bRow);
+        });
+        imp.Margin = new Thickness(0);
+        bRow.Children.Add(imp);
+        p.Children.Add(Group(L.T("Kopia zapasowa"),
+            Stacked(L.T("Wszystkie konta w jednym pliku ZIP"), L.T("Zadania, kopie dzienne, raporty i ustawienia. Przywracanie scala zadania z tablicą – nowsza wersja każdego zadania wygrywa."), bRow)));
+        var where = Label(L.T("Dane: foldery kont  ·  ustawienia: %APPDATA%\\TaskWall"), 11, "FgFaint");
+        where.Margin = new Thickness(2, 8, 0, 0);
+        p.Children.Add(where);
         return p;
     }
 
     // ---------- small builders ----------
 
-    /// <summary>A small round "i": the longer explanation in its tool tip (shown at once, for as long as needed).</summary>
-    static FrameworkElement Info(string text)
+    /// <summary>Rows shown only while their condition holds (an option that changes nothing now is hidden): checked again by <see cref="Sync"/>.</summary>
+    readonly List<(FrameworkElement El, Func<bool> When)> _when = new();
+    /// <summary>The cards of rows: the line between two rows only between visible ones, the whole group hidden when none is.</summary>
+    readonly List<(FrameworkElement Group, Panel Rows)> _groups = new();
+
+    T When<T>(T el, Func<bool> when) where T : FrameworkElement
     {
-        var b = new Border
+        _when.Add((el, when));
+        el.Visibility = when() ? Visibility.Visible : Visibility.Collapsed;
+        return el;
+    }
+
+    /// <summary>A setting changed: the rows that depend on it appear or go, the lines between rows follow.</summary>
+    void Sync()
+    {
+        foreach (var (el, when) in _when) el.Visibility = when() ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var (group, rows) in _groups)
         {
-            Width = 15, Height = 15, CornerRadius = new CornerRadius(7.5), Margin = new Thickness(7, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
-            BorderBrush = Ui.Res("FgFaint"), BorderThickness = new Thickness(1), Background = Brushes.Transparent, Cursor = Cursors.Help,
-            Child = new TextBlock { Text = "i", FontSize = 9.5, FontWeight = FontWeights.Bold, Foreground = Ui.Res("FgDim"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, -1, 0, 0) },
-            ToolTip = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, MaxWidth = 380 },
+            bool first = true;
+            foreach (FrameworkElement r in rows.Children)
+            {
+                if (r.Visibility != Visibility.Visible) continue;
+                if (r is Border b) b.BorderThickness = new Thickness(0, first ? 0 : 1, 0, 0);
+                first = false;
+            }
+            if (first) group.Visibility = Visibility.Collapsed; // nothing to show (a hidden group's own When decides otherwise)
+            else if (!_when.Any(w => ReferenceEquals(w.El, group))) group.Visibility = Visibility.Visible;
+        }
+    }
+
+    /// <summary>A group: a small heading (none for the section's first choice) and one card holding the rows, a fine line between them.</summary>
+    FrameworkElement Group(string? title, params FrameworkElement[] rows)
+    {
+        var outer = new StackPanel { Margin = new Thickness(0, title == null ? 4 : 14, 0, 0) };
+        if (title != null)
+        {
+            var head = Label(L.Up(title), 10.5, "FgDim", FontWeights.Bold);
+            head.Margin = new Thickness(2, 0, 0, 6);
+            outer.Children.Add(head);
+        }
+        var list = new StackPanel();
+        foreach (var r in rows)
+        {
+            // each row in its own frame: the line above it (Sync leaves it off the first visible one)
+            var frame = new Border { Child = r, Padding = new Thickness(14, 10, 14, 10), BorderBrush = new SolidColorBrush(Th.Ink(0x10)), Visibility = r.Visibility };
+            if (_when.FindIndex(w => ReferenceEquals(w.El, r)) is var i and >= 0) { _when[i] = (frame, _when[i].When); r.Visibility = Visibility.Visible; }
+            list.Children.Add(frame);
+        }
+        outer.Children.Add(new Border
+        {
+            CornerRadius = new CornerRadius(Th.Corner(8)), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Th.Ink(0x12)),
+            Background = new SolidColorBrush(Th.Ink(0x07)), Child = list,
+        });
+        _groups.Add((outer, list));
+        Dispatcher.BeginInvoke(Sync, DispatcherPriority.Loaded);
+        return outer;
+    }
+
+    /// <summary>The name and the short line under it (the left side of a row).</summary>
+    static FrameworkElement Caption(string label, FrameworkElement? hint)
+    {
+        var left = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        var name = Label(label, 12.5, "Fg");
+        name.TextWrapping = TextWrapping.Wrap;
+        left.Children.Add(name);
+        if (hint != null) { hint.Margin = new Thickness(0, 2, 0, 0); left.Children.Add(hint); }
+        return left;
+    }
+
+    static TextBlock? HintText(string? hint)
+    {
+        if (hint == null) return null;
+        var t = Label(hint, 11.5, "FgFaint");
+        t.TextWrapping = TextWrapping.Wrap;
+        return t;
+    }
+
+    /// <summary>A row: the name and its short line on the left, the control on the right.</summary>
+    static FrameworkElement Row(string label, string? hint, FrameworkElement control) => RowWith(label, HintText(hint), control);
+
+    static FrameworkElement RowWith(string label, FrameworkElement? hint, FrameworkElement control)
+    {
+        var g = new Grid();
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 150 });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        g.Children.Add(Caption(label, hint));
+        control.VerticalAlignment = VerticalAlignment.Center;
+        control.Margin = new Thickness(18, control.Margin.Top, 0, control.Margin.Bottom);
+        Grid.SetColumn(control, 1);
+        g.Children.Add(control);
+        return g;
+    }
+
+    /// <summary>A row with a wide control (a list, a text field): under the name, the whole width.</summary>
+    static FrameworkElement Stacked(string label, string? hint, FrameworkElement control)
+    {
+        var sp = new StackPanel();
+        sp.Children.Add(Caption(label, HintText(hint)));
+        control.Margin = new Thickness(0, 8, 0, 0);
+        sp.Children.Add(control);
+        return sp;
+    }
+
+    /// <summary>An on / off row: a switch on the right.</summary>
+    FrameworkElement Toggle(string label, string? hint, bool value, Action<bool> set)
+    {
+        var sw = new System.Windows.Controls.Primitives.ToggleButton { Style = (Style)Application.Current.Resources["Switch"], IsChecked = value };
+        System.Windows.Automation.AutomationProperties.SetName(sw, label);
+        sw.Checked += (_, _) => { set(true); App.Instance.ApplySettings(); Sync(); };
+        sw.Unchecked += (_, _) => { set(false); App.Instance.ApplySettings(); Sync(); };
+        var row = Row(label, hint, sw);
+        // the whole row toggles (a bigger target than the switch)
+        row.Cursor = Cursors.Hand;
+        row.MouseLeftButtonUp += (_, e) => { if (e.OriginalSource is DependencyObject d && !IsInside(d, sw)) sw.IsChecked = sw.IsChecked != true; };
+        if (row is Panel panel) panel.Background = Brushes.Transparent;
+        return row;
+    }
+
+    static bool IsInside(DependencyObject d, DependencyObject parent)
+    {
+        for (var x = d; x != null; x = x is Visual or System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(x) : LogicalTreeHelper.GetParent(x))
+            if (ReferenceEquals(x, parent)) return true;
+        return false;
+    }
+
+    /// <summary>A slider with its value on the right of it (the right side of a row).</summary>
+    static FrameworkElement Slider(double min, double max, double value, Action<double> set, Func<double, string> fmt)
+    {
+        var sp = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        var slider = new Slider { Minimum = min, Maximum = max, Value = Math.Clamp(value, min, max), Width = 190, VerticalAlignment = VerticalAlignment.Center };
+        var v = Label(fmt(slider.Value), 12, "FgDim");
+        v.Width = 54;
+        v.VerticalAlignment = VerticalAlignment.Center;
+        v.TextAlignment = TextAlignment.Right;
+        sp.Children.Add(slider);
+        sp.Children.Add(v);
+        slider.ValueChanged += (_, e) =>
+        {
+            set(e.NewValue);
+            v.Text = fmt(e.NewValue);
+            App.Instance.ApplySettingsSoon(); // dragging fires many ticks: apply at most every 150 ms
         };
-        ToolTipService.SetInitialShowDelay(b, 80);
-        ToolTipService.SetShowDuration(b, 60000);
-        return b;
+        return sp;
     }
 
     /// <summary>"UZUPEŁNIJ": something a fresh install still needs (a token, a city …).</summary>
@@ -1419,75 +1535,63 @@ public sealed class SettingsWindow : DarkWindow
         return b;
     }
 
-    /// <summary>A heading inside a section; its explanation (if any) behind an "i", and a "UZUPEŁNIJ" mark when needed.</summary>
+    /// <summary>A heading inside a section, its explanation as a short line under it, and a "UZUPEŁNIJ" mark when needed.</summary>
     static FrameworkElement Sub(string title, string? info = null, bool needed = false)
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 16, 0, 6) };
-        row.Children.Add(Label(title.ToUpper(BoardWindow.Pl), 11, "FgDim", FontWeights.Bold));
-        if (info != null) row.Children.Add(Info(info));
+        var sp = new StackPanel { Margin = new Thickness(0, 18, 0, 6) };
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(Label(title.ToUpper(BoardWindow.Pl), 10.5, "FgDim", FontWeights.Bold));
         if (needed) row.Children.Add(Needed());
-        return row;
+        sp.Children.Add(row);
+        if (HintText(info) is { } h) { h.Margin = new Thickness(0, 3, 0, 0); sp.Children.Add(h); }
+        return sp;
     }
 
-    /// <summary>A short line under the section's top that opens its explanation on hover (instead of a paragraph).</summary>
+    /// <summary>A section's longer explanation, folded under "Jak to działa" (a click opens it) instead of a paragraph or a tool tip.</summary>
     static FrameworkElement Note(string info)
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
-        row.Children.Add(Label(L.T("Jak to działa"), 11, "FgFaint"));
-        row.Children.Add(Info(info));
-        return row;
+        var sp = new StackPanel { Margin = new Thickness(0, 0, 0, 6) };
+        var text = HintText(info)!;
+        text.Visibility = Visibility.Collapsed;
+        text.Margin = new Thickness(0, 2, 0, 4);
+        var toggle = Btn(L.T("Jak to działa") + "  ▸", "LinkButton", (_, _) => { });
+        toggle.HorizontalAlignment = HorizontalAlignment.Left;
+        toggle.Margin = new Thickness(-7, 0, 0, 0);
+        toggle.Click += (_, _) =>
+        {
+            bool open = text.Visibility != Visibility.Visible;
+            text.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+            toggle.Content = L.T("Jak to działa") + (open ? "  ▾" : "  ▸");
+        };
+        sp.Children.Add(toggle);
+        sp.Children.Add(text);
+        return sp;
     }
 
+    /// <summary>A labelled control under its label (account and connection forms); the explanation as a short line under the label.</summary>
     static FrameworkElement Pair(string label, FrameworkElement control, string? info = null, bool needed = false)
     {
         var sp = new StackPanel { Margin = new Thickness(0, 4, 0, 8) };
-        var head = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 5) };
+        var head = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, info == null ? 5 : 1) };
         head.Children.Add(Label(label, 12, "FgDim"));
-        if (info != null) head.Children.Add(Info(info));
         if (needed) head.Children.Add(Needed());
         sp.Children.Add(head);
+        if (HintText(info) is { } h) { h.Margin = new Thickness(0, 0, 0, 5); sp.Children.Add(h); }
         sp.Children.Add(control);
         return sp;
     }
 
     static FrameworkElement Check(string label, bool value, Action<bool> set, string? info = null)
     {
-        if (info != null)
-        {
-            var row = new StackPanel { Orientation = Orientation.Horizontal };
-            row.Children.Add(Check(label, value, set));
-            row.Children.Add(Info(info));
-            return row;
-        }
-        var cb = new CheckBox { Content = label, IsChecked = value, Margin = new Thickness(0, 5, 0, 5) };
+        var cb = new CheckBox { Content = label, IsChecked = value, Margin = new Thickness(0, 5, 0, info == null ? 5 : 1) };
         cb.Checked += (_, _) => { set(true); App.Instance.ApplySettings(); };
         cb.Unchecked += (_, _) => { set(false); App.Instance.ApplySettings(); };
-        return cb;
-    }
-
-    static FrameworkElement SliderRow(string label, double min, double max, double value, Action<double> set, Func<double, string> fmt)
-    {
-        var g = new Grid { Margin = new Thickness(0, 6, 0, 6) };
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
-        g.ColumnDefinitions.Add(new ColumnDefinition());
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
-        var l = Label(label, 12.5);
-        l.VerticalAlignment = VerticalAlignment.Center;
-        g.Children.Add(l);
-        var slider = new Slider { Minimum = min, Maximum = max, Value = Math.Clamp(value, min, max), VerticalAlignment = VerticalAlignment.Center };
-        Grid.SetColumn(slider, 1);
-        g.Children.Add(slider);
-        var v = Label(fmt(slider.Value), 12, "FgDim");
-        v.VerticalAlignment = VerticalAlignment.Center;
-        v.TextAlignment = TextAlignment.Right;
-        Grid.SetColumn(v, 2);
-        g.Children.Add(v);
-        slider.ValueChanged += (_, e) =>
-        {
-            set(e.NewValue);
-            v.Text = fmt(e.NewValue);
-            App.Instance.ApplySettingsSoon(); // dragging fires many ticks: apply at most every 150 ms
-        };
-        return g;
+        if (info == null) return cb;
+        var sp = new StackPanel();
+        sp.Children.Add(cb);
+        var h = HintText(info)!;
+        h.Margin = new Thickness(24, 0, 0, 5);
+        sp.Children.Add(h);
+        return sp;
     }
 }

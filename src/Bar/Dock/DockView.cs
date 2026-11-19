@@ -60,6 +60,10 @@ sealed class DockView : Canvas
         public long SlideStart;
         public bool Attention;
         public string Name = "";
+        /// <summary>The red counter at the icon's corner: the notifications waiting (a dot when the program only asks for attention).</summary>
+        public readonly Border Badge = new() { IsHitTestVisible = false, Visibility = Visibility.Collapsed, RenderTransformOrigin = new Point(0.5, 0.5) };
+        public readonly TextBlock BadgeText = new() { Foreground = Brushes.White, FontWeight = FontWeights.Bold, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center };
+        public AppBadges.Count Count;
     }
 
     readonly BarWindow _bar;
@@ -111,19 +115,23 @@ sealed class DockView : Canvas
         // the bell dies away where the pointer was last (the pointer stays where it left), not all at once
         MouseLeave += (_, _) => { _bell.Leave(Now); _hovered = null; _hoverPreview.Stop(); _hidePreview.Stop(); _hidePreview.Start(); Animate(); };
         StartHooks();
+        AppBadges.Changed += UpdateBadges;
+        AppBadges.Start();
+        _badgesOn = true;
         Unloaded += (_, _) => Detach();
         Refresh();
     }
 
     // ---------- the windows: what runs, what is in front, what asks for attention ----------
 
-    bool _refreshAfterDrop;
+    bool _refreshAfterDrop, _badgesOn;
 
     /// <summary>The dock taken off the bar (switched off, the bar closed): no hooks, no frames, no timers, the previews closed.</summary>
     public void Detach()
     {
         StopHooks();
         Unhook();
+        if (_badgesOn) { _badgesOn = false; AppBadges.Changed -= UpdateBadges; AppBadges.Stop(); }
         foreach (var t in new[] { _refresh, _thinCheck, _hoverPreview, _hidePreview }) t.Stop();
         _preview.Dismiss();
         _preview.Close();
@@ -291,10 +299,9 @@ sealed class DockView : Canvas
             // the name at once (like the Mac's dock); the live previews of a running one follow when the pointer stays
             e.Visual.ToolTip = new ToolTip { Content = e.Name + "\n" + (e.Windows.Count == 0 ? L.T("Kliknij, aby uruchomić") : L.T("Środkowy przycisk: nowe okno")), Placement = _bar.AtTop ? System.Windows.Controls.Primitives.PlacementMode.Bottom : System.Windows.Controls.Primitives.PlacementMode.Top };
             ToolTipService.SetInitialShowDelay(e.Visual, 0);
-            System.Windows.Automation.AutomationProperties.SetName(e.Visual, e.Name);
             _entries.Add(e);
         }
-        foreach (var gone in old.Values) { Children.Remove(gone.Visual); Children.Remove(gone.Mark); }
+        foreach (var gone in old.Values) { Children.Remove(gone.Visual); Children.Remove(gone.Mark); Children.Remove(gone.Badge); }
         foreach (var line in _lines) Children.Remove(line);
         _lines.Clear();
         _slots = slots;
@@ -319,8 +326,13 @@ sealed class DockView : Canvas
         e.Visual.MouseLeftButtonUp += (_, ev) => { ev.Handled = true; e.Visual.ReleaseMouseCapture(); if (_dragging != null) Drop(); else if (_pressed == e) Click(e); _pressed = null; };
         e.Visual.MouseUp += (_, ev) => { if (ev.ChangedButton == MouseButton.Middle) { ev.Handled = true; Launch(e); } };
         e.Visual.MouseRightButtonUp += (_, ev) => { ev.Handled = true; Menu(e); };
+        e.Badge.Child = e.BadgeText;
+        e.Badge.Background = new SolidColorBrush(Color.FromRgb(0xE5, 0x48, 0x4D));
+        e.Badge.BorderBrush = new SolidColorBrush(Color.FromArgb(0x70, 0, 0, 0));
+        e.Badge.RenderTransform = new ScaleTransform(1, 1);
         Children.Add(e.Visual);
         Children.Add(e.Mark);
+        Children.Add(e.Badge);
         return e;
     }
 
@@ -427,6 +439,23 @@ sealed class DockView : Canvas
             e.Mark.CornerRadius = new CornerRadius(2);
             SetLeft(e.Mark, X(centre) - e.Mark.Width / 2);
             SetTop(e.Mark, top ? room / 2 - e.Mark.Height / 2 : BarHeight - room / 2 - e.Mark.Height / 2);
+            // the counter: on the icon's upper corner (away from the screen's edge), growing with the icon
+            if (e.Count.Any)
+            {
+                double h = Math.Max(13, Math.Round(size * (e.Count.N > 0 ? 0.46 : 0.28)));
+                string text = e.Count.N > 99 ? "99+" : e.Count.N > 0 ? e.Count.N.ToString() : "";
+                double bw = text.Length <= 1 ? h : h * (text.Length == 2 ? 1.4 : 1.8);
+                e.Badge.Width = bw;
+                e.Badge.Height = h;
+                e.Badge.CornerRadius = new CornerRadius(h / 2);
+                e.Badge.BorderThickness = new Thickness(Math.Max(1, h / 14));
+                e.BadgeText.FontSize = h * 0.66;
+                e.BadgeText.Margin = new Thickness(0, -h * 0.06, 0, 0);
+                double iconTop = top ? edge + size : edge - size; // the far side from the screen's edge
+                double inset = size * 0.08;
+                SetLeft(e.Badge, X(centre) + size / 2 - inset - bw / 2);
+                SetTop(e.Badge, top ? iconTop - inset - h / 2 : iconTop + inset - h / 2);
+            }
         }
         // while the icons are grown, the room above them catches the pointer (otherwise it passes through to the window under it)
         double head = _bar.Headroom;
@@ -447,6 +476,32 @@ sealed class DockView : Canvas
             if (e.Attention && Anim.On)
                 e.Mark.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0.25, TimeSpan.FromMilliseconds(600)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever });
             else e.Mark.BeginAnimation(OpacityProperty, null);
+        }
+        UpdateBadges();
+    }
+
+    /// <summary>The counters read again (the notification database or a title changed, a program asked for attention).</summary>
+    void UpdateBadges()
+    {
+        foreach (var e in _entries)
+        {
+            var c = !S.DockBadges ? default
+                : AppBadges.For(e.Windows.Select(w => w.AppId).Concat(e.Windows.Select(w => AppBadges.PackageAppId(w.Pid))).Append(e.Pin?.AppId),
+                                e.Windows.Select(w => w.Exe).Append(e.Pin?.Exe), e.Windows.Select(w => w.Title));
+            // a program that flashes for attention without a number: a dot
+            if (S.DockBadges && !c.Any && e.Attention) c = new AppBadges.Count(0, true);
+            bool grew = c.N > e.Count.N || c.Dot && !e.Count.Any;
+            e.Count = c;
+            e.Badge.Visibility = c.Any ? Visibility.Visible : Visibility.Collapsed;
+            e.BadgeText.Text = c.N > 99 ? "99+" : c.N > 0 ? c.N.ToString() : "";
+            System.Windows.Automation.AutomationProperties.SetName(e.Visual, c.N > 0 ? L.F("{0} – powiadomienia: {1}", e.Name, c.N) : e.Name);
+            // a new one: the counter pops (a short spring of its size)
+            if (grew && Anim.On && e.Badge.RenderTransform is ScaleTransform st)
+            {
+                var pop = new DoubleAnimation(1.35, 1, TimeSpan.FromMilliseconds(380)) { EasingFunction = new ElasticEase { Oscillations = 1, Springiness = 4, EasingMode = EasingMode.EaseOut } };
+                st.BeginAnimation(ScaleTransform.ScaleXProperty, pop);
+                st.BeginAnimation(ScaleTransform.ScaleYProperty, pop);
+            }
         }
         Animate(force: true);
     }

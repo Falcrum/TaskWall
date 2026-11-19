@@ -896,6 +896,14 @@ public partial class App : Application
         Dispatcher.BeginInvoke(() => w?.OpenSection(section), DispatcherPriority.ApplicationIdle);
     }
 
+    /// <summary>Settings opened at a section by its key ("bar" …).</summary>
+    public void ShowSettings(string section)
+    {
+        ShowSettings();
+        var w = _settingsWindow;
+        Dispatcher.BeginInvoke(() => w?.OpenSection(section), DispatcherPriority.ApplicationIdle);
+    }
+
     public void ImportNotion() => ImportNotion(null);
 
     public void ImportNotion(string? path)

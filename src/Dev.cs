@@ -35,10 +35,17 @@ static class Dev
 
         var open = Arg("--open");
         if (open == "settings") App.Instance.ShowSettings();
-        else if (open?.StartsWith("settings:") == true && int.TryParse(open["settings:".Length..], out var sec))
+        else if (open?.StartsWith("settings:") == true && int.TryParse(open["settings:".Length..].Split('@')[0], out var sec))
         {
+            // settings:4@600 – the section open and scrolled 600 px down (screenshots of a long section)
+            double down = open.Contains('@') && double.TryParse(open[(open.IndexOf('@') + 1)..], out var dv) ? dv : 0;
             App.Instance.ShowSettings();
-            App.Current.Dispatcher.BeginInvoke(() => (App.Current.Windows.OfType<SettingsWindow>().FirstOrDefault())?.OpenSection(sec), DispatcherPriority.ApplicationIdle);
+            App.Current.Dispatcher.BeginInvoke(() =>
+            {
+                var sw = App.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
+                sw?.OpenSection(sec);
+                if (down > 0) App.Current.Dispatcher.BeginInvoke(() => (sw?.Content as System.Windows.Controls.ScrollViewer)?.ScrollToVerticalOffset(down), DispatcherPriority.ApplicationIdle);
+            }, DispatcherPriority.ApplicationIdle);
         }
         else if (open == "archive") App.Current.Dispatcher.BeginInvoke(() => App.Board?.ShowArchive(), DispatcherPriority.ApplicationIdle);
         else if (open == "private") App.Instance.SwitchLayer("private");
@@ -71,6 +78,7 @@ static class Dev
         else if (open == "dock-hover") { var dt = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) }; dt.Tick += (_, _) => { dt.Stop(); App.Bar?.DevHover(); }; dt.Start(); }
         else if (open == "dock-preview") { var dp = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) }; dp.Tick += (_, _) => { dp.Stop(); App.Bar?.DevPreview(); }; dp.Start(); }
         else if (open == "indicators") App.Current.Dispatcher.BeginInvoke(() => { var outs = Volume.Outputs(); Log.Error($"dev outputs (can switch: {Volume.CanSwitch()}): {outs.Devices.Count}, default {outs.Devices.FirstOrDefault(d => d.Id == outs.Default)?.Name}: " + string.Join(" | ", outs.Devices.Select(d => d.Name))); var n = Network.Read(); Log.Error($"dev indicators: volume {Volume.Level:0.00} muted {Volume.Muted} device \"{Volume.DeviceName}\"; network {n.Kind} internet {n.Internet} signal {n.Signal} speed {n.SpeedBps}"); }, DispatcherPriority.ApplicationIdle);
+        else if (open == "badges") { AppBadges.Start(); var bt = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) }; bt.Tick += (_, _) => { bt.Stop(); Log.Error("dev badges: " + AppBadges.Dump()); }; bt.Start(); }
         else if (open == "panels") { var pt = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) }; pt.Tick += (_, _) => { pt.Stop(); App.Bar?.DevPanels(); }; pt.Start(); }
         else if (open == "tray") { var tt = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) }; tt.Tick += (_, _) => { tt.Stop(); App.Bar?.OpenTrayOverflow(); }; tt.Start(); } // the full-width bar's tray chevron
         else if (open == "calendar") App.Current.Dispatcher.BeginInvoke(() => App.ActiveCalendar?.Toggle(true), DispatcherPriority.ApplicationIdle);

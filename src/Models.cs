@@ -806,6 +806,8 @@ public sealed class AppSettings
     public string DockMagnify { get; set; } = "full";
     /// <summary>Smaller dock icons while a window is maximised on the screen, full again when the pointer comes to the bar.</summary>
     public bool DockThin { get; set; } = true;
+    /// <summary>A red counter on a dock icon: the notifications the program has waiting (Windows' notification centre, its badge, its title).</summary>
+    public bool DockBadges { get; set; } = true;
     /// <summary>The programs pinned to the dock, in order.</summary>
     public List<DockPin> DockPins { get; set; } = new();
     /// <summary>The weather now on the left of the top bar (needs a place in Settings → Pogoda).</summary>
