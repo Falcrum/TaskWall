@@ -66,7 +66,7 @@ public sealed class SettingsWindow : DarkWindow
 
         // from what is changed most to what is set once
         AddSection("general", L.T("Ogólne"), L.T("język, autostart, skrót klawiszowy, alarmy i przypomnienia"), BuildGeneral);
-        AddSection("look", L.T("Wygląd"), L.T("motyw, kolor akcentu, przezroczystość, wzór tła"), BuildLook);
+        AddSection("look", L.T("Wygląd"), L.T("motyw, kolor akcentu, tło i wzór, wygląd zadań"), BuildLook);
         AddSection("board", L.T("Tablica"), L.T("weekendy, przenoszenie zadań, godziny pracy, backlog"), BuildBoard);
         AddSection("screen", L.T("Ekran i rozmiar"), L.T("monitor, drugi ekran, skala, szerokość i wysokość tablicy"), BuildScreen);
         AddSection("bar", L.T("Pasek i dock"), L.T("pasek nad tablicą albo pasek z dockiem zamiast paska zadań Windows"), BuildBar);
@@ -114,7 +114,7 @@ public sealed class SettingsWindow : DarkWindow
         bool built = false;
         void Open()
         {
-            if (!built) { body.Child = build(); built = true; }
+            if (!built) { BeginScope(key); body.Child = build(); built = true; }
             Sync(); // a setting changed in another section can show or hide rows here
             foreach (var (h, b, c) in _accordion)
             {
@@ -177,6 +177,7 @@ public sealed class SettingsWindow : DarkWindow
         var store = App.StoreFor(id);
         var p = new StackPanel();
         _accountBody.Child = p;
+        BeginScope("account");
 
         // name
         var name = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], Text = acc.Name, MaxLength = 20, Width = 240, HorizontalAlignment = HorizontalAlignment.Right };
@@ -342,7 +343,7 @@ public sealed class SettingsWindow : DarkWindow
         });
         restore.Margin = new Thickness(0, 0, 8, 8);
         clearRow.Children.Add(restore);
-        p.Children.Add(Group(L.T("Wyczyść dane"), L.T("Usuwa dane konta, również na innych komputerach synchronizujących ten folder. Zadania i oznaczenia można przywrócić przez Ctrl+Z lub z kopii dziennej."), clearRow));
+        p.Children.Add(Group(L.T("Usuwanie i przywracanie danych"), L.T("Usuwa dane konta, również na innych komputerach synchronizujących ten folder. Zadania i oznaczenia można przywrócić przez Ctrl+Z lub z kopii dziennej."), clearRow));
     }
 
     FrameworkElement FolderRow(string layer)
@@ -522,13 +523,12 @@ public sealed class SettingsWindow : DarkWindow
         status.Margin = new Thickness(0, 6, 0, 0);
         place.Children.Add(status);
         place.Children.Add(refresh);
-        var cityRow = Stacked(L.T("Miejscowość"), L.T("Do serwisu trafiają tylko jej współrzędne."), place);
-        p.Children.Add(Group(L.T("Prognoza"),
-            Toggle(L.T("Pogoda w nagłówkach dni"), L.T("Symbol, temperatura maks. / min. na 16 dni (Open-Meteo, bez konta)."), w.Enabled, v => { w.Enabled = v; if (v) WeatherService.Refresh(); }),
-            When(Toggle(L.T("Opady"), L.T("Szansa (0–100%) i przewidywana ilość (mm)."), w.ShowRain, v => w.ShowRain = v), () => w.Enabled),
-            When(Toggle(L.T("Wiatr"), L.T("Prędkość w km/h."), w.ShowWind, v => w.ShowWind = v), () => w.Enabled),
-            cityRow));
-        if (w.Enabled && !w.Ready) p.Children.Add(Sub(L.T("Miejscowość"), L.T("Wpisz miasto i wybierz je z listy, aby włączyć prognozę."), needed: true));
+        var cityRow = Stacked(L.T("Miejscowość"), w.Enabled && !w.Ready ? L.T("Wpisz miasto i wybierz je z listy, aby włączyć prognozę.") : L.T("Do serwisu trafiają tylko jej współrzędne."), place,
+            needed: w.Enabled && !w.Ready);
+        p.Children.Add(SwitchGroup(L.T("Pogoda w nagłówkach dni"), L.T("Symbol i temperatura maks. / min. na 16 dni (Open-Meteo, bez konta)."), w.Enabled, v => { w.Enabled = v; if (v) WeatherService.Refresh(); },
+            cityRow,
+            Toggle(L.T("Opady"), L.T("Szansa (0–100%) i przewidywana ilość (mm)."), w.ShowRain, v => w.ShowRain = v),
+            Toggle(L.T("Wiatr"), L.T("Prędkość w km/h."), w.ShowWind, v => w.ShowWind = v)));
         WeatherService.Changed += ShowStatus;
         Closed += (_, _) => WeatherService.Changed -= ShowStatus;
         ShowStatus();
@@ -552,6 +552,7 @@ public sealed class SettingsWindow : DarkWindow
                 b.Background = on ? new SolidColorBrush(Th.Ink(0x30)) : Brushes.Transparent;
                 b.Foreground = on ? Ui.Res("Fg") : Ui.Res("FgDim");
             }
+            BeginScope("connection");
             body.Child = BuildNotion(S.AccountFor(current), App.StoreFor(current));
         }
         foreach (var acc in S.Accounts)
@@ -680,8 +681,7 @@ public sealed class SettingsWindow : DarkWindow
 
         p.Children.Add(Group("Notion", L.T("Wczytuje zadania z baz Notion do backlogu konta (tylko odczyt)."),
             tokenField,
-            Toggle(L.T("Synchronizuj automatycznie"), L.T("Przy starcie programu i co wybrany czas."), link.Auto, v => { link.Auto = v; SettingsStore.Save(S); }),
-            When(Row(L.T("Co ile"), null, every), () => link.Auto),
+            AutoSyncRow(link, every),
             Toggle(L.T("Filtry i sortowanie widoku z linku"), L.T("Zalecane: wczytywane jest to, co pokazuje widok w Notion."), link.UseViewFilter, v => { link.UseViewFilter = v; SettingsStore.Save(S); }),
             Row(L.T("Limit zadań"), L.T("Nie wczytuj, jeśli widok ma więcej zadań."), limit),
             Toggle(L.T("Tylko zadania przypisane do mnie"), L.T("Pole osoby zawiera moje konto."), link.OnlyMine, v => { link.OnlyMine = v; SettingsStore.Save(S); }),
@@ -691,16 +691,74 @@ public sealed class SettingsWindow : DarkWindow
         return p;
     }
 
+    /// <summary>"Synchronizuj automatycznie co [10 min] [switch]": the interval next to the switch it belongs to, shown while it is on.</summary>
+    FrameworkElement AutoSyncRow(NotionLink link, ComboBox every)
+    {
+        every.Margin = new Thickness(0, 0, 12, 0);
+        var right = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        right.Children.Add(When(every, () => link.Auto));
+        var sw = SwitchControl(L.T("Synchronizuj automatycznie"), link.Auto, v => { link.Auto = v; SettingsStore.Save(S); });
+        right.Children.Add(sw);
+        return Row(L.T("Synchronizuj automatycznie"), L.T("Przy starcie programu i co wybrany czas."), right);
+    }
+
+    /// <summary>Which Notion projects are unfolded, for as long as TaskWall runs.</summary>
+    static readonly Dictionary<NotionLink, bool> OpenProjects = new();
+
     /// <summary>One Notion database: name + colour (marks its tasks), link, statuses to read, last result.</summary>
     FrameworkElement BuildNotionSource(Account acc, BoardStore store, NotionLink link, Action? remove, List<Action> refreshers)
     {
         var card = new Border { BorderThickness = new Thickness(0, 1, 0, 0), BorderBrush = new SolidColorBrush(Th.Ink(0x10)), Padding = new Thickness(0, 10, 0, 10) };
-        var p = new StackPanel();
-        card.Child = p;
+        // folded like the groups: a header with the project's colour, name and state; the fields under it when open
+        var outer = new StackPanel();
+        card.Child = outer;
+        var p = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+        var dot = new Border { Width = 12, Height = 12, CornerRadius = new CornerRadius(3), Margin = new Thickness(0, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center };
+        var headName = Label("", 13, "Fg", FontWeights.SemiBold);
+        var headSub = Label("", 11.5, "FgFaint");
+        headSub.TextTrimming = TextTrimming.CharacterEllipsis;
+        headSub.Margin = new Thickness(0, 2, 0, 0);
+        var chevron = new TextBlock { FontFamily = Ui.Font("IconFont"), FontSize = 10, Foreground = Ui.Res("FgDim"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 2, 0) };
+        var headGrid = new Grid();
+        headGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        headGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        headGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var headNames = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Children = { headName, headSub } };
+        Grid.SetColumn(headNames, 1);
+        Grid.SetColumn(chevron, 2);
+        headGrid.Children.Add(dot);
+        headGrid.Children.Add(headNames);
+        headGrid.Children.Add(chevron);
+        var header = new Border { Child = headGrid, Background = Brushes.Transparent, Cursor = Cursors.Hand, Focusable = true, Padding = new Thickness(0, 2, 0, 2) };
+        outer.Children.Add(header);
+        outer.Children.Add(p);
+        // a new project (no name, no database) opens by itself; the others folded, or as they were left
+        bool open = OpenProjects.TryGetValue(link, out var wasOpen) ? wasOpen : link.Name.Length == 0 && link.Database.Length == 0;
+        void Head()
+        {
+            dot.Background = new SolidColorBrush(BoardWindow.ParseColor(link.Color));
+            headName.Text = link.Name.Length > 0 ? link.Name : L.T("Projekt bez nazwy");
+            headSub.Text = link.Database.Length == 0 ? L.T("bez bazy Notion – tylko nazwa i kolor")
+                : link.LastResult is { Length: > 0 } last ? last
+                : link.ViewName is { } view ? L.F("widok „{0}”", view) : L.T("baza Notion");
+            p.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+            chevron.Text = open ? "\uE70E" : "\uE70D";
+            System.Windows.Automation.AutomationProperties.SetName(header, headName.Text);
+        }
+        void Flip()
+        {
+            open = !open;
+            OpenProjects[link] = open;
+            Head();
+            if (open) Anim.Enter(p, 0, -4, 160);
+        }
+        header.MouseLeftButtonUp += (_, _) => Flip();
+        header.KeyDown += (_, e) => { if (e.Key is Key.Enter or Key.Space && ReferenceEquals(e.OriginalSource, header)) { Flip(); e.Handled = true; } };
+        refreshers.Add(Head);
 
         var top = new DockPanel();
         var swatch = new Border { Width = 18, Height = 18, CornerRadius = new CornerRadius(4), Cursor = Cursors.Hand, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center, ToolTip = L.T("Zmień kolor") };
-        void Paint() => swatch.Background = new SolidColorBrush(BoardWindow.ParseColor(link.Color));
+        void Paint() { swatch.Background = new SolidColorBrush(BoardWindow.ParseColor(link.Color)); dot.Background = swatch.Background; }
         Paint();
         swatch.MouseLeftButtonUp += (_, _) =>
         {
@@ -720,6 +778,7 @@ public sealed class SettingsWindow : DarkWindow
             var old = link.Name;
             link.Name = v;
             SettingsStore.Save(S);
+            Head();
             // tasks already on the board follow the new name right away (without a name yet: only when this is the one database)
             bool only = new[] { acc.Notion }.Concat(acc.NotionMore).Count(l => l.Database.Length > 0) <= 1;
             foreach (var t in store.Data.Tasks.Where(t => old.Length > 0 ? t.NotionSource == old : t.NotionId != null && t.NotionSource == null && only).ToList())
@@ -753,7 +812,7 @@ public sealed class SettingsWindow : DarkWindow
             dbState.Foreground = v.Length > 0 && id == null ? new SolidColorBrush(Color.FromRgb(0xF2, 0xA6, 0x5A)) : Ui.Res("FgDim");
         }
         db.TextChanged += (_, _) => ShowDbState();
-        db.LostKeyboardFocus += (_, _) => { if (db.Text.Trim() != link.Database) { if (NotionImport.ExtractId(db.Text.Trim()) != NotionImport.ExtractId(link.Database)) { link.KnownStatuses = null; link.StatusIds = null; link.StatusGroups = null; } link.Database = db.Text.Trim(); SettingsStore.Save(S); } };
+        db.LostKeyboardFocus += (_, _) => { if (db.Text.Trim() != link.Database) { if (NotionImport.ExtractId(db.Text.Trim()) != NotionImport.ExtractId(link.Database)) { link.KnownStatuses = null; link.StatusIds = null; link.StatusGroups = null; } link.Database = db.Text.Trim(); SettingsStore.Save(S); Head(); } };
         ShowDbState();
         p.Children.Add(Pair(L.T("Link do bazy"), db));
         p.Children.Add(dbState);
@@ -809,6 +868,7 @@ public sealed class SettingsWindow : DarkWindow
         var usable = (link.KnownColumns ?? new()).Where(c => c.EndsWith(": select") || c.EndsWith(": multi_select") || c.EndsWith(": status") || c.EndsWith(": people") || c.EndsWith(": rich_text")).Select(c => c[..c.LastIndexOf(':')]).ToList();
         if (usable.Count > 0) p.Children.Add(Label(L.F("Kolumny tej bazy: {0}", string.Join(", ", usable)), 11, "FgFaint"));
         p.Children.Add(result);
+        Head();
         return card;
     }
 
@@ -1047,7 +1107,7 @@ public sealed class SettingsWindow : DarkWindow
         p.Children.Add(Group(L.T("Backlog i archiwum"),
             Row(L.T("Backlog"), null, Combo(new[] { ("drawer", L.T("Wysuwany po kliknięciu")), ("pinned", L.T("Przypięty z prawej strony")) }, S.BacklogMode == "pinned" ? "pinned" : "drawer",
                 k => { S.BacklogMode = k; App.Instance.ApplySettings(); }, 240)),
-            When(Row(L.T("Szerokość backlogu"), null, Slider(220, 560, S.BacklogWidth, v => S.BacklogWidth = v, v => $"{v:0} px")), () => S.BacklogMode == "pinned")));
+            When(Child(Row(L.T("Szerokość"), null, Slider(220, 560, S.BacklogWidth, v => S.BacklogWidth = v, v => $"{v:0} px"))), () => S.BacklogMode == "pinned")));
         return p;
     }
 
@@ -1089,7 +1149,7 @@ public sealed class SettingsWindow : DarkWindow
             sw.MouseLeftButtonUp += (_, _) => { S.Accent = hex; Mark(sw); App.Instance.ApplySettings(); };
             swatches.Children.Add(sw);
         }
-        p.Children.Add(Group(L.T("Motyw"),
+        p.Children.Add(Group(L.T("Styl"),
             Row(L.T("Motyw"), L.T("Jasny i Glass: szkło z odcieniem tapety. Ciemny: neutralny grafit, cienkie linie. Zmiana po ponownym uruchomieniu."), themeBox),
             Row(L.T("Kolor akcentu"), null, swatches),
             Toggle(L.T("Zaokrąglone narożniki"), L.T("Wyłączone: proste rogi, a tablica i paski przylegają do krawędzi ekranu."), S.RoundCorners, v => S.RoundCorners = v),
@@ -1098,21 +1158,21 @@ public sealed class SettingsWindow : DarkWindow
 
         var refresh = Btn(L.T("Odśwież"), "SecondaryButton", (_, _) => App.Instance.RefreshWallpaper());
         refresh.Margin = new Thickness(0);
-        p.Children.Add(Group(L.T("Przezroczystość"),
-            Toggle(L.T("Bez przezroczystości"), L.T("Pełne, matowe tło zamiast szkła na tapecie."), S.Opaque, v => S.Opaque = v),
-            When(Row(L.T("Przyciemnienie"), null, Slider(0, 95, S.TintOpacity * 100, v => S.TintOpacity = v / 100, v => $"{v:0}%")), () => !S.Opaque),
-            When(Toggle(L.T("Matowe szkło"), L.T("Rozmyta tapeta pod tablicą."), S.Blur, v => S.Blur = v), () => !S.Opaque),
-            When(Row(L.T("Rozmycie"), null, Slider(0, 100, S.BlurStrength, v => S.BlurStrength = v, v => $"{v:0}")), () => !S.Opaque && S.Blur),
+        var background = Combo(new[] { ("frosted", L.T("Matowe szkło")), ("glass", L.T("Przezroczyste szkło")), ("solid", L.T("Pełne, bez przezroczystości")) },
+            S.Opaque ? "solid" : S.Blur ? "frosted" : "glass", k => { S.Opaque = k == "solid"; if (k != "solid") S.Blur = k == "frosted"; App.Instance.ApplySettings(); }, 240);
+        p.Children.Add(Group(L.T("Tło"),
+            Row(L.T("Tło tablicy"), L.T("Matowe: rozmyta tapeta pod szkłem. Przezroczyste: ostra tapeta. Pełne: jednolity kolor."), background),
+            When(Child(Row(L.T("Przyciemnienie"), null, Slider(0, 95, S.TintOpacity * 100, v => S.TintOpacity = v / 100, v => $"{v:0}%"))), () => !S.Opaque),
+            When(Child(Row(L.T("Rozmycie"), null, Slider(0, 100, S.BlurStrength, v => S.BlurStrength = v, v => $"{v:0}"))), () => !S.Opaque && S.Blur),
+            Row(L.T("Wzór"), null, Combo(new[] { ("none", L.T("brak")), ("fabric", L.T("materiał (szachownica pod kątem 45°)")), ("dots", L.T("drobne kropki")), ("grid", L.T("drobna kratka")) }, S.Pattern,
+                k => { S.Pattern = k; App.Instance.ApplySettings(); }, 290)),
+            When(Child(Row(L.T("Widoczność"), null, Slider(0, 300, S.PatternVisibility * 100, v => S.PatternVisibility = v / 100, v => $"{v:0}%"))), () => S.Pattern != "none"),
+            When(Child(Row(L.T("Skala"), null, Slider(25, 100, S.PatternScale * 100, v => S.PatternScale = v / 100, v => $"{v:0}%"))), () => S.Pattern != "none"),
             When(Row(L.T("Tapeta"), L.T("Wczytaj ją ponownie, np. po zmianie przez pokaz slajdów albo Spotlight."), refresh), () => !S.Opaque)));
 
-        p.Children.Add(Group(L.T("Wzór tła"),
-            Row(L.T("Wzór"), null, Combo(new[] { ("none", L.T("brak")), ("fabric", L.T("materiał (szachownica pod kątem 45°)")), ("dots", L.T("drobne kropki")), ("grid", L.T("drobna kratka")) }, S.Pattern,
-                k => { S.Pattern = k; App.Instance.ApplySettings(); }, 260)),
-            When(Row(L.T("Widoczność wzoru"), null, Slider(0, 300, S.PatternVisibility * 100, v => S.PatternVisibility = v / 100, v => $"{v:0}%")), () => S.Pattern != "none"),
-            When(Row(L.T("Skala wzoru"), null, Slider(25, 100, S.PatternScale * 100, v => S.PatternScale = v / 100, v => $"{v:0}%")), () => S.Pattern != "none")));
 
         // the task state: a bar that fills up, or a round icon (the shape says the state, the colours help)
-        p.Children.Add(Group(L.T("Tablica"),
+        p.Children.Add(Group(L.T("Zadania i przyciski"),
             Row(L.T("Znacznik stanu zadania"), L.T("Pasek wypełnia się z postępem; koło jak w Linear / Jira – czytelne też bez kolorów."),
                 Combo(new[] { ("bar", L.T("Pasek (wypełnia się)")), ("circle", L.T("Koło (jak Linear / Jira)")) }, S.StateIcon, k => { S.StateIcon = k; App.Instance.ApplySettings(); }, 220)),
             Row(L.T("Rozmiar tekstu zadań"), null, Slider(10, 17, S.FontSize, v => S.FontSize = Math.Round(v * 2) / 2, v => $"{Math.Round(v * 2) / 2:0.0}")),
@@ -1161,7 +1221,7 @@ public sealed class SettingsWindow : DarkWindow
                     tag => { S.SearchKeys = tag; App.Instance.ApplySettings(); }, 300)),
             Toggle(L.T("Ukryj pasek zadań Windows"), L.T("Wraca, gdy wyłączysz ten pasek albo zamkniesz TaskWall – także po awarii."), S.HideTaskbar, v => S.HideTaskbar = v)), Full));
 
-        p.Children.Add(When(Group(L.T("Dock"), DockSettings().ToArray()), Full));
+        p.Children.Add(When(SwitchGroup(L.T("Dock"), L.T("Przypięte i uruchomione programy na środku paska."), S.Dock, v => S.Dock = v, DockSettings().ToArray()), Full));
 
         // the load rings: one tick per kind, the order stays CPU, GPU, RAM, disk, network
         var meters = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right };
@@ -1183,8 +1243,8 @@ public sealed class SettingsWindow : DarkWindow
         p.Children.Add(When(Group(L.T("Na pasku"),
             Toggle(L.T("Pogoda teraz"), L.T("Miejscowość ustawiasz w sekcji Pogoda; odświeżana co 30 minut."), S.BarWeather, v => S.BarWeather = v),
             Row(L.T("Obciążenie"), L.T("Kręgi jak w Menedżerze zadań, odczyt co 2 s, tylko gdy pasek jest widoczny."), meters),
-            When(Row(L.T("Kolory kółek"), L.T("Spokojnie szare i w swoim kolorze dopiero od 80% – albo zawsze w kolorze."),
-                Combo(new[] { ("high", L.T("Przy dużym obciążeniu")), ("always", L.T("Zawsze")) }, S.MeterColors, tag => { S.MeterColors = tag; App.Instance.ApplySettings(); })), () => S.Meters.Length > 0),
+            When(Child(Row(L.T("Kolory kółek"), L.T("Szare, a w swoim kolorze dopiero od 80% – albo zawsze w kolorze."),
+                Combo(new[] { ("high", L.T("Przy dużym obciążeniu")), ("always", L.T("Zawsze")) }, S.MeterColors, tag => { S.MeterColors = tag; App.Instance.ApplySettings(); }))), () => S.Meters.Length > 0),
             Toggle(L.T("Zegar 24-godzinny"), null, S.Use24h, v => S.Use24h = v)), AnyBar));
         return p;
     }
@@ -1202,11 +1262,10 @@ public sealed class SettingsWindow : DarkWindow
     /// <summary>The dock's rows: on / off, then (while on) the magnification, the thin dock, the counters, the pinned programs.</summary>
     IEnumerable<FrameworkElement> DockSettings()
     {
-        yield return Toggle(L.T("Dock"), L.T("Przypięte i uruchomione programy na środku paska. Kliknięcie przywołuje okno, środkowy przycisk otwiera nowe, prawy przypina i zamyka."), S.Dock, v => S.Dock = v);
-        yield return When(Row(L.T("Powiększanie ikon"), L.T("Ikona pod kursorem rośnie, sąsiednie trochę mniej – jak w docku macOS."),
-            Combo(new[] { ("off", L.T("Wyłączone")), ("subtle", L.T("Subtelne (1,25×)")), ("full", L.T("Pełne (1,55×)")) }, S.DockMagnify, tag => { S.DockMagnify = tag; App.Instance.ApplySettings(); })), () => S.Dock);
-        yield return When(Toggle(L.T("Liczniki powiadomień"), L.T("Czerwone kółko z liczbą powiadomień czekających w programie (Centrum powiadomień Windows, licznik programu, tytuł okna)."), S.DockBadges, v => S.DockBadges = v), () => S.Dock);
-        yield return When(Toggle(L.T("Cienki dock przy zmaksymalizowanym oknie"), L.T("Mniejsze ikony, gdy okno zajmuje ekran; pełne, gdy kursor zbliży się do paska."), S.DockThin, v => S.DockThin = v), () => S.Dock);
+        yield return Row(L.T("Powiększanie ikon"), L.T("Ikona pod kursorem rośnie, sąsiednie trochę mniej – jak w docku macOS."),
+            Combo(new[] { ("off", L.T("Wyłączone")), ("subtle", L.T("Subtelne (1,25×)")), ("full", L.T("Pełne (1,55×)")) }, S.DockMagnify, tag => { S.DockMagnify = tag; App.Instance.ApplySettings(); }));
+        yield return Toggle(L.T("Liczniki powiadomień"), L.T("Kółko w kolorze akcentu z liczbą powiadomień czekających w programie (Centrum powiadomień Windows, licznik programu, tytuł okna)."), S.DockBadges, v => S.DockBadges = v);
+        yield return Toggle(L.T("Cienki dock przy zmaksymalizowanym oknie"), L.T("Mniejsze ikony, gdy okno zajmuje ekran; pełne, gdy kursor zbliży się do paska."), S.DockThin, v => S.DockThin = v);
         var pins = new StackPanel();
         void FillPins()
         {
@@ -1227,7 +1286,7 @@ public sealed class SettingsWindow : DarkWindow
             pins.Children.Add(add);
         }
         FillPins();
-        yield return When(Stacked(L.T("Przypięte programy"), L.T("Kolejność zmieniasz przeciągając ikony na docku; uruchomiony program przypniesz prawym przyciskiem na jego ikonie."), pins), () => S.Dock);
+        yield return Stacked(L.T("Przypięte programy"), L.T("Kliknięcie ikony przywołuje okno, środkowy przycisk otwiera nowe, prawy przypina i zamyka. Kolejność zmieniasz przeciągając ikony."), pins);
     }
 
     /// <summary>A program file or a shortcut chosen by hand → pinned to the dock (a shortcut by the program it points to, so its windows group under it).</summary>
@@ -1296,14 +1355,13 @@ public sealed class SettingsWindow : DarkWindow
         p.Children.Add(Group(L.T("Program"),
             Row("Język / Language", null, langRow),
             Toggle(L.T("Uruchamiaj razem z Windows"), null, S.StartWithWindows, v => S.StartWithWindows = v),
-            Row(L.T("Skrót klawiszowy"), L.T("Pokazuje tablicę na wierzchu z polem nowego zadania na dziś; Esc chowa."), hotBox)));
+            Row(L.T("Skrót klawiszowy"), L.T("Pokazuje tablicę na wierzchu z polem nowego zadania na dziś; Esc chowa."), hotBox),
+            Toggle(L.T("Otwieraj linki Notion w aplikacji Notion"), L.T("Zamiast w przeglądarce."), S.OpenNotionInApp, v => S.OpenNotionInApp = v)));
         var remind = Combo(new[] { ("-1", L.T("Wyłączone")), ("0", L.T("W chwili rozpoczęcia")), ("5", L.T("5 min przed")), ("10", L.T("10 min przed")), ("15", L.T("15 min przed")) },
             S.TaskReminder.ToString(), k => { S.TaskReminder = int.Parse(k); SettingsStore.Save(S); AlarmService.Reschedule(); });
         p.Children.Add(Group(L.T("Alarmy i przypomnienia"),
             Toggle(L.T("Dźwięk alarmów"), null, S.AlarmSound, v => S.AlarmSound = v),
             Row(L.T("Przypomnienie o zadaniach z godziną"), L.T("Zadania z godziną w treści, np. „14-16 przegląd”."), remind)));
-        p.Children.Add(Group("Notion",
-            Toggle(L.T("Otwieraj linki w aplikacji Notion"), L.T("Zamiast w przeglądarce."), S.OpenNotionInApp, v => S.OpenNotionInApp = v)));
         return p;
     }
 
@@ -1364,65 +1422,235 @@ public sealed class SettingsWindow : DarkWindow
     // ---------- small builders ----------
 
     /// <summary>Rows shown only while their condition holds (an option that changes nothing now is hidden): checked again by <see cref="Sync"/>.</summary>
-    readonly List<(FrameworkElement El, Func<bool> When)> _when = new();
-    /// <summary>The cards of rows: the line between two rows only between visible ones, the whole group hidden when none is.</summary>
-    readonly List<(FrameworkElement Group, Panel Rows)> _groups = new();
+    readonly List<(FrameworkElement El, Func<bool> When, string Scope)> _when = new();
+
+    /// <summary>
+    /// A card of rows that folds like a drop-down: its header (the name; folded, what is inside or what it is for; a switch when the
+    /// whole group is one feature that can be off) and the rows under it, a fine line between two of them – none above a row that
+    /// belongs to the one before it (<see cref="Child"/>).
+    /// </summary>
+    sealed class GroupInfo
+    {
+        public FrameworkElement Outer = null!;
+        public Border? Header;
+        public Border Body = null!;
+        public Panel Rows = null!;
+        public TextBlock? Sub, Chevron;
+        public string? Hint;
+        public string Key = "", Scope = "";
+        public Func<bool>? On;
+        public bool Open;
+    }
+
+    readonly List<GroupInfo> _groups = new();
+    /// <summary>Which groups are open (by section and name), for as long as TaskWall runs: a group opened stays open the next time.</summary>
+    static readonly Dictionary<string, bool> OpenGroups = new();
+    /// <summary>Rows that belong to the row before them (a slider of a choice above it): no line between them.</summary>
+    readonly HashSet<FrameworkElement> _children = new();
+    /// <summary>The section (or the account's / connection's body) being built: the groups' keys and what a rebuild forgets.</summary>
+    string _scope = "";
+    int _ordinal;
+    bool _syncQueued;
+
+    void BeginScope(string scope)
+    {
+        // a body built again (another account): what the old one registered goes
+        _groups.RemoveAll(g => g.Scope == scope);
+        _when.RemoveAll(w => w.Scope == scope);
+        _scope = scope;
+        _ordinal = 0;
+    }
 
     T When<T>(T el, Func<bool> when) where T : FrameworkElement
     {
-        _when.Add((el, when));
+        _when.Add((el, when, _scope));
         el.Visibility = when() ? Visibility.Visible : Visibility.Collapsed;
         return el;
     }
 
-    /// <summary>A setting changed: the rows that depend on it appear or go, the lines between rows follow.</summary>
+    /// <summary>A row that belongs to the row before it (shown with it, no line between them).</summary>
+    T Child<T>(T el) where T : FrameworkElement
+    {
+        _children.Add(el);
+        return el;
+    }
+
+    void SyncSoon()
+    {
+        if (_syncQueued) return;
+        _syncQueued = true;
+        Dispatcher.BeginInvoke(() => { _syncQueued = false; Sync(); }, DispatcherPriority.Loaded);
+    }
+
+    /// <summary>A setting changed: the rows that depend on it appear or go, the lines between rows and the folded headers follow.</summary>
     void Sync()
     {
-        foreach (var (el, when) in _when) el.Visibility = when() ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var (group, rows) in _groups)
+        foreach (var (el, when, _) in _when) el.Visibility = when() ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var g in _groups)
         {
             bool first = true;
-            foreach (FrameworkElement r in rows.Children)
+            var names = new List<string>();
+            foreach (FrameworkElement r in g.Rows.Children)
             {
                 if (r.Visibility != Visibility.Visible) continue;
-                if (r is Border b) b.BorderThickness = new Thickness(0, first ? 0 : 1, 0, 0);
+                if (r is Border b) b.BorderThickness = new Thickness(0, first || _children.Contains(b) ? 0 : 1, 0, 0);
+                if (r is Border { Child: FrameworkElement { Tag: string name } } && !_children.Contains(r)) names.Add(name);
                 first = false;
             }
-            if (first) group.Visibility = Visibility.Collapsed; // nothing to show (a hidden group's own When decides otherwise)
-            else if (!_when.Any(w => ReferenceEquals(w.El, group))) group.Visibility = Visibility.Visible;
+            bool on = g.On?.Invoke() ?? true;
+            bool open = g.Header == null || g.Open && on;
+            if (first && g.On == null) g.Outer.Visibility = Visibility.Collapsed; // nothing to show (a hidden group's own When decides otherwise)
+            else if (!_when.Any(w => ReferenceEquals(w.El, g.Outer))) g.Outer.Visibility = Visibility.Visible;
+            g.Body.Visibility = open && !first ? Visibility.Visible : Visibility.Collapsed;
+            if (g.Header != null)
+            {
+                double r = Th.Corner(8);
+                g.Header.CornerRadius = g.Body.Visibility == Visibility.Visible ? new CornerRadius(r, r, 0, 0) : new CornerRadius(r);
+                g.Header.Cursor = on && !first ? Cursors.Hand : null;
+                if (g.Chevron != null)
+                {
+                    g.Chevron.Visibility = on && !first ? Visibility.Visible : Visibility.Hidden;
+                    g.Chevron.Text = open ? "" : "";
+                }
+                System.Windows.Automation.AutomationProperties.SetItemStatus(g.Header, open ? L.T("rozwinięta") : L.T("zwinięta"));
+            }
+            if (g.Sub != null)
+            {
+                // open: what the group is for (if it says); folded: that, or the names of what is inside
+                string text = open ? g.Hint ?? "" : g.Hint ?? string.Join(", ", names.Select((n, i) => i == 0 ? n : Lower(n)));
+                g.Sub.Text = text;
+                g.Sub.Visibility = text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
         }
     }
 
-    /// <summary>A group: a small heading (none for the section's first choice) and one card holding the rows, a fine line between them.</summary>
-    FrameworkElement Group(string? title, params FrameworkElement[] rows) => Group(title, (string?)null, rows);
+    /// <summary>"Kolor akcentu" → "kolor akcentu" in a list after a comma (names like "CPU" or "Notion" stay).</summary>
+    static string Lower(string s) => s.Length > 1 && char.IsUpper(s[0]) && char.IsLower(s[1]) ? char.ToLower(s[0], L.Culture) + s[1..] : s;
 
-    /// <summary>A group with a short line under its heading saying what the card is for (accounts, connections).</summary>
-    FrameworkElement Group(string? title, string? hint, params FrameworkElement[] rows)
+    /// <summary>A group of rows (no name: always open, for a section's first choice).</summary>
+    FrameworkElement Group(string? title, params FrameworkElement[] rows) => MakeGroup(title, null, null, rows);
+
+    /// <summary>A group with a short line under its name saying what it is for (accounts, connections).</summary>
+    FrameworkElement Group(string? title, string? hint, params FrameworkElement[] rows) => MakeGroup(title, hint, null, rows);
+
+    /// <summary>A group that is one feature with a switch in its header (the dock, the forecast): its rows only while it is on.</summary>
+    FrameworkElement SwitchGroup(string title, string? hint, bool value, Action<bool> set, params FrameworkElement[] rows)
     {
-        var outer = new StackPanel { Margin = new Thickness(0, title == null ? 4 : 14, 0, 0) };
-        if (title != null)
+        bool current = value;
+        GroupInfo? info = null;
+        var sw = SwitchControl(title, value, v =>
         {
-            var head = Label(L.Up(title), 10.5, "FgDim", FontWeights.Bold);
-            head.Margin = new Thickness(2, 0, 0, hint == null ? 6 : 2);
-            outer.Children.Add(head);
-        }
-        if (HintText(hint) is { } h) { h.Margin = new Thickness(2, 0, 0, 7); outer.Children.Add(h); }
-        var list = new StackPanel();
-        foreach (var r in rows)
-        {
-            // each row in its own frame: the line above it (Sync leaves it off the first visible one)
-            var frame = new Border { Child = r, Padding = new Thickness(14, 10, 14, 10), BorderBrush = new SolidColorBrush(Th.Ink(0x10)), Visibility = r.Visibility };
-            if (_when.FindIndex(w => ReferenceEquals(w.El, r)) is var i and >= 0) { _when[i] = (frame, _when[i].When); r.Visibility = Visibility.Visible; }
-            list.Children.Add(frame);
-        }
-        outer.Children.Add(new Border
+            current = v;
+            set(v);
+            if (v && info != null) { info.Open = true; OpenGroups[info.Key] = true; } // switched on: its options at hand
+        });
+        var outer = MakeGroup(title, hint, (sw, () => current), rows);
+        info = _groups[^1];
+        return outer;
+    }
+
+    void SetOpen(GroupInfo g, bool open)
+    {
+        if (g.Open == open) return;
+        g.Open = open;
+        OpenGroups[g.Key] = open;
+        Sync();
+        if (open) Anim.Enter(g.Body, 0, -4, 160);
+    }
+
+    FrameworkElement MakeGroup(string? title, string? hint, (System.Windows.Controls.Primitives.ToggleButton Switch, Func<bool> On)? toggle, FrameworkElement[] rows)
+    {
+        var g = new GroupInfo { Hint = hint, Scope = _scope, On = toggle?.On };
+        var outer = new StackPanel { Margin = new Thickness(0, title == null ? 4 : 8, 0, 0) };
+        var card = new Border
         {
             CornerRadius = new CornerRadius(Th.Corner(8)), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Th.Ink(0x12)),
-            Background = new SolidColorBrush(Th.Ink(0x07)), Child = list,
-        });
-        _groups.Add((outer, list));
-        Dispatcher.BeginInvoke(Sync, DispatcherPriority.Loaded);
+            Background = new SolidColorBrush(Th.Ink(0x07)),
+        };
+        var inside = new StackPanel();
+        card.Child = inside;
+        outer.Children.Add(card);
+
+        var list = new StackPanel();
+        bool needed = false;
+        foreach (var r in rows)
+        {
+            // each row in its own frame: the line above it (Sync leaves it off the first visible one and off a row's own child)
+            bool child = _children.Contains(r);
+            var frame = new Border { Child = r, Padding = child ? new Thickness(14, 0, 14, 10) : new Thickness(14, 10, 14, 10), BorderBrush = new SolidColorBrush(Th.Ink(0x10)), Visibility = r.Visibility };
+            if (child) { _children.Add(frame); Dim(r); }
+            int i = _when.FindIndex(w => ReferenceEquals(w.El, r));
+            if (i >= 0) { _when[i] = (frame, _when[i].When, _when[i].Scope); r.Visibility = Visibility.Visible; }
+            list.Children.Add(frame);
+            needed |= HasNeeded(r);
+        }
+        g.Rows = list;
+        g.Body = new Border { Child = list };
+
+        if (title != null)
+        {
+            // the header: the name, under it a short line, the switch (if any) and the chevron on the right
+            g.Key = _scope + "/" + title;
+            var head = new Grid();
+            head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var names = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            var name = Label(title, 13, "Fg", FontWeights.SemiBold);
+            names.Children.Add(name);
+            g.Sub = Label("", 11.5, "FgFaint");
+            g.Sub.TextTrimming = TextTrimming.CharacterEllipsis;
+            g.Sub.Margin = new Thickness(0, 2, 0, 0);
+            names.Children.Add(g.Sub);
+            head.Children.Add(names);
+            if (toggle is { } t)
+            {
+                t.Switch.Margin = new Thickness(18, 0, 0, 0);
+                t.Switch.VerticalAlignment = VerticalAlignment.Center;
+                Grid.SetColumn(t.Switch, 1);
+                head.Children.Add(t.Switch);
+            }
+            g.Chevron = new TextBlock { FontFamily = Ui.Font("IconFont"), FontSize = 10, Foreground = Ui.Res("FgDim"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 2, 0) };
+            Grid.SetColumn(g.Chevron, 2);
+            head.Children.Add(g.Chevron);
+            var header = new Border { Child = head, Padding = new Thickness(14, 11, 14, 11), Background = Brushes.Transparent, Focusable = true };
+            System.Windows.Automation.AutomationProperties.SetName(header, title);
+            Anim.HoverBackground(header, Colors.Transparent, Th.Ink(0x0A));
+            g.Header = header;
+            // the first group of a section opens by itself (and one that still needs something filled in), the rest folded
+            g.Open = OpenGroups.TryGetValue(g.Key, out var known) ? known : _ordinal == 0 || needed;
+            _ordinal++;
+            void Flip()
+            {
+                if (g.On?.Invoke() == false || g.Rows.Children.OfType<FrameworkElement>().All(r => r.Visibility != Visibility.Visible)) return;
+                SetOpen(g, !g.Open);
+            }
+            header.MouseLeftButtonUp += (_, e) => { if (toggle == null || e.OriginalSource is not DependencyObject d || !IsInside(d, toggle.Value.Switch)) Flip(); };
+            header.KeyDown += (_, e) => { if (e.Key is Key.Enter or Key.Space && ReferenceEquals(e.OriginalSource, header)) { Flip(); e.Handled = true; } };
+            inside.Children.Add(header);
+            g.Body.BorderThickness = new Thickness(0, 1, 0, 0);
+            g.Body.BorderBrush = new SolidColorBrush(Th.Ink(0x10));
+        }
+        inside.Children.Add(g.Body);
+        g.Outer = outer;
+        _groups.Add(g);
+        SyncSoon();
         return outer;
+    }
+
+    /// <summary>A row that belongs to the one above it: its name a step quieter.</summary>
+    static void Dim(FrameworkElement row)
+    {
+        if (row is Grid { Children: [StackPanel { Children: [TextBlock name, ..] }, ..] }) { name.Foreground = Ui.Res("FgDim"); name.FontSize = 12; }
+    }
+
+    /// <summary>Does a row hold a "UZUPEŁNIJ" mark (then its group opens by itself)?</summary>
+    static bool HasNeeded(DependencyObject d)
+    {
+        if (d is FrameworkElement { Tag: "needed" }) return true;
+        foreach (var c in LogicalTreeHelper.GetChildren(d).OfType<DependencyObject>())
+            if (HasNeeded(c)) return true;
+        return false;
     }
 
     /// <summary>The name and the short line under it (the left side of a row).</summary>
@@ -1452,6 +1680,7 @@ public sealed class SettingsWindow : DarkWindow
         var g = new Grid();
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 150 });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        g.Tag = label;
         g.Children.Add(Caption(label, hint));
         control.VerticalAlignment = VerticalAlignment.Center;
         control.Margin = new Thickness(18, control.Margin.Top, 0, control.Margin.Bottom);
@@ -1463,7 +1692,7 @@ public sealed class SettingsWindow : DarkWindow
     /// <summary>A row with a wide control (a list, a text field): under the name, the whole width.</summary>
     static FrameworkElement Stacked(string label, string? hint, FrameworkElement control, bool needed = false)
     {
-        var sp = new StackPanel();
+        var sp = new StackPanel { Tag = label };
         sp.Children.Add(Caption(label, HintText(hint)));
         if (needed && sp.Children[0] is StackPanel cap && cap.Children[0] is TextBlock name)
         {
@@ -1482,16 +1711,23 @@ public sealed class SettingsWindow : DarkWindow
     /// <summary>An on / off row: a switch on the right.</summary>
     FrameworkElement Toggle(string label, string? hint, bool value, Action<bool> set)
     {
-        var sw = new System.Windows.Controls.Primitives.ToggleButton { Style = (Style)Application.Current.Resources["Switch"], IsChecked = value };
-        System.Windows.Automation.AutomationProperties.SetName(sw, label);
-        sw.Checked += (_, _) => { set(true); App.Instance.ApplySettings(); Sync(); };
-        sw.Unchecked += (_, _) => { set(false); App.Instance.ApplySettings(); Sync(); };
+        var sw = SwitchControl(label, value, set);
         var row = Row(label, hint, sw);
         // the whole row toggles (a bigger target than the switch)
         row.Cursor = Cursors.Hand;
         row.MouseLeftButtonUp += (_, e) => { if (e.OriginalSource is DependencyObject d && !IsInside(d, sw)) sw.IsChecked = sw.IsChecked != true; };
         if (row is Panel panel) panel.Background = Brushes.Transparent;
         return row;
+    }
+
+    /// <summary>The switch alone: sets, applies (the settings are saved), the dependent rows follow.</summary>
+    System.Windows.Controls.Primitives.ToggleButton SwitchControl(string name, bool value, Action<bool> set)
+    {
+        var sw = new System.Windows.Controls.Primitives.ToggleButton { Style = (Style)Application.Current.Resources["Switch"], IsChecked = value };
+        System.Windows.Automation.AutomationProperties.SetName(sw, name);
+        sw.Checked += (_, _) => { set(true); App.Instance.ApplySettings(); Sync(); };
+        sw.Unchecked += (_, _) => { set(false); App.Instance.ApplySettings(); Sync(); };
+        return sw;
     }
 
     static bool IsInside(DependencyObject d, DependencyObject parent)
@@ -1529,7 +1765,7 @@ public sealed class SettingsWindow : DarkWindow
             CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 1, 6, 2), Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
             Background = new SolidColorBrush(Color.FromArgb(0x30, 0xE8, 0xA2, 0x3A)), BorderBrush = new SolidColorBrush(Color.FromRgb(0xE8, 0xA2, 0x3A)), BorderThickness = new Thickness(1),
             Child = new TextBlock { Text = L.T("UZUPEŁNIJ"), FontSize = 9.5, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(Color.FromRgb(0xE8, 0xA2, 0x3A)) },
-            ToolTip = why,
+            ToolTip = why, Tag = "needed",
         };
         return b;
     }

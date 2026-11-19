@@ -115,9 +115,7 @@ sealed class DockView : Canvas
         // the bell dies away where the pointer was last (the pointer stays where it left), not all at once
         MouseLeave += (_, _) => { _bell.Leave(Now); _hovered = null; _hoverPreview.Stop(); _hidePreview.Stop(); _hidePreview.Start(); Animate(); };
         StartHooks();
-        AppBadges.Changed += UpdateBadges;
-        AppBadges.Start();
-        _badgesOn = true;
+        SyncBadges();
         Unloaded += (_, _) => Detach();
         Refresh();
     }
@@ -132,6 +130,15 @@ sealed class DockView : Canvas
         StopHooks();
         Unhook();
         if (_badgesOn) { _badgesOn = false; AppBadges.Changed -= UpdateBadges; AppBadges.Stop(); }
+    }
+
+    /// <summary>The counters' reading on or off with the setting (off: the notification database is not opened or watched at all).</summary>
+    void SyncBadges()
+    {
+        if (S.DockBadges == _badgesOn) return;
+        _badgesOn = S.DockBadges;
+        if (_badgesOn) { AppBadges.Changed += UpdateBadges; AppBadges.Start(); }
+        else { AppBadges.Changed -= UpdateBadges; AppBadges.Stop(); }
         foreach (var t in new[] { _refresh, _thinCheck, _hoverPreview, _hidePreview }) t.Stop();
         _preview.Dismiss();
         _preview.Close();
@@ -267,9 +274,11 @@ sealed class DockView : Canvas
         if (_paused) return;
         // mid-drag the row keeps the order being dragged: read again once the icon is dropped
         if (_dragging != null) { _refreshAfterDrop = true; return; }
+        SyncBadges();
         List<TaskList.Task> tasks;
         try { tasks = TaskList.Tasks(); }
         catch (Exception ex) { Log.Error("dock tasks", ex); return; }
+        AppBadges.KeepPackages(tasks.Select(t => t.Pid));
         var groups = new Dictionary<string, List<TaskList.Task>>(StringComparer.OrdinalIgnoreCase);
         var pinByExe = S.DockPins.Where(p => !string.IsNullOrEmpty(p.Exe)).GroupBy(p => p.Exe!, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Key, StringComparer.OrdinalIgnoreCase);
         foreach (var t in tasks)
@@ -480,6 +489,9 @@ sealed class DockView : Canvas
         UpdateBadges();
     }
 
+    static readonly SolidColorBrush DarkInk = Frozen(Color.FromRgb(0x1A, 0x1A, 0x1C));
+    static SolidColorBrush Frozen(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
+
     /// <summary>The counters read again (the notification database or a title changed, a program asked for attention).</summary>
     void UpdateBadges()
     {
@@ -487,7 +499,7 @@ sealed class DockView : Canvas
         {
             var c = !S.DockBadges ? default
                 : AppBadges.For(e.Windows.Select(w => w.AppId).Concat(e.Windows.Select(w => AppBadges.PackageAppId(w.Pid))).Append(e.Pin?.AppId),
-                                e.Windows.Select(w => w.Exe).Append(e.Pin?.Exe), e.Windows.Select(w => w.Title));
+                                e.Windows.Select(w => w.Exe).Append(e.Pin?.Exe), e.Windows.Select(w => (w.Title, w.Exe)));
             // a program that flashes for attention without a number: a dot
             if (S.DockBadges && !c.Any && e.Attention) c = new AppBadges.Count(0, true);
             bool grew = c.N > e.Count.N || c.Dot && !e.Count.Any;
@@ -496,7 +508,7 @@ sealed class DockView : Canvas
             e.BadgeText.Text = c.N > 99 ? "99+" : c.N > 0 ? c.N.ToString() : "";
             // the number white on a dark or vivid accent, dark on a light one (the grey-white accent)
             if (Ui.Res("AccentBrush") is SolidColorBrush acc)
-                e.BadgeText.Foreground = 0.2126 * acc.Color.R + 0.7152 * acc.Color.G + 0.0722 * acc.Color.B > 170 ? new SolidColorBrush(Color.FromRgb(0x1A, 0x1A, 0x1C)) : Brushes.White;
+                e.BadgeText.Foreground = 0.2126 * acc.Color.R + 0.7152 * acc.Color.G + 0.0722 * acc.Color.B > 170 ? DarkInk : Brushes.White;
             System.Windows.Automation.AutomationProperties.SetName(e.Visual, c.N > 0 ? L.F("{0} – powiadomienia: {1}", e.Name, c.N) : e.Name);
             // a new one: the counter pops (a short spring of its size)
             if (grew && Anim.On && e.Badge.RenderTransform is ScaleTransform st)

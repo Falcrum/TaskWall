@@ -41,6 +41,8 @@ static class AppBadges
     static FileSystemWatcher? _watcher;
     static DispatcherTimer? _debounce, _fallback;
     static bool _reading, _again;
+    /// <summary>When the first change not yet read came (0: none waiting).</summary>
+    static long _pendingSince;
 
     static string Folder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "Windows", "Notifications");
 
@@ -49,7 +51,7 @@ static class AppBadges
     {
         if (_users++ > 0) return;
         _debounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-        _debounce.Tick += (_, _) => { _debounce.Stop(); ReadSoon(); };
+        _debounce.Tick += (_, _) => { _debounce.Stop(); _pendingSince = 0; ReadSoon(); };
         _fallback = new DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
         _fallback.Tick += (_, _) => ReadSoon();
         _fallback.Start();
@@ -58,12 +60,26 @@ static class AppBadges
             if (Directory.Exists(Folder))
             {
                 _watcher = new FileSystemWatcher(Folder, "wpndatabase.db*") { NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size };
-                _watcher.Changed += (_, _) => System.Windows.Application.Current?.Dispatcher.BeginInvoke(() => { if (_debounce == null) return; _debounce.Stop(); _debounce.Start(); });
+                _watcher.Changed += (_, _) => System.Windows.Application.Current?.Dispatcher.BeginInvoke(Changed_);
                 _watcher.EnableRaisingEvents = true;
             }
         }
         catch (Exception ex) { Log.Error("badges watch", ex); }
         ReadSoon();
+    }
+
+    /// <summary>
+    /// The database changed: read half a second after the last change (a burst of writes is one read), but at the latest 2 s after
+    /// the first one (a notification that updates its progress all the time must not hold back a new message's counter).
+    /// </summary>
+    static void Changed_()
+    {
+        if (_debounce == null) return;
+        long now = Environment.TickCount64;
+        if (_pendingSince == 0) _pendingSince = now;
+        _debounce.Stop();
+        if (now - _pendingSince >= 2000) { _pendingSince = 0; ReadSoon(); }
+        else _debounce.Start();
     }
 
     /// <summary>The last dock is gone: no watcher, no timers.</summary>
@@ -75,6 +91,10 @@ static class AppBadges
         _debounce?.Stop();
         _fallback?.Stop();
         _debounce = _fallback = null;
+        _pendingSince = 0;
+        // nothing kept from the database once nobody shows it (the counters switched off)
+        _byId = new(StringComparer.OrdinalIgnoreCase);
+        _byExe = new(StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>Reads on a worker thread (the database can be big and busy); one read at a time, a change during it reads once more.</summary>
@@ -110,7 +130,7 @@ static class AppBadges
     /// The count for one dock icon: its windows' app ids (and their packages' ids), the pinned program's file, its windows' titles.
     /// The biggest of the numbers wins (a badge of 3 and 3 notifications in the centre are the same 3 messages).
     /// </summary>
-    public static Count For(IEnumerable<string?> appIds, IEnumerable<string?> exes, IEnumerable<string> titles)
+    public static Count For(IEnumerable<string?> appIds, IEnumerable<string?> exes, IEnumerable<(string Title, string? Exe)> titles)
     {
         int n = 0;
         bool dot = false;
@@ -119,47 +139,47 @@ static class AppBadges
         {
             if (_byId.TryGetValue(id!, out var c)) Take(c);
             // Firefox notifies as "FirefoxToast-<its id>", its windows carry "<its id>"
-            foreach (var kv in _byId) if (kv.Key.EndsWith("-" + id, StringComparison.OrdinalIgnoreCase)) Take(kv.Value);
+            var suffix = "-" + id;
+            foreach (var kv in _byId) if (kv.Key.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) Take(kv.Value);
         }
         foreach (var exe in exes.Where(e => !string.IsNullOrEmpty(e)).Distinct(StringComparer.OrdinalIgnoreCase))
             if (_byExe.TryGetValue(exe!, out var c)) Take(c);
-        foreach (var t in titles) n = Math.Max(n, TitleCount(t));
+        foreach (var (t, exe) in titles)
+            if (!string.Equals(Path.GetFileName(exe), "explorer.exe", StringComparison.OrdinalIgnoreCase)) n = Math.Max(n, TitleCount(t)); // folder names ("Raport (2)")
         return new Count(n, dot && n == 0);
     }
 
-    static readonly Regex TitleStart = new(@"^\((\d{1,4})\)\s", RegexOptions.Compiled);
-    static readonly Regex TitleEnd = new(@"\s\((\d{1,4})\)$", RegexOptions.Compiled);
-
-    /// <summary>"(3) Messenger", "Telegram (12)": the number a window's title shows, or 0.</summary>
-    public static int TitleCount(string title)
-    {
-        var m = TitleStart.Match(title);
-        if (!m.Success) m = TitleEnd.Match(title);
-        return m.Success && int.TryParse(m.Groups[1].Value, out var v) ? v : 0;
-    }
+    /// <summary>"(3) Messenger", "Telegram (12)": the number a window's title shows, or 0 (see <see cref="BadgeLogic"/>).</summary>
+    public static int TitleCount(string title) => BadgeLogic.TitleCount(title);
 
     // ---------- the database ----------
 
     /// <summary>The program's id → the notifications waiting in the centre (not expired) and its badge (a number, or a dot for "alert").</summary>
-    static Dictionary<string, Count> Read()
+    static Dictionary<string, Count>? Read()
     {
         var result = new Dictionary<string, Count>(StringComparer.OrdinalIgnoreCase);
         var file = Path.Combine(Folder, "wpndatabase.db");
         if (!File.Exists(file)) return result;
-        if (Sqlite.sqlite3_open_v2(Encoding.UTF8.GetBytes(file + "\0"), out var db, 0x1 /* READONLY */, IntPtr.Zero) != 0) { Sqlite.sqlite3_close_v2(db); return result; }
+        if (Sqlite.sqlite3_open_v2(Encoding.UTF8.GetBytes(file + "\0"), out var db, 0x1 /* READONLY */, IntPtr.Zero) != 0) { Sqlite.sqlite3_close_v2(db); return null; }
         try
         {
             Sqlite.sqlite3_busy_timeout(db, 300);
             // the payload only of badges (<badge value="3"/>): what a notification says is never read
             const string sql = "SELECT h.PrimaryId, n.Type, CASE WHEN n.Type = 'badge' THEN CAST(n.Payload AS TEXT) END, n.ExpiryTime " +
                                "FROM Notification n JOIN NotificationHandler h ON h.RecordId = n.HandlerId WHERE n.Type IN ('toast', 'badge')";
-            if (Sqlite.sqlite3_prepare_v2(db, Encoding.UTF8.GetBytes(sql + "\0"), -1, out var st, IntPtr.Zero) != 0) return result;
+            if (Sqlite.sqlite3_prepare_v2(db, Encoding.UTF8.GetBytes(sql + "\0"), -1, out var st, IntPtr.Zero) is var rc and not 0)
+            {
+                // the database looks different (another Windows build): said once, the counters stay as they were
+                if (!_schemaLogged) { _schemaLogged = true; Log.Error($"badges: the notification database can't be read (prepare {rc})"); }
+                return null;
+            }
             try
             {
                 long now = DateTime.UtcNow.ToFileTimeUtc();
                 var toasts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                 var badges = new Dictionary<string, Count>(StringComparer.OrdinalIgnoreCase);
-                while (Sqlite.sqlite3_step(st) == 100 /* ROW */)
+                int step;
+                while ((step = Sqlite.sqlite3_step(st)) == 100 /* ROW */)
                 {
                     var id = Text(st, 0);
                     if (string.IsNullOrEmpty(id)) continue;
@@ -170,6 +190,8 @@ static class AppBadges
                     }
                     else if (Badge(Text(st, 2)) is { Any: true } b) badges[id] = b;
                 }
+                // busy (Windows writing a checkpoint), an I/O error: not "no notifications" – the next change or minute reads again
+                if (step != 101 /* DONE */) return null;
                 foreach (var id in toasts.Keys.Union(badges.Keys, StringComparer.OrdinalIgnoreCase))
                 {
                     var b = badges.GetValueOrDefault(id);
@@ -182,6 +204,8 @@ static class AppBadges
         finally { Sqlite.sqlite3_close_v2(db); }
         return result;
     }
+
+    static bool _schemaLogged;
 
     static readonly Regex BadgeValue = new(@"value\s*=\s*""([^""]*)""", RegexOptions.Compiled);
 
@@ -216,7 +240,6 @@ static class AppBadges
     public static string? PackageAppId(uint pid)
     {
         if (_packages.TryGetValue(pid, out var known)) return known;
-        if (_packages.Count > 400) _packages.Clear();
         string? id = null;
         var h = OpenProcess(0x1000 /* QUERY_LIMITED_INFORMATION */, false, pid);
         if (h != IntPtr.Zero)
@@ -233,6 +256,16 @@ static class AppBadges
     }
 
     static readonly Dictionary<uint, string?> _packages = new();
+
+    /// <summary>
+    /// Forgets the processes that have no window any more (the dock's refresh after windows came and went): a process id Windows
+    /// gives to a new program must not keep the old one's package (WhatsApp's count on another program's icon).
+    /// </summary>
+    public static void KeepPackages(IEnumerable<uint> pids)
+    {
+        var alive = pids.ToHashSet();
+        foreach (var pid in _packages.Keys.Where(k => !alive.Contains(k)).ToList()) _packages.Remove(pid);
+    }
 
     [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
