@@ -743,9 +743,9 @@ static partial class L
         ("Zawsze", "Always"),
         // 0.47: three themes, the search field, no gap with square corners
         ("Glass – szkło na rozmytej tapecie", "Glass – glass over the blurred wallpaper"),
-        ("Ciemny – płaski, grafitowy", "Dark – flat graphite"),
+        ("Ciemny – neutralny grafit", "Dark – neutral graphite"),
         ("Automatycznie z jasności tapety (jasny albo Glass)", "Automatically from the wallpaper's brightness (light or Glass)"),
-        ("Jasny i Glass: szkło na rozmytej tapecie (jasne albo ciemne). Ciemny: płaskie, grafitowe panele z cienkimi liniami i małymi zaokrągleniami, bez tapety pod spodem i bez poświaty – ustawienia szkła, wzoru tła i poświaty go nie dotyczą. Zmiana motywu wymaga ponownego uruchomienia.", "Light and Glass: glass over the blurred wallpaper (light or dark). Dark: flat graphite panels with fine lines and small corners, no wallpaper behind and no glow – the glass, pattern and glow settings don't apply to it. Changing the theme needs a restart."),
+        ("Jasny i Glass: szkło na rozmytej tapecie (jasne albo ciemne, z odcieniem tapety). Ciemny: neutralne, grafitowe kolory bez odcienia tapety, cienkie linie, małe zaokrąglenia i bez poświaty. Przezroczystość, rozmycie i wzór tła działają w każdym motywie – zupełnie płaski Ciemny daje „Bez przezroczystości”. Zmiana motywu wymaga ponownego uruchomienia.", "Light and Glass: glass over the blurred wallpaper (light or dark, in the wallpaper's hue). Dark: neutral graphite colours without the wallpaper's hue, fine lines, small corners and no glow. Transparency, blur and the pattern work in every theme – a completely flat Dark is “No transparency”. Changing the theme needs a restart."),
         ("Wyszukiwarka", "Search"),
         ("Paleta poleceń PowerToys (Win+Alt+Spacja)", "PowerToys Command Palette (Win+Alt+Space)"),
         ("PowerToys Run (Alt+Spacja)", "PowerToys Run (Alt+Space)"),

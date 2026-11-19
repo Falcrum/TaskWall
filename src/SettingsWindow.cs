@@ -1064,7 +1064,7 @@ public sealed class SettingsWindow : DarkWindow
         // theme: applied when the app starts (all windows are built in it)
         var theme = new ComboBox { Width = 330, HorizontalAlignment = HorizontalAlignment.Left };
         // Glass: the dark tint over the blurred wallpaper (the theme TaskWall had so far, "dark" in the settings file); Dark: flat graphite
-        foreach (var (code, label) in new[] { ("light", L.T("Jasny (do jasnych tapet)")), ("dark", L.T("Glass – szkło na rozmytej tapecie")), ("studio", L.T("Ciemny – płaski, grafitowy")), ("auto", L.T("Automatycznie z jasności tapety (jasny albo Glass)")) })
+        foreach (var (code, label) in new[] { ("light", L.T("Jasny (do jasnych tapet)")), ("dark", L.T("Glass – szkło na rozmytej tapecie")), ("studio", L.T("Ciemny – neutralny grafit")), ("auto", L.T("Automatycznie z jasności tapety (jasny albo Glass)")) })
             theme.Items.Add(new ComboBoxItem { Content = label, Tag = code });
         theme.SelectedItem = theme.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == S.Theme) ?? theme.Items[0];
         var restartTheme = Btn(L.T("Uruchom ponownie"), "SecondaryButton", (_, _) => App.Instance.Restart());
@@ -1079,7 +1079,7 @@ public sealed class SettingsWindow : DarkWindow
         var themeRow = new StackPanel { Orientation = Orientation.Horizontal };
         themeRow.Children.Add(theme);
         themeRow.Children.Add(restartTheme);
-        p.Children.Add(Pair(L.T("Motyw"), themeRow, L.T("Jasny i Glass: szkło na rozmytej tapecie (jasne albo ciemne). Ciemny: płaskie, grafitowe panele z cienkimi liniami i małymi zaokrągleniami, bez tapety pod spodem i bez poświaty – ustawienia szkła, wzoru tła i poświaty go nie dotyczą. Zmiana motywu wymaga ponownego uruchomienia.")));
+        p.Children.Add(Pair(L.T("Motyw"), themeRow, L.T("Jasny i Glass: szkło na rozmytej tapecie (jasne albo ciemne, z odcieniem tapety). Ciemny: neutralne, grafitowe kolory bez odcienia tapety, cienkie linie, małe zaokrąglenia i bez poświaty. Przezroczystość, rozmycie i wzór tła działają w każdym motywie – zupełnie płaski Ciemny daje „Bez przezroczystości”. Zmiana motywu wymaga ponownego uruchomienia.")));
         p.Children.Add(Check(L.T("Bez przezroczystości (pełne, matowe tło)"), S.Opaque, v => S.Opaque = v));
         p.Children.Add(Check(L.T("Zaokrąglone narożniki"), S.RoundCorners, v => S.RoundCorners = v, L.T("Tablica, paski, kalendarz i podglądy z zaokrąglonymi rogami. Wyłączone: wszystko z prostymi narożnikami.")));
         var pattern = new ComboBox { Width = 220, HorizontalAlignment = HorizontalAlignment.Left };

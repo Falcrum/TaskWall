@@ -257,6 +257,7 @@ public class GlassWindow : Window
         int ex = Native.GetWindowLong(Hwnd, Native.GWL_EXSTYLE);
         Native.SetWindowLong(Hwnd, Native.GWL_EXSTYLE, (ex | Native.WS_EX_TOOLWINDOW) & ~Native.WS_EX_APPWINDOW);
         HwndSource.FromHwnd(Hwnd)?.AddHook(WndProc);
+        Native.SquareSystemCorners(Hwnd); // the corners are this window's own (Radius / Settings → Zaokrąglone narożniki), not Windows'
         All.Add(this);
         EnsureForegroundHook();
     }

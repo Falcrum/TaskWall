@@ -57,8 +57,8 @@ public partial class App : Application
     /// </summary>
     static double GapDip => Settings.RoundCorners ? Math.Clamp(Settings.Gap, 0, 40) : 0;
 
-    /// <summary>The wallpaper blurred behind the glass: the Glass and the light themes (the dark one is flat and opaque).</summary>
-    static bool UseGlass => Settings.Blur && !Th.Studio;
+    /// <summary>The wallpaper blurred behind the glass (Settings → Wygląd → Rozmycie), in every theme.</summary>
+    static bool UseGlass => Settings.Blur;
     SettingsWindow? _settingsWindow;
     TrayIcon? _tray;
     Mutex? _mutex;
@@ -555,16 +555,12 @@ public partial class App : Application
         byte a = (byte)Math.Clamp(Settings.TintOpacity * 255, Settings.Blur ? 0 : 40, 255);
         // no transparency at all: a solid surface in the wallpaper's hue (like the dialogs), nothing shows through
         Resources["GlassTint"] = new SolidColorBrush(!Settings.Opaque ? Th.Glass(a)
-            : _surfaceTint is { } st ? (Th.Light ? Wallpaper.Surface(st, 0.95, 0.05) : Wallpaper.Surface(st, 0.095, 0.28)) : Th.Glass(255));
+            : _surfaceTint is { } st && !Th.Studio ? (Th.Light ? Wallpaper.Surface(st, 0.95, 0.05) : Wallpaper.Surface(st, 0.095, 0.28)) : Th.Glass(255));
         Resources["GlassPattern"] = Pattern(Settings.Pattern, Settings.PatternVisibility, Settings.PatternScale);
-        if (Th.Studio)
-        {
-            // the dark theme (in the style of Shader Studio): flat graphite surfaces, no wallpaper, no pattern – whatever the glass settings say
-            Resources["GlassTint"] = new SolidColorBrush(Th.Glass(255));
-            Resources["GlassPattern"] = Brushes.Transparent;
-        }
-        // menus, tool tips and dialogs: the hue of the wallpaper behind the board, so they sit with the glass
-        else if (_surfaceTint is { } tint)
+        // menus, tool tips and dialogs: the hue of the wallpaper behind the board, so they sit with the glass – except in the dark theme
+        // (in the style of Shader Studio), which keeps its neutral graphite; the glass, its transparency and the pattern follow the
+        // settings in every theme
+        if (!Th.Studio && _surfaceTint is { } tint)
         {
             Resources["MenuBg"] = new SolidColorBrush(Th.Light ? Wallpaper.Surface(tint, 0.975, 0.06) : Wallpaper.Surface(tint, 0.13, 0.32));
             Resources["DialogBg"] = new SolidColorBrush(Th.Light ? Wallpaper.Surface(tint, 0.955, 0.06) : Wallpaper.Surface(tint, 0.105, 0.30));
@@ -712,8 +708,7 @@ public partial class App : Application
         double blurPx = Math.Clamp(Settings.BlurStrength, 0, 100) * 1.3 * mon.Scale;
         var br = b.PhysicalRect;
         // without blur the board shows the plain wallpaper at half resolution
-        // (the dark theme: flat, no wallpaper behind the board at all)
-        b.SetGlass(Th.Studio ? null : Settings.Blur ? Wallpaper.RenderGlass(src, br, blurPx) : Wallpaper.RenderGlass(src, br, 0, 0.5));
+        b.SetGlass(Settings.Blur ? Wallpaper.RenderGlass(src, br, blurPx) : Wallpaper.RenderGlass(src, br, 0, 0.5));
         // sharp squares behind the rounded corners: redone only when the board moved or the wallpaper changed
         int c = (int)Math.Ceiling(b.Radius * mon.Scale) + 2;
         var key = $"{src.GetHashCode()}|{br.X},{br.Y},{br.Width},{br.Height}|{c}";

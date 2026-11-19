@@ -303,7 +303,7 @@ public partial class BoardWindow
         SearchBox.Text = "";
         CloseSearch();
         Rebuild();
-        Anim.Enter(_view == ViewMode.Year ? YearHost : _view == ViewMode.Timeline ? TimelineHost : _view == ViewMode.Report ? ReportHost : WeeksGrid, 0, 12, 320);
+        Anim.Enter(_view == ViewMode.Year ? YearHost : _view == ViewMode.Timeline ? TimelineHost : _view == ViewMode.Report ? ReportHost : WeeksGrid, 0, 0, 240); // a fade (see SetView)
     }
 
     public void ShowSearch(string q)

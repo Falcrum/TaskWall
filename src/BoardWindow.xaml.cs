@@ -79,6 +79,7 @@ public partial class BoardWindow : GlassWindow
         }
         MakeOpaque(); // GPU-rendered window; corners are cut by a region and filled with the wallpaper
         InitializeComponent();
+        if (Dev.Arg("--data") != null) Title = "TaskWall (dev)"; // a dev run's board told apart from the installed one (a window capture by its title)
         L.Tree(this); // static XAML texts → English when chosen
         AdoptXamlContent();
         _dayTimer.Tick += (_, _) =>
@@ -341,7 +342,7 @@ public partial class BoardWindow : GlassWindow
         _dayDate = date.Date;
         if (viewChanged) { _view = _lastWeekView; SaveView(_view); }
         Rebuild();
-        if (viewChanged) { Anim.Enter(WeeksGrid, 0, 10, 300); App.Instance.LayoutWindows(); }
+        if (viewChanged) { Anim.Enter(WeeksGrid, 0, 0, 220); App.Instance.LayoutWindows(); } // a fade: a slide ended between pixels and jumped
     }
 
     ReportView? _reportView;
@@ -392,7 +393,8 @@ public partial class BoardWindow : GlassWindow
         _monthFirst = new DateTime(anchor.Year, anchor.Month, 1);
         _year = anchor.Year;
         Rebuild();
-        Anim.Enter(v == ViewMode.Year ? YearHost : v == ViewMode.Timeline ? TimelineHost : v == ViewMode.Report ? ReportHost : WeeksGrid, 0, 10, 300);
+        // a fade only, no slide: a slide ends between pixels (the UI scale times the screen's) and the view jumped by a pixel when it stopped
+        Anim.Enter(v == ViewMode.Year ? YearHost : v == ViewMode.Timeline ? TimelineHost : v == ViewMode.Report ? ReportHost : WeeksGrid, 0, 0, 220);
         App.Instance.LayoutWindows();
         App.Instance.ScheduleTrim();
     }

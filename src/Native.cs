@@ -72,6 +72,16 @@ static class Native
         DwmSetWindowAttribute(hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, ref on, sizeof(int));
     }
 
+    /// <summary>
+    /// Windows 11 rounds every ordinary window's corners by itself: TaskWall's glass windows round (or not) their own, so the
+    /// system's rounding is switched off – with square corners the wallpaper showed in them.
+    /// </summary>
+    public static void SquareSystemCorners(IntPtr hwnd)
+    {
+        int none = 1; // DWMWCP_DONOTROUND
+        DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, ref none, sizeof(int));
+    }
+
     /// <summary>Windows 11: title bar and frame in the dialog's own colour (no separate grey bar), rounded corners.</summary>
     public static void TintFrame(IntPtr hwnd, System.Windows.Media.Color c)
     {
