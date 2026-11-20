@@ -665,6 +665,7 @@ public partial class BoardWindow : GlassWindow
         _topGlow.Background = Glow.Enabled ? Glow.Top() : null;
         // the layer (account) on the right: icon + its name; the private one tinted green so it's obvious
         if (_barCaptions != S.BarCaptions) SetupBarIcons();
+        UpdateMaxButton(); // the width or height set to the whole screen: nothing to maximise
         bool priv = S.Layer == "private";
         if (_layerName != null) _layerName.Text = L.Up(App.AccountName(S.Layer));
         LayerButton.Background = priv ? B(Color.FromArgb(0x40, 0x5C, 0xCB, 0x92)) : B(Th.Ink(0x14));

@@ -51,6 +51,11 @@ public class GlassWindow : Window
     protected readonly Grid Frame = new();
     readonly Border _glass = new();
     readonly Border _tint = new();
+    /// <summary>
+    /// The thin frame, a layer of its own over the tint: a Border draws its background only inside its border, so a frame on the
+    /// tint itself lay over the bare glass – a 1 px line of the light, blurred wallpaper all round the window.
+    /// </summary>
+    readonly Border _outline = new() { IsHitTestVisible = false };
     /// <summary>An optional fine pattern over the glass (dots or a grid, Settings → Wygląd).</summary>
     readonly Border _pattern = new() { IsHitTestVisible = false };
     readonly Border _bodyHost = new();
@@ -73,12 +78,12 @@ public class GlassWindow : Window
         DpiChanged += (_, _) => UpdateRegion();
 
         _tint.SetResourceReference(Border.BackgroundProperty, "GlassTint");
-        _tint.BorderBrush = new SolidColorBrush(Th.Ink(0x2A));
-        _tint.BorderThickness = new Thickness(1);
+        _outline.BorderBrush = new SolidColorBrush(Th.Ink(0x2A));
         Frame.Children.Add(_glass);
         Frame.Children.Add(_tint);
         _pattern.SetResourceReference(Border.BackgroundProperty, "GlassPattern");
         Frame.Children.Add(_pattern);
+        Frame.Children.Add(_outline);
         Frame.Children.Add(_bodyHost);
         Frame.SizeChanged += (_, _) => UpdateClip();
         _shell.Children.Add(Frame);
@@ -136,7 +141,9 @@ public class GlassWindow : Window
         _glass.CornerRadius = r;
         _tint.CornerRadius = r;
         _pattern.CornerRadius = r;
-        _tint.BorderThickness = BorderSides ?? (SquareTopCorners ? new Thickness(1, 0, 1, 1) : new Thickness(1));
+        _outline.CornerRadius = r;
+        // square corners: no frame at all – the windows lie flush with the screen's edges and with each other
+        _outline.BorderThickness = rr <= 0 ? new Thickness(0) : BorderSides ?? (SquareTopCorners ? new Thickness(1, 0, 1, 1) : new Thickness(1));
         UpdateClip();
     }
 

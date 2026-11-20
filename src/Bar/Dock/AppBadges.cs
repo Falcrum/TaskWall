@@ -17,7 +17,10 @@ namespace TaskWall;
 /// put on their taskbar icon (badges, e.g. Teams, WhatsApp, Mail). It is read only, with Windows' own SQLite (winsqlite3.dll), only
 /// the program and the count – never what a notification says – and again when the database changes (a watcher, half a second
 /// later; and once a minute in case a change slipped by). A window's title adds what web apps and many programs show there:
-/// "(3) Messenger", "Telegram (12)".
+/// "(3) Messenger", "Telegram (12)", Slack's "… - 2 new items - Slack".
+/// A notification left in the centre is not "new" for ever: one counts only if it came after the program was last brought to the
+/// front (<see cref="MarkSeen"/>, remembered in the settings of this computer) and within the last 12 hours – programs such as
+/// Claude never take their notifications back, so the centre's count alone would stay up for days.
 /// </summary>
 static class AppBadges
 {
@@ -26,16 +29,23 @@ static class AppBadges
         public bool Any => N > 0 || Dot;
     }
 
-    /// <summary>The counts read last, by the program's id in the database (an AppUserModelID or a known-folder path).</summary>
-    static Dictionary<string, Count> _byId = new(StringComparer.OrdinalIgnoreCase);
-    /// <summary>The same, for ids that are a program's path ("{known folder}/dir/app.exe" resolved to the full path).</summary>
-    static Dictionary<string, Count> _byExe = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>What the database says about one program: its badge, and when each of its notifications still in the centre came (FILETIME, sorted).</summary>
+    public sealed record Info(int Badge, bool Dot, long[] Toasts);
+
+    /// <summary>Read last, by the program's id in the database (an AppUserModelID or a known-folder path).</summary>
+    static Dictionary<string, Info> _byId = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>A program's path → its id, for ids that are a path ("{known folder}/dir/app.exe" resolved to the full path).</summary>
+    static Dictionary<string, string> _exeToId = new(StringComparer.OrdinalIgnoreCase);
+    static string _signature = "";
+
+    /// <summary>The longest a notification counts as new when its program was never brought to the front since (12 h in FILETIME units).</summary>
+    const long MaxAge = 12L * 3600 * 10_000_000;
 
     /// <summary>The counts changed (raised on the UI thread).</summary>
     public static event Action? Changed;
 
     /// <summary>What was read, for the dev check (--open badges): the programs and their counts.</summary>
-    public static string Dump() => string.Join(" | ", _byId.Select(kv => $"{kv.Key}={kv.Value.N}{(kv.Value.Dot ? "•" : "")}")) + " ;; exe: " + string.Join(" | ", _byExe.Keys);
+    public static string Dump() => string.Join(" | ", _byId.Select(kv => $"{kv.Key}: badge {kv.Value.Badge}{(kv.Value.Dot ? "•" : "")}, toasts {kv.Value.Toasts.Length}, unseen {Unseen(kv.Key, kv.Value)}")) + " ;; exe: " + string.Join(" | ", _exeToId.Keys);
 
     static int _users;
     static FileSystemWatcher? _watcher;
@@ -94,7 +104,8 @@ static class AppBadges
         _pendingSince = 0;
         // nothing kept from the database once nobody shows it (the counters switched off)
         _byId = new(StringComparer.OrdinalIgnoreCase);
-        _byExe = new(StringComparer.OrdinalIgnoreCase);
+        _exeToId = new(StringComparer.OrdinalIgnoreCase);
+        _signature = "";
     }
 
     /// <summary>Reads on a worker thread (the database can be big and busy); one read at a time, a change during it reads once more.</summary>
@@ -105,17 +116,18 @@ static class AppBadges
         var ui = System.Windows.Application.Current?.Dispatcher;
         Task.Run(() =>
         {
-            Dictionary<string, Count>? read = null;
+            Dictionary<string, Info>? read = null;
             try { read = Read(); }
             catch (Exception ex) { Log.Error("badges read", ex); }
             ui?.BeginInvoke(() =>
             {
                 _reading = false;
-                if (read != null && !Same(read, _byId))
+                if (read != null && Signature(read) is var sig && sig != _signature)
                 {
                     _byId = read;
-                    _byExe = read.Where(kv => kv.Key.StartsWith('{')).Select(kv => (Path: KnownPath(kv.Key), kv.Value)).Where(x => x.Path != null)
-                        .GroupBy(x => x.Path!, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Value, StringComparer.OrdinalIgnoreCase);
+                    _signature = sig;
+                    _exeToId = read.Keys.Where(k => k.StartsWith('{')).Select(k => (Path: KnownPath(k), Id: k)).Where(x => x.Path != null)
+                        .GroupBy(x => x.Path!, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
                     Changed?.Invoke();
                 }
                 if (_again && _users > 0) { _again = false; ReadSoon(); }
@@ -123,8 +135,49 @@ static class AppBadges
         });
     }
 
-    static bool Same(Dictionary<string, Count> a, Dictionary<string, Count> b) =>
-        a.Count == b.Count && a.All(kv => b.TryGetValue(kv.Key, out var v) && v == kv.Value);
+    /// <summary>What a read found, in one string: nothing to redraw when it is the same as the last one.</summary>
+    static string Signature(Dictionary<string, Info> d) =>
+        string.Join("|", d.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase).Select(kv => $"{kv.Key}:{kv.Value.Badge}:{kv.Value.Dot}:{string.Join(",", kv.Value.Toasts)}"));
+
+    /// <summary>The programs in the database that one dock icon stands for: by its windows' and its packages' app ids, and by its file.</summary>
+    static IEnumerable<string> Matched(IEnumerable<string?> appIds, IEnumerable<string?> exes)
+    {
+        var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var id in appIds.Where(i => !string.IsNullOrEmpty(i)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (_byId.ContainsKey(id!)) found.Add(id!);
+            // Firefox notifies as "FirefoxToast-<its id>", its windows carry "<its id>"
+            var suffix = "-" + id;
+            foreach (var key in _byId.Keys) if (key.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) found.Add(key);
+        }
+        foreach (var exe in exes.Where(e => !string.IsNullOrEmpty(e)).Distinct(StringComparer.OrdinalIgnoreCase))
+            if (_exeToId.TryGetValue(exe!, out var key)) found.Add(key);
+        return found;
+    }
+
+    /// <summary>The program's notifications that came after it was last in front, and within the last 12 hours.</summary>
+    static int Unseen(string id, Info info)
+    {
+        long now = DateTime.UtcNow.ToFileTimeUtc();
+        long seen = App.Settings.DockSeen.TryGetValue(id, out var s) ? s : 0;
+        long floor = Math.Max(seen, now - MaxAge);
+        return info.Toasts.Count(t => t > floor);
+    }
+
+    /// <summary>
+    /// One of the icon's windows came to the front: what its program had waiting counts as seen. True when that changed
+    /// something (the settings are then to be saved); the programs no longer in the database are forgotten at the same time.
+    /// </summary>
+    public static bool MarkSeen(IEnumerable<string?> appIds, IEnumerable<string?> exes)
+    {
+        bool changed = false;
+        long now = DateTime.UtcNow.ToFileTimeUtc();
+        foreach (var id in Matched(appIds, exes))
+            if (Unseen(id, _byId[id]) > 0) { App.Settings.DockSeen[id] = now; changed = true; }
+        if (changed)
+            foreach (var gone in App.Settings.DockSeen.Keys.Where(k => !_byId.ContainsKey(k)).ToList()) App.Settings.DockSeen.Remove(gone);
+        return changed;
+    }
 
     /// <summary>
     /// The count for one dock icon: its windows' app ids (and their packages' ids), the pinned program's file, its windows' titles.
@@ -134,30 +187,26 @@ static class AppBadges
     {
         int n = 0;
         bool dot = false;
-        void Take(Count c) { n = Math.Max(n, c.N); dot |= c.Dot; }
-        foreach (var id in appIds.Where(i => !string.IsNullOrEmpty(i)).Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var id in Matched(appIds, exes))
         {
-            if (_byId.TryGetValue(id!, out var c)) Take(c);
-            // Firefox notifies as "FirefoxToast-<its id>", its windows carry "<its id>"
-            var suffix = "-" + id;
-            foreach (var kv in _byId) if (kv.Key.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) Take(kv.Value);
+            var info = _byId[id];
+            n = Math.Max(n, Math.Max(info.Badge, Unseen(id, info)));
+            dot |= info.Dot;
         }
-        foreach (var exe in exes.Where(e => !string.IsNullOrEmpty(e)).Distinct(StringComparer.OrdinalIgnoreCase))
-            if (_byExe.TryGetValue(exe!, out var c)) Take(c);
         foreach (var (t, exe) in titles)
             if (!string.Equals(Path.GetFileName(exe), "explorer.exe", StringComparison.OrdinalIgnoreCase)) n = Math.Max(n, TitleCount(t)); // folder names ("Raport (2)")
         return new Count(n, dot && n == 0);
     }
 
-    /// <summary>"(3) Messenger", "Telegram (12)": the number a window's title shows, or 0 (see <see cref="BadgeLogic"/>).</summary>
+    /// <summary>"(3) Messenger", "Telegram (12)", "… - 2 new items - Slack": the number a window's title shows, or 0 (see <see cref="BadgeLogic"/>).</summary>
     public static int TitleCount(string title) => BadgeLogic.TitleCount(title);
 
     // ---------- the database ----------
 
-    /// <summary>The program's id → the notifications waiting in the centre (not expired) and its badge (a number, or a dot for "alert").</summary>
-    static Dictionary<string, Count>? Read()
+    /// <summary>The program's id → its badge (a number, or a dot for "alert") and when its notifications still in the centre (not expired) came.</summary>
+    static Dictionary<string, Info>? Read()
     {
-        var result = new Dictionary<string, Count>(StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, Info>(StringComparer.OrdinalIgnoreCase);
         var file = Path.Combine(Folder, "wpndatabase.db");
         if (!File.Exists(file)) return result;
         if (Sqlite.sqlite3_open_v2(Encoding.UTF8.GetBytes(file + "\0"), out var db, 0x1 /* READONLY */, IntPtr.Zero) != 0) { Sqlite.sqlite3_close_v2(db); return null; }
@@ -165,7 +214,7 @@ static class AppBadges
         {
             Sqlite.sqlite3_busy_timeout(db, 300);
             // the payload only of badges (<badge value="3"/>): what a notification says is never read
-            const string sql = "SELECT h.PrimaryId, n.Type, CASE WHEN n.Type = 'badge' THEN CAST(n.Payload AS TEXT) END, n.ExpiryTime " +
+            const string sql = "SELECT h.PrimaryId, n.Type, CASE WHEN n.Type = 'badge' THEN CAST(n.Payload AS TEXT) END, n.ExpiryTime, n.ArrivalTime " +
                                "FROM Notification n JOIN NotificationHandler h ON h.RecordId = n.HandlerId WHERE n.Type IN ('toast', 'badge')";
             if (Sqlite.sqlite3_prepare_v2(db, Encoding.UTF8.GetBytes(sql + "\0"), -1, out var st, IntPtr.Zero) is var rc and not 0)
             {
@@ -176,7 +225,7 @@ static class AppBadges
             try
             {
                 long now = DateTime.UtcNow.ToFileTimeUtc();
-                var toasts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                var toasts = new Dictionary<string, List<long>>(StringComparer.OrdinalIgnoreCase);
                 var badges = new Dictionary<string, Count>(StringComparer.OrdinalIgnoreCase);
                 int step;
                 while ((step = Sqlite.sqlite3_step(st)) == 100 /* ROW */)
@@ -186,7 +235,11 @@ static class AppBadges
                     if (Text(st, 1) == "toast")
                     {
                         long expiry = Sqlite.sqlite3_column_int64(st, 3);
-                        if (expiry == 0 || expiry > now) toasts[id] = toasts.GetValueOrDefault(id) + 1;
+                        if (expiry == 0 || expiry > now)
+                        {
+                            if (!toasts.TryGetValue(id, out var list)) toasts[id] = list = new();
+                            list.Add(Sqlite.sqlite3_column_int64(st, 4));
+                        }
                     }
                     else if (Badge(Text(st, 2)) is { Any: true } b) badges[id] = b;
                 }
@@ -195,8 +248,8 @@ static class AppBadges
                 foreach (var id in toasts.Keys.Union(badges.Keys, StringComparer.OrdinalIgnoreCase))
                 {
                     var b = badges.GetValueOrDefault(id);
-                    int n = Math.Max(toasts.GetValueOrDefault(id), b.N);
-                    result[id] = new Count(n, b.Dot && n == 0);
+                    var arrivals = toasts.TryGetValue(id, out var l) ? l.Order().ToArray() : Array.Empty<long>();
+                    result[id] = new Info(b.N, b.Dot && b.N == 0, arrivals);
                 }
             }
             finally { Sqlite.sqlite3_finalize(st); }

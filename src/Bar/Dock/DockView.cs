@@ -196,8 +196,15 @@ sealed class DockView : Canvas
     {
         _front = hwnd;
         bool known = false;
+        bool seen = false;
         foreach (var e in _entries)
-            if (e.Windows.Any(w => w.Hwnd == hwnd)) { e.Attention = false; known = true; }
+            if (e.Windows.Any(w => w.Hwnd == hwnd))
+            {
+                e.Attention = false;
+                known = true;
+                if (S.DockBadges) seen |= AppBadges.MarkSeen(AppIdsOf(e), ExesOf(e));
+            }
+        if (seen) SettingsStore.Save(S);
         UpdateMarks();
         if (!known) ScheduleRefresh();
     }
@@ -492,14 +499,18 @@ sealed class DockView : Canvas
     static readonly SolidColorBrush DarkInk = Frozen(Color.FromRgb(0x1A, 0x1A, 0x1C));
     static SolidColorBrush Frozen(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
 
+    /// <summary>The app ids an icon stands for: its windows' own, their packages', the pinned program's.</summary>
+    static IEnumerable<string?> AppIdsOf(Entry e) =>
+        e.Windows.Select(w => w.AppId).Concat(e.Windows.Select(w => AppBadges.PackageAppId(w.Pid))).Append(e.Pin?.AppId);
+
+    static IEnumerable<string?> ExesOf(Entry e) => e.Windows.Select(w => w.Exe).Append(e.Pin?.Exe);
+
     /// <summary>The counters read again (the notification database or a title changed, a program asked for attention).</summary>
     void UpdateBadges()
     {
         foreach (var e in _entries)
         {
-            var c = !S.DockBadges ? default
-                : AppBadges.For(e.Windows.Select(w => w.AppId).Concat(e.Windows.Select(w => AppBadges.PackageAppId(w.Pid))).Append(e.Pin?.AppId),
-                                e.Windows.Select(w => w.Exe).Append(e.Pin?.Exe), e.Windows.Select(w => (w.Title, w.Exe)));
+            var c = !S.DockBadges ? default : AppBadges.For(AppIdsOf(e), ExesOf(e), e.Windows.Select(w => (w.Title, w.Exe)));
             // a program that flashes for attention without a number: a dot
             if (S.DockBadges && !c.Any && e.Attention) c = new AppBadges.Count(0, true);
             bool grew = c.N > e.Count.N || c.Dot && !e.Count.Any;

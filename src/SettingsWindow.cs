@@ -18,6 +18,10 @@ public sealed class SettingsWindow : DarkWindow
 {
     static AppSettings S => App.Settings;
     readonly StackPanel _sections = new() { Margin = new Thickness(20, 16, 20, 20) };
+    /// <summary>The bottom strip with "Gotowe", a fine line above it.</summary>
+    readonly Border _footerBar = new() { BorderThickness = new Thickness(0, 1, 0, 0), BorderBrush = new SolidColorBrush(Th.Ink(0x10)) };
+    /// <summary>The scrolling sections (dev screenshots scroll it).</summary>
+    public ScrollViewer Scroller { get; }
     readonly List<(Border header, Border body, TextBlock chevron)> _accordion = new();
     readonly List<Action> _openers = new();
     readonly Dictionary<string, int> _sectionIndex = new();
@@ -36,8 +40,19 @@ public sealed class SettingsWindow : DarkWindow
         Width = 640;
         Height = 780;
         MinWidth = 520;
+        // many options: the whole height of the work area (from the bar to the top) and half the screen's width, in the middle
+        var (px, py, pw, ph, scale) = TallRect();
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        Left = px / scale; Top = py / scale; Width = pw / scale; Height = ph / scale;
+        SourceInitialized += (_, _) => PlaceTall();
         ResizeMode = ResizeMode.CanResize;
-        Content = new ScrollViewer { Content = _sections, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        // the sections scroll; "Gotowe" stays at the window's bottom edge (the window is as tall as the screen)
+        Scroller = new ScrollViewer { Content = _sections, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        var root = new DockPanel();
+        DockPanel.SetDock(_footerBar, Dock.Bottom);
+        root.Children.Add(_footerBar);
+        root.Children.Add(Scroller);
+        Content = root;
 
         // what a fresh install still needs, at the top (each one is also marked "UZUPEŁNIJ" in its section)
         var todo = new List<(string What, string Section)>();
@@ -75,16 +90,38 @@ public sealed class SettingsWindow : DarkWindow
         AddSection("connections", L.T("Połączenia"), L.T("Notion: automatyczne wczytywanie zadań z bazy"), BuildConnections);
         AddSection("info", L.T("Info"), L.T("wersja, aktualizacje, kopia zapasowa"), BuildInstall);
 
-        var footer = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 18, 0, 0) };
+        var footer = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(20, 12, 20, 14) };
         footer.Children.Add(Btn(L.T("Importuj z Notion…"), "SecondaryButton", (_, _) => App.Instance.ImportNotion()));
         footer.Children.Add(Btn(L.T("Gotowe"), "PrimaryButton", (_, _) => Close()));
-        _sections.Children.Add(footer);
+        _footerBar.Child = footer;
 
         _statusTimer.Tick += (_, _) => UpdateStatus();
         _statusTimer.Start();
         CalendarService.Changed += UpdateCalStatus;
         Closed += (_, _) => { _statusTimer.Stop(); CalendarService.Changed -= UpdateCalStatus; };
         PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) Close(); };
+    }
+
+    /// <summary>The work area of the board's screen (the bar's strip left out), half its width, centred – in physical pixels.</summary>
+    (int X, int Y, int W, int H, double Scale) TallRect()
+    {
+        var mon = Monitors.Pick(S.Monitor);
+        var wa = mon.Work;
+        int w = Math.Min(wa.Width, Math.Max((int)Math.Round(MinWidth * mon.Scale), wa.Width / 2));
+        return (wa.X + (wa.Width - w) / 2, wa.Y, w, wa.Height, mon.Scale);
+    }
+
+    /// <summary>Pins that rectangle once the window exists (onto the screen first – a change of DPI rescales the window –, then the size).</summary>
+    void PlaceTall()
+    {
+        try
+        {
+            var (x, y, w, hgt, _) = TallRect();
+            var h = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            Native.SetWindowPos(h, IntPtr.Zero, x, y, 0, 0, Native.SWP_NOZORDER | Native.SWP_NOACTIVATE | Native.SWP_NOSIZE);
+            Native.SetWindowPos(h, IntPtr.Zero, x, y, w, hgt, Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
+        }
+        catch (Exception ex) { Log.Error("settings place", ex); }
     }
 
     // ---------- accordion ----------

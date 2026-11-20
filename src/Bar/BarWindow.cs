@@ -195,6 +195,9 @@ public sealed class BarWindow : GlassWindow
             e.Handled = true;
             var m = new ContextMenu { Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint };
             void Item(string text, Action a) { var i = new MenuItem { Header = text }; i.Click += (_, _) => a(); m.Items.Add(i); }
+            // the board out of the way and back (like the tray icon's menu; the hotkey brings it back too)
+            Item(S.BoardHidden ? L.T("Pokaż tablicę") : L.T("Ukryj tablicę"), () => App.Instance.SetBoardHidden(!S.BoardHidden));
+            m.Items.Add(new Separator());
             Item(L.T("Ustawienia paska…"), () => App.Instance.ShowSettings("bar"));
             Item(L.T("Menedżer zadań"), () => GlassWindow.OpenUrl("taskmgr.exe"));
             m.Items.Add(new Separator());

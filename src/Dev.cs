@@ -44,7 +44,7 @@ static class Dev
             {
                 var sw = App.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
                 sw?.OpenSection(sec);
-                if (down > 0) App.Current.Dispatcher.BeginInvoke(() => (sw?.Content as System.Windows.Controls.ScrollViewer)?.ScrollToVerticalOffset(down), DispatcherPriority.ApplicationIdle);
+                if (down > 0) App.Current.Dispatcher.BeginInvoke(() => sw?.Scroller.ScrollToVerticalOffset(down), DispatcherPriority.ApplicationIdle);
             }, DispatcherPriority.ApplicationIdle);
         }
         else if (open == "archive") App.Current.Dispatcher.BeginInvoke(() => App.Board?.ShowArchive(), DispatcherPriority.ApplicationIdle);

@@ -1280,7 +1280,10 @@ public partial class BoardWindow
 
     void UpdateMaxButton()
     {
-        MaxButton.Visibility = IsSecond ? Visibility.Collapsed : Visibility.Visible; // the second screen is always whole
+        // the second screen is always whole; a board already set to the whole width and height has nothing to grow into
+        // (the button only changed its icon then) – F11 still works
+        bool whole = S.WidthPercent >= 99 && S.WeekHeightPercent >= 99 && !S.BoardMax;
+        MaxButton.Visibility = IsSecond || whole ? Visibility.Collapsed : Visibility.Visible;
         MaxButton.Content = Icons.Maximize(S.BoardMax);
         MaxButton.ToolTip = S.BoardMax ? L.T("Tablica w swoim rozmiarze (F11)") : L.T("Tablica na cały ekran (F11)");
     }
