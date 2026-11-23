@@ -21,6 +21,11 @@ namespace TaskWall;
 /// lists, check boxes, quotes, code blocks and dividers.
 /// Check boxes are characters (☐ / ☑) at the start of the line – click them; Backspace and Ctrl+Z treat them as text
 /// (no controls inside the text: those broke deleting and undo).
+/// Lists are plain paragraphs with a kind (Tag: "bullet", "number", "todo") and a level (<see cref="DepthProperty"/>), indented
+/// by their margin; their marks are drawn on a layer over the text (<see cref="RenderMarks"/>): a dot that gets lighter and
+/// changes shape with the level, numbers that carry their parents' ("2.1", "2.1.3"). The same pass draws the line numbers in the
+/// gutter on the left (a button in the toolbar, like a code editor). WPF's own List was dropped: it could not number "2.1", put
+/// a paragraph's full spacing between items and kept check boxes out of the nesting.
 /// </summary>
 public sealed class NotesEditor : DockPanel
 {
@@ -40,7 +45,23 @@ public sealed class NotesEditor : DockPanel
     bool _loading;
     bool _source;
     string _last = "";
-    double Base => App.Settings.FontSize;
+    static double Base => App.Settings.FontSize;
+    /// <summary>One level of a list: the room for its mark, and how far a nested item moves in.</summary>
+    static double Step => Math.Round(Base * 1.7);
+    const int MaxDepth = 6;
+
+    /// <summary>A list item's level (0 = not nested). An attached value: kept by Ctrl+Z like the margin it sets.</summary>
+    public static readonly DependencyProperty DepthProperty = DependencyProperty.RegisterAttached("Depth", typeof(int), typeof(NotesEditor), new PropertyMetadata(0));
+    static int DepthOf(Paragraph p) => (int)p.GetValue(DepthProperty);
+
+    /// <summary>The marks of the lists (over the text) and the line numbers (the gutter), drawn after each change, scroll and resize.</summary>
+    readonly Canvas _marks = new() { IsHitTestVisible = false, ClipToBounds = true };
+    readonly Canvas _gutter = new() { ClipToBounds = true };
+    readonly Border _gutterHost = new() { Margin = new Thickness(0, 0, 8, 0), BorderThickness = new Thickness(0, 0, 1, 0) };
+    /// <summary>Check boxes done / all and the words, at the end of the toolbar.</summary>
+    readonly TextBlock _status = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 4, 0), FontSize = 11 };
+    Button? _numbersButton;
+    bool _marksQueued;
     static readonly FontFamily Mono = new("Cascadia Mono, Consolas, Courier New");
     static readonly FontFamily Symbols = new("Segoe UI Symbol");
     const string Unchecked = "☐", Checked = "☑";
@@ -70,8 +91,15 @@ public sealed class NotesEditor : DockPanel
 
         Children.Add(BuildToolbar());
         var area = new Grid();
+        area.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        area.ColumnDefinitions.Add(new ColumnDefinition());
+        _gutterHost.BorderBrush = Res("Line");
+        _gutterHost.Child = _gutter;
+        area.Children.Add(_gutterHost);
+        foreach (var el in new UIElement[] { _box, _src, _marks, _hint }) Grid.SetColumn(el, 1);
         area.Children.Add(_box);
         area.Children.Add(_src);
+        area.Children.Add(_marks);
         _hint.Text = L.T("Pisz tutaj…  # nagłówek, - lista, [] pole wyboru, **pogrubienie**");
         _hint.Foreground = Res("FgFaint");
         _hint.FontSize = Base - 0.5;
@@ -81,19 +109,26 @@ public sealed class NotesEditor : DockPanel
         area.Children.Add(_hint);
         Children.Add(area);
 
-        _box.TextChanged += (_, _) => { UpdateHint(); if (!_loading) { _save.Stop(); _save.Start(); } };
-        _src.TextChanged += (_, _) => { UpdateHint(); if (!_loading) { _save.Stop(); _save.Start(); } };
+        _box.TextChanged += (_, _) => { UpdateHint(); QueueMarks(); if (!_loading) { _save.Stop(); _save.Start(); } };
+        _src.TextChanged += (_, _) => { UpdateHint(); QueueMarks(); if (!_loading) { _save.Stop(); _save.Start(); } };
+        // the marks and numbers follow the text: scrolling, a new width (wrapping), the caret's line (the gutter's bright number)
+        foreach (var tb in new System.Windows.Controls.Primitives.TextBoxBase[] { _box, _src }) tb.AddHandler(ScrollViewer.ScrollChangedEvent, new ScrollChangedEventHandler((_, _) => QueueMarks()));
+        _src.SelectionChanged += (_, _) => QueueMarks();
+        _src.PreviewKeyDown += OnSrcKey;
+        area.SizeChanged += (_, _) => QueueMarks();
+        _status.Foreground = Res("FgFaint");
         _save.Tick += (_, _) => { _save.Stop(); Flush(); };
         _box.PreviewKeyDown += OnKey;
         _box.AddHandler(TextInputEvent, new TextCompositionEventHandler((_, e) => { if (e.Text is "*" or "_" or "~" or "`" or ")") InlineAuto(); }), true);
         _box.PreviewMouseLeftButtonDown += OnBoxMouseDown;
-        _box.SelectionChanged += (_, _) => KeepCaretAfterCheck();
+        _box.SelectionChanged += (_, _) => { KeepCaretAfterCheck(); QueueMarks(); };
         _box.AddHandler(Hyperlink.RequestNavigateEvent, new RequestNavigateEventHandler((_, e) =>
         {
             try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true }); } catch { }
             e.Handled = true;
         }));
         DataObject.AddPastingHandler(_box, OnPaste);
+        DataObject.AddCopyingHandler(_box, OnCopy);
         _box.LostKeyboardFocus += (_, _) => Flush();
         _src.LostKeyboardFocus += (_, _) => Flush();
         SetMode(App.Settings.NotesSource, save: false);
@@ -127,6 +162,9 @@ public sealed class NotesEditor : DockPanel
             b.Click += (_, _) => SetMode(src, save: true);
             _modeButtons.Add((b, src));
         }
+        _numbersButton = Tool("#", L.T("Numery linii (jak w edytorze kodu)"), () => { }, null, FontWeights.SemiBold, size: 12);
+        _numbersButton.Click += (_, _) => ToggleLineNumbers();
+        UpdateNumbersButton();
         Sep();
         Tool("H1", L.T("Nagłówek 1  (# spacja, Ctrl+1)"), () => SetBlock("h1"), () => SrcPrefix("# "));
         Tool("H2", L.T("Nagłówek 2  (## spacja, Ctrl+2)"), () => SetBlock("h2"), () => SrcPrefix("## "));
@@ -141,11 +179,11 @@ public sealed class NotesEditor : DockPanel
         Tool("🔗", L.T("Link  (Ctrl+K, [tekst](https://…))"), InsertLink, SrcLink, FontWeights.Normal, font: Symbols, size: 11);
         Tool("Tx", L.T("Usuń formatowanie zaznaczenia"), () => _box.Selection.ClearAllProperties(), SrcStrip, FontWeights.Normal, null, TextDecorations.Strikethrough, size: 11);
         Sep();
-        Tool("•", L.T("Lista  (- spacja)"), () => EditingCommands.ToggleBullets.Execute(null, _box), () => SrcPrefix("- "));
-        Tool("1.", L.T("Lista numerowana  (1. spacja)"), () => EditingCommands.ToggleNumbering.Execute(null, _box), () => SrcPrefix("1. "));
-        Tool(Unchecked, L.T("Pole wyboru  ([] spacja; klik w pole zaznacza)"), ToggleTodo, () => SrcPrefix("- [ ] "), FontWeights.Normal, font: Symbols, size: 13);
-        Tool("⇥", L.T("Wcięcie listy  (Tab)"), () => EditingCommands.IncreaseIndentation.Execute(null, _box), () => SrcIndent(true), FontWeights.Normal, font: Symbols);
-        Tool("⇤", L.T("Mniejsze wcięcie  (Shift+Tab)"), () => EditingCommands.DecreaseIndentation.Execute(null, _box), () => SrcIndent(false), FontWeights.Normal, font: Symbols);
+        Tool("•", L.T("Lista  (- spacja, Ctrl+Shift+8)"), () => ToggleList("bullet"), () => SrcPrefix("- "));
+        Tool("1.", L.T("Lista numerowana  (1. spacja, Ctrl+Shift+7) – zagnieżdżona numeruje 2.1, 2.2 …"), () => ToggleList("number"), () => SrcPrefix("1. "));
+        Tool(Unchecked, L.T("Pole wyboru  ([] spacja, Ctrl+Shift+9; klik w pole albo Ctrl+Enter zaznacza)"), ToggleTodo, () => SrcPrefix("- [ ] "), FontWeights.Normal, font: Symbols, size: 13);
+        Tool("⇥", L.T("Wcięcie listy  (Tab)"), () => Indent(+1), () => SrcIndent(true), FontWeights.Normal, font: Symbols);
+        Tool("⇤", L.T("Mniejsze wcięcie  (Shift+Tab)"), () => Indent(-1), () => SrcIndent(false), FontWeights.Normal, font: Symbols);
         Sep();
         Tool("❝", L.T("Cytat  (> spacja)"), () => SetBlock("quote"), () => SrcPrefix("> "), FontWeights.Normal, font: Symbols);
         Tool("{ }", L.T("Blok kodu  (``` + Enter)"), () => SetBlock("code"), () => SrcFence(), FontWeights.Normal, font: Mono, size: 11);
@@ -157,6 +195,8 @@ public sealed class NotesEditor : DockPanel
         var export = Tool("⤓", L.T("Eksportuj notatki do .md / .txt"), () => { }, null, FontWeights.Normal, font: Symbols);
         export.Click += (_, _) => ExportClicked?.Invoke(export);
         Tool("🗑", L.T("Wyczyść notatkę tego dnia (Ctrl+Z cofa)"), ClearAll, ClearAll, FontWeights.Normal, font: Symbols, size: 11);
+        _status.ToolTip = L.T("Pola wyboru zaznaczone / wszystkie i liczba słów. Alt+↑ / Alt+↓ przesuwa linię.");
+        bar.Children.Add(_status);
         return bar;
     }
 
@@ -191,6 +231,7 @@ public sealed class NotesEditor : DockPanel
             if (b.Content is TextBlock t) t.Foreground = src == _source ? Res("Fg") : Res("FgDim");
         }
         UpdateHint();
+        QueueMarks();
         if (save && App.Settings.NotesSource != source) { App.Settings.NotesSource = source; SettingsStore.Save(App.Settings); }
     }
 
@@ -246,9 +287,10 @@ public sealed class NotesEditor : DockPanel
 
     Paragraph? Current => _box.CaretPosition.Paragraph;
 
-    void StyleBlock(Paragraph p, string? kind)
+    static void StyleBlock(Paragraph p, string? kind)
     {
         p.Tag = kind;
+        if (kind is not ("bullet" or "number" or "todo")) p.ClearValue(DepthProperty);
         p.ClearValue(Block.FontSizeProperty);
         p.ClearValue(Block.FontWeightProperty);
         p.ClearValue(Block.ForegroundProperty);
@@ -272,11 +314,92 @@ public sealed class NotesEditor : DockPanel
                 p.BorderBrush = Res("AccentBrush"); p.BorderThickness = new Thickness(2.5, 0, 0, 0); p.Padding = new Thickness(10, 1, 0, 1);
                 p.Foreground = Res("FgDim"); break;
             case "hr": p.BorderBrush = Res("Line"); p.BorderThickness = new Thickness(0, 0, 0, 1); p.Margin = new Thickness(0, 6, 0, 8); p.FontSize = 2; break;
-            case "todo": p.Margin = new Thickness(0, 3, 0, 3); break;
+            case "bullet": case "number": case "todo": ListLayout(p, kind, DepthOf(p)); break;
             case "code":
                 p.FontFamily = Mono; p.FontSize = Base - 1; p.Background = new SolidColorBrush(Th.Ink(0x12)); p.Padding = new Thickness(8, 1, 8, 1);
                 p.Margin = new Thickness(0); break;
         }
+    }
+
+    /// <summary>
+    /// A list item's indent: the room for its mark and one step per level (a check box is its own mark, written in the line, so
+    /// its line starts where a dot's would); tight spacing between items.
+    /// </summary>
+    static void ListLayout(Paragraph p, string kind, int depth)
+    {
+        depth = Math.Clamp(depth, 0, MaxDepth);
+        if (DepthOf(p) != depth) p.SetValue(DepthProperty, depth);
+        p.Margin = new Thickness(Step * (depth + (kind == "todo" ? 0 : 1)), 1, 0, 1);
+    }
+
+    /// <summary>A paragraph made a list item of this kind at this level.</summary>
+    static void StyleList(Paragraph p, string kind, int depth)
+    {
+        p.SetValue(DepthProperty, Math.Clamp(depth, 0, MaxDepth));
+        StyleBlock(p, kind);
+    }
+
+    /// <summary>"bullet", "number", "todo" – or null for a paragraph that is not a list item.</summary>
+    static string? ListKind(Paragraph p) => IsTodo(p) ? "todo" : p.Tag as string is "bullet" or "number" ? (string)p.Tag : null;
+
+    /// <summary>The paragraphs the selection touches (the caret's one when nothing is selected), in order.</summary>
+    List<Paragraph> SelectedParagraphs()
+    {
+        var list = new List<Paragraph>();
+        var start = _box.Selection.Start.Paragraph;
+        var end = _box.Selection.End.Paragraph;
+        if (start == null) return list;
+        if (end == null || ReferenceEquals(start, end)) { list.Add(start); return list; }
+        // a selection that ends at the very start of a line does not take that line
+        if (_box.Selection.End.CompareTo(end.ContentStart) <= 0 && end.PreviousBlock is Paragraph before) end = before;
+        for (Block? b = start; b != null; b = b.NextBlock)
+        {
+            if (b is Paragraph p) list.Add(p);
+            if (ReferenceEquals(b, end)) break;
+        }
+        return list;
+    }
+
+    /// <summary>The toolbar's list buttons (and Ctrl+Shift+7 / 8 / 9): the lines become items of this kind – or plain again when all already are.</summary>
+    void ToggleList(string kind)
+    {
+        var paras = SelectedParagraphs();
+        if (paras.Count == 0) return;
+        bool all = paras.All(p => ListKind(p) == kind);
+        _box.BeginChange();
+        foreach (var p in paras)
+        {
+            if (p.Tag is "code" or "hr") continue;
+            int depth = ListKind(p) != null ? DepthOf(p) : 0;
+            if (IsTodo(p)) RemoveCheck(p);
+            if (all) { StyleBlock(p, null); continue; }
+            if (kind == "todo") { StyleBlock(p, null); p.SetValue(DepthProperty, depth); MakeTodo(p, false); }
+            else StyleList(p, kind, depth);
+        }
+        _box.EndChange();
+        if (kind == "todo" && !all && Current is { } cur && IsTodo(cur)) KeepCaretAfterCheck();
+    }
+
+    /// <summary>Tab / Shift+Tab (and the toolbar's ⇥ ⇤) on list items: one level in or out. False when no list item is selected.</summary>
+    bool Indent(int delta)
+    {
+        var items = SelectedParagraphs().Where(p => ListKind(p) != null).ToList();
+        if (items.Count == 0) return false;
+        _box.BeginChange();
+        foreach (var p in items) StyleList(p, ListKind(p)!, DepthOf(p) + delta);
+        _box.EndChange();
+        return true;
+    }
+
+    /// <summary>Alt+↑ / Alt+↓: the selected lines swap places with the line above / below (one Ctrl+Z step).</summary>
+    void MoveLines(int dir)
+    {
+        var paras = SelectedParagraphs();
+        if (paras.Count == 0 || paras[0].Parent is not FlowDocument doc || paras[^1].Parent != doc) return;
+        _box.BeginChange();
+        if (dir < 0 && paras[0].PreviousBlock is { } prev) { doc.Blocks.Remove(prev); doc.Blocks.InsertAfter(paras[^1], prev); }
+        else if (dir > 0 && paras[^1].NextBlock is { } next) { doc.Blocks.Remove(next); doc.Blocks.InsertBefore(paras[0], next); }
+        _box.EndChange();
     }
 
     void SetBlock(string? kind)
@@ -448,20 +571,13 @@ public sealed class NotesEditor : DockPanel
         Foreground = done ? Res("AccentBrush") : Res("FgDim"), TextDecorations = new TextDecorationCollection(),
     };
 
-    void ToggleTodo()
-    {
-        if (Current is not { } p) return;
-        _box.BeginChange();
-        if (IsTodo(p)) { RemoveCheck(p); StyleBlock(p, null); }
-        else MakeTodo(p, false);
-        _box.EndChange();
-    }
+    void ToggleTodo() => ToggleList("todo");
 
     static void MakeTodo(Paragraph p, bool done)
     {
         if (IsTodo(p)) return;
         p.Tag = "todo";
-        p.Margin = new Thickness(0, 3, 0, 3);
+        ListLayout(p, "todo", DepthOf(p));
         var check = CheckRun(done);
         var gap = new Run(" ");
         if (p.Inlines.FirstInline is { } first) { p.Inlines.InsertBefore(first, check); p.Inlines.InsertAfter(check, gap); }
@@ -530,6 +646,24 @@ public sealed class NotesEditor : DockPanel
     void OnKey(object sender, KeyEventArgs e)
     {
         var mods = Keyboard.Modifiers;
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        // lists: Ctrl+Shift+7 / 8 / 9 (as in Google Docs); WPF's own list keys (Ctrl+Shift+L / N) do the same here
+        if (mods == (ModifierKeys.Control | ModifierKeys.Shift) && key is Key.D7 or Key.D8 or Key.D9 or Key.L or Key.N)
+        {
+            e.Handled = true;
+            ToggleList(key switch { Key.D7 or Key.N => "number", Key.D9 => "todo", _ => "bullet" });
+            return;
+        }
+        if (key == Key.Tab && mods is ModifierKeys.None or ModifierKeys.Shift && Indent(mods == ModifierKeys.Shift ? -1 : +1)) { e.Handled = true; return; }
+        if (mods == ModifierKeys.Alt && key is Key.Up or Key.Down) { e.Handled = true; MoveLines(key == Key.Up ? -1 : +1); return; }
+        // Ctrl+Enter ticks the line's box (or makes the line one)
+        if (key == Key.Enter && mods == ModifierKeys.Control)
+        {
+            e.Handled = true;
+            if (Current is { } tp && IsTodo(tp)) { _box.BeginChange(); SetCheck(tp, !IsTodoChecked(tp)); _box.EndChange(); Flush(); }
+            else ToggleList("todo");
+            return;
+        }
         if (e.Key == Key.S && mods == (ModifierKeys.Control | ModifierKeys.Shift)) { e.Handled = true; ToggleStrike(); return; }
         if (e.Key == Key.E && mods == ModifierKeys.Control) { e.Handled = true; ToggleCode(); return; }
         if (e.Key == Key.K && mods == ModifierKeys.Control) { e.Handled = true; InsertLink(); return; }
@@ -544,23 +678,24 @@ public sealed class NotesEditor : DockPanel
         if (e.Key == Key.Enter && mods == ModifierKeys.None && Enter()) e.Handled = true;
     }
 
-    /// <summary>Space after "# " … "###### ", "- " "* " "+ ", "1. ", "[] " "[x] ", "> " at the start of a line.</summary>
+    /// <summary>Space after "# " … "###### ", "- " "* " "+ ", "1. ", "[] " "[x] ", "> " at the start of a line (spaces before a list mark: its level).</summary>
     bool BlockAuto()
     {
-        if (Current is not { } p || p.Parent is not FlowDocument || p.Tag as string == "code" || IsTodo(p)) return false;
-        var before = new TextRange(p.ContentStart, _box.CaretPosition).Text;
+        if (Current is not { } p || p.Parent is not FlowDocument || p.Tag as string is "code" or "bullet" or "number" || IsTodo(p)) return false;
+        var typed = new TextRange(p.ContentStart, _box.CaretPosition).Text;
+        var before = typed.TrimStart(' ', '\t');
+        int depth = (typed.Length - before.Length) / 2;
         string? kind = before switch
         {
             "#" => "h1", "##" => "h2", "###" => "h3", "####" => "h4", "#####" => "h5", "######" => "h6", ">" => "quote",
             "-" or "*" or "+" => "bullet", "[]" or "[ ]" => "todo", "[x]" or "[X]" => "done",
             _ => Regex.IsMatch(before, @"^\d+\.$") ? "number" : null,
         };
-        if (kind == null) return false;
+        if (kind == null || depth > 0 && kind is not ("bullet" or "number" or "todo" or "done")) return false;
         _box.BeginChange();
         new TextRange(p.ContentStart, _box.CaretPosition).Text = "";
-        if (kind == "bullet") EditingCommands.ToggleBullets.Execute(null, _box);
-        else if (kind == "number") EditingCommands.ToggleNumbering.Execute(null, _box);
-        else if (kind is "todo" or "done") { MakeTodo(p, kind == "done"); _box.CaretPosition = p.ContentEnd; }
+        if (kind is "bullet" or "number") StyleList(p, kind, depth);
+        else if (kind is "todo" or "done") { StyleBlock(p, null); p.SetValue(DepthProperty, Math.Min(depth, MaxDepth)); MakeTodo(p, kind == "done"); _box.CaretPosition = p.ContentEnd; }
         else StyleBlock(p, kind);
         _box.EndChange();
         return true;
@@ -571,6 +706,7 @@ public sealed class NotesEditor : DockPanel
     {
         if (!_box.Selection.IsEmpty || Current is not { } p || p.Parent is not FlowDocument) return false;
         int at = new TextRange(p.ContentStart, _box.CaretPosition).Text.Length;
+        if (ListKind(p) is { } lk && DepthOf(p) > 0 && at <= (lk == "todo" ? 2 : 0)) { _box.BeginChange(); StyleList(p, lk, DepthOf(p) - 1); _box.EndChange(); return true; }
         if (IsTodo(p) && at <= 2) { _box.BeginChange(); RemoveCheck(p); StyleBlock(p, null); _box.EndChange(); _box.CaretPosition = p.ContentStart; return true; }
         if (at == 0 && p.Tag is string) { _box.BeginChange(); StyleBlock(p, null); _box.EndChange(); return true; }
         if (at == 0 && p.PreviousBlock is Paragraph { Tag: "hr" } hr && p.Parent is FlowDocument doc) { _box.BeginChange(); doc.Blocks.Remove(hr); _box.EndChange(); return true; }
@@ -583,7 +719,26 @@ public sealed class NotesEditor : DockPanel
         var kind = cur.Tag as string;
         bool todo = IsTodo(cur);
         var text = new TextRange(cur.ContentStart, cur.ContentEnd).Text.Trim();
-        if (todo && (text == Unchecked || text == Checked)) { _box.BeginChange(); RemoveCheck(cur); StyleBlock(cur, null); _box.EndChange(); return true; } // an empty box ends the list
+        if (todo && (text == Unchecked || text == Checked)) // an empty box steps out a level, then ends the list
+        {
+            _box.BeginChange();
+            if (DepthOf(cur) > 0) StyleList(cur, "todo", DepthOf(cur) - 1);
+            else { RemoveCheck(cur); StyleBlock(cur, null); }
+            _box.EndChange();
+            return true;
+        }
+        if (kind is "bullet" or "number")
+        {
+            int depth = DepthOf(cur);
+            _box.BeginChange();
+            if (text.Length == 0) { if (depth > 0) StyleList(cur, kind, depth - 1); else StyleBlock(cur, null); _box.EndChange(); return true; }
+            if (!_box.Selection.IsEmpty) _box.Selection.Text = "";
+            _box.CaretPosition = _box.CaretPosition.InsertParagraphBreak();
+            if (Current is { } item && !ReferenceEquals(item, cur)) StyleList(item, kind, depth);
+            _box.EndChange();
+            _box.Selection.ApplyPropertyValue(Inline.TextDecorationsProperty, new TextDecorationCollection());
+            return true;
+        }
         if (kind == "code" && text.Length == 0) { _box.BeginChange(); StyleBlock(cur, null); _box.EndChange(); return true; } // … and the code block
         if (kind != "code" && !todo && cur.Parent is FlowDocument doc && (Regex.IsMatch(text, @"^(-{3,}|\*{3,}|_{3,})$") || text.StartsWith("```")))
         {
@@ -616,6 +771,7 @@ public sealed class NotesEditor : DockPanel
             if (todo)
             {
                 StyleBlock(np, null);
+                np.SetValue(DepthProperty, DepthOf(cur)); // the new box at the same level
                 if (IsTodo(np)) RemoveCheck(np); // split in front of the box
                 DimTodo(np, false);
                 foreach (var r in Runs(np.Inlines)) { r.ClearValue(TextElement.ForegroundProperty); r.TextDecorations = new TextDecorationCollection(); }
@@ -807,15 +963,61 @@ public sealed class NotesEditor : DockPanel
     {
         var sb = new StringBuilder();
         bool code = false;
+        var lists = Lists(_box.Document.Blocks);
         foreach (var b in _box.Document.Blocks)
         {
             bool isCode = b is Paragraph { Tag: "code" };
             if (isCode != code) { sb.Append("```\n"); code = isCode; }
             if (isCode) sb.Append(new TextRange(b.ContentStart, b.ContentEnd).Text).Append('\n');
+            else if (b is Paragraph lp && lists.TryGetValue(lp, out var item))
+                sb.Append(item.Indent).Append(item.Kind switch
+                {
+                    "todo" => (IsTodoChecked(lp) ? "- [x] " : "- [ ] ") + Inlines(lp.Inlines, skipFirst: true).TrimStart(),
+                    "number" => item.N + ". " + Inlines(lp.Inlines),
+                    _ => "- " + Inlines(lp.Inlines),
+                }).Append('\n');
             else Write(sb, b, 0);
         }
         if (code) sb.Append("```\n");
         return sb.ToString().TrimEnd('\n', '\r', ' ');
+    }
+
+    /// <summary>A list item: its kind, level, own number, the number shown ("2.1"), and the Markdown indent before its mark.</summary>
+    readonly record struct ListItemInfo(string Kind, int Depth, int N, string Label, string Indent);
+
+    /// <summary>
+    /// Numbers and indents of the list items, in order: each level counts on until a line that is not a list item (or a
+    /// shallower item, or another kind at the same level) starts it again; a numbered item under numbered parents shows their
+    /// numbers too. The Markdown indent of a level is the width of its parent's mark ("- " 2, "1. " 3), as Markdown wants it.
+    /// </summary>
+    static Dictionary<Paragraph, ListItemInfo> Lists(IEnumerable<Block> blocks)
+    {
+        var result = new Dictionary<Paragraph, ListItemInfo>();
+        int n = MaxDepth + 1;
+        var counters = new int[n];
+        var kinds = new string?[n];
+        var widths = new int[n];
+        void Reset(int from) { for (int k = from; k < n; k++) { counters[k] = 0; kinds[k] = null; widths[k] = 0; } }
+        foreach (var b in blocks)
+        {
+            if (b is not Paragraph p || ListKind(p) is not { } kind) { Reset(0); continue; }
+            int d = Math.Clamp(DepthOf(p), 0, MaxDepth);
+            Reset(d + 1);
+            if (kinds[d] != kind) { counters[d] = 0; kinds[d] = kind; }
+            counters[d]++;
+            widths[d] = kind == "number" ? $"{counters[d]}. ".Length : 2;
+            var indent = new StringBuilder();
+            for (int k = 0; k < d; k++) indent.Append(' ', widths[k] > 0 ? widths[k] : 2);
+            string label = "";
+            if (kind == "number")
+            {
+                int top = d;
+                while (top > 0 && kinds[top - 1] == "number" && counters[top - 1] > 0) top--;
+                label = top == d ? counters[d] + "." : string.Join(".", counters[top..(d + 1)]);
+            }
+            result[p] = new ListItemInfo(kind, d, counters[d], label, indent.ToString());
+        }
+        return result;
     }
 
     static void Write(StringBuilder sb, Block b, int depth)
@@ -911,18 +1113,25 @@ public sealed class NotesEditor : DockPanel
     // ---------- Markdown in ----------
 
     static readonly Regex ListLine = new(@"^(\s*)([-*+]|\d+\.)\s+(.*)$");
-    static readonly Regex TodoLine = new(@"^\s*[-*+]\s+\[( |x|X)\]\s?(.*)$");
+    static readonly Regex TodoLine = new(@"^(\s*)[-*+]\s+\[( |x|X)\]\s?(.*)$");
     static readonly Regex Heading = new(@"^(#{1,6})\s+(.*)$");
 
     IEnumerable<Block> Parse(string md)
     {
         var blocks = new List<Block>();
-        var lists = new List<List>(); // the open list per depth
+        var indents = new List<int>(); // the open levels' indents (2, 3 or 4 spaces a level – any works)
+        int Level(string lead)
+        {
+            int indent = lead.Replace("\t", "    ").Length;
+            while (indents.Count > 0 && indents[^1] >= indent) indents.RemoveAt(indents.Count - 1);
+            indents.Add(indent);
+            return Math.Min(indents.Count - 1, MaxDepth);
+        }
         bool code = false;
         foreach (var raw in (md ?? "").Replace("\r", "").Split('\n'))
         {
             var line = raw.TrimEnd();
-            if (line.TrimStart().StartsWith("```")) { code = !code; lists.Clear(); continue; }
+            if (line.TrimStart().StartsWith("```")) { code = !code; indents.Clear(); continue; }
             if (code)
             {
                 var cp = new Paragraph(new Run(raw));
@@ -933,17 +1142,17 @@ public sealed class NotesEditor : DockPanel
             Match m;
             if ((m = TodoLine.Match(line)).Success)
             {
-                lists.Clear();
                 var p = new Paragraph();
-                AddInlines(p, m.Groups[2].Value);
+                AddInlines(p, m.Groups[3].Value);
                 StyleBlock(p, null);
-                MakeTodo(p, m.Groups[1].Value is "x" or "X");
+                p.SetValue(DepthProperty, Level(m.Groups[1].Value));
+                MakeTodo(p, m.Groups[2].Value is "x" or "X");
                 blocks.Add(p);
                 continue;
             }
             if (Regex.IsMatch(line.Trim(), @"^(-{3,}|\*{3,}|_{3,})$"))
             {
-                lists.Clear();
+                indents.Clear();
                 var hr = new Paragraph();
                 StyleBlock(hr, "hr");
                 blocks.Add(hr);
@@ -951,27 +1160,13 @@ public sealed class NotesEditor : DockPanel
             }
             if ((m = ListLine.Match(line)).Success)
             {
-                int depth = Math.Min(m.Groups[1].Value.Replace("\t", "  ").Length / 2, 6);
-                var style = char.IsDigit(m.Groups[2].Value[0]) ? TextMarkerStyle.Decimal : TextMarkerStyle.Disc;
-                while (lists.Count > depth + 1) lists.RemoveAt(lists.Count - 1);
-                if (lists.Count == depth + 1 && lists[depth].MarkerStyle != style) lists.RemoveAt(depth);
-                if (lists.Count <= depth)
-                {
-                    var list = new List { MarkerStyle = style, Margin = new Thickness(0, 2, 0, 2), Padding = new Thickness(22, 0, 0, 0) };
-                    if (style == TextMarkerStyle.Decimal && int.TryParse(m.Groups[2].Value.TrimEnd('.'), out var startAt) && startAt > 1) list.StartIndex = startAt;
-                    if (lists.Count == 0) blocks.Add(list);
-                    else (lists[^1].ListItems.LastListItem ?? Add(lists[^1])).Blocks.Add(list);
-                    while (lists.Count < depth) lists.Add(list);
-                    lists.Add(list);
-                }
-                var item = new ListItem();
-                var ip = new Paragraph { Margin = new Thickness(0) };
+                var ip = new Paragraph();
                 AddInlines(ip, m.Groups[3].Value);
-                item.Blocks.Add(ip);
-                lists[depth].ListItems.Add(item);
+                StyleList(ip, char.IsDigit(m.Groups[2].Value[0]) ? "number" : "bullet", Level(m.Groups[1].Value));
+                blocks.Add(ip);
                 continue;
             }
-            lists.Clear();
+            indents.Clear();
             var para = new Paragraph();
             string? kind = null;
             var body = line;
@@ -983,11 +1178,9 @@ public sealed class NotesEditor : DockPanel
             blocks.Add(para);
         }
         // a note ending in a list / code keeps a plain line after it to type into
-        if (blocks.LastOrDefault() is List or Paragraph { Tag: "code" }) { var tail = new Paragraph(); StyleBlock(tail, null); blocks.Add(tail); }
+        if (blocks.LastOrDefault() is Paragraph { Tag: "code" }) { var tail = new Paragraph(); StyleBlock(tail, null); blocks.Add(tail); }
         return blocks;
     }
-
-    static ListItem Add(List list) { var li = new ListItem(); list.ListItems.Add(li); return li; }
 
     static readonly Regex InlineFormat = new(@"\[([^\]]+)\]\(([^)\s]+)\)|`([^`]+)`|\*\*(.+?)\*\*|__(.+?)__|~~(.+?)~~|(?<![*\w])\*([^*\s](?:[^*]*?[^*\s])?)\*(?!\*)|(?<![_\w])_([^_\s](?:[^_]*?[^_\s])?)_(?!\w)"); // "2 * 3 * 4" stays as it is
 
@@ -1030,7 +1223,7 @@ public sealed class NotesEditor : DockPanel
                 continue;
             }
             if (Regex.IsMatch(line.Trim(), @"^(-{3,}|\*{3,}|_{3,})$")) { sb.Append(new string('─', 24)).Append('\n'); continue; }
-            if ((m = TodoLine.Match(line)).Success) { sb.Append(new string(' ', line.Length - line.TrimStart().Length)).Append(m.Groups[1].Value is "x" or "X" ? "☑ " : "☐ ").Append(StripInline(m.Groups[2].Value)).Append('\n'); continue; }
+            if ((m = TodoLine.Match(line)).Success) { sb.Append(m.Groups[1].Value).Append(m.Groups[2].Value is "x" or "X" ? "☑ " : "☐ ").Append(StripInline(m.Groups[3].Value)).Append('\n'); continue; }
             if ((m = ListLine.Match(line)).Success) { sb.Append(m.Groups[1].Value).Append(char.IsDigit(m.Groups[2].Value[0]) ? m.Groups[2].Value + " " : "• ").Append(StripInline(m.Groups[3].Value)).Append('\n'); continue; }
             if (line.StartsWith("> ")) { sb.Append("│ ").Append(StripInline(line[2..])).Append('\n'); continue; }
             sb.Append(StripInline(line)).Append('\n');
@@ -1038,7 +1231,228 @@ public sealed class NotesEditor : DockPanel
         return sb.ToString().TrimEnd('\n');
     }
 
+    // ---------- the list marks and the line numbers ----------
+
+    void QueueMarks()
+    {
+        if (_marksQueued) return;
+        _marksQueued = true;
+        Dispatcher.BeginInvoke(RenderMarks, DispatcherPriority.Loaded); // after the layout: the lines are where they will be drawn
+    }
+
+    void ToggleLineNumbers()
+    {
+        App.Settings.NotesLineNumbers = !App.Settings.NotesLineNumbers;
+        SettingsStore.Save(App.Settings);
+        UpdateNumbersButton();
+        QueueMarks();
+    }
+
+    void UpdateNumbersButton()
+    {
+        if (_numbersButton == null) return;
+        bool on = App.Settings.NotesLineNumbers;
+        _numbersButton.Background = on ? (Brush)Application.Current.Resources["AccentSoft"] : Brushes.Transparent;
+        if (_numbersButton.Content is TextBlock t) t.Foreground = on ? Res("Fg") : Res("FgDim");
+    }
+
+    /// <summary>The bullets by level: a darker shade and another shape the deeper it goes.</summary>
+    static readonly string[] Bullets = { "•", "◦", "▪", "▫" };
+    static readonly string[] BulletBrushes = { "Fg", "FgDim", "FgFaint", "FgFaint" };
+
+    /// <summary>
+    /// Draws the list marks next to their lines (a dot in the middle of its room, a number ending just before the text) and, when
+    /// on, the line numbers in the gutter – only for the lines on screen. In the Markdown mode the numbers are the source's lines.
+    /// </summary>
+    void RenderMarks()
+    {
+        _marksQueued = false;
+        _marks.Children.Clear();
+        _gutter.Children.Clear();
+        bool numbers = App.Settings.NotesLineNumbers;
+        _gutterHost.Visibility = numbers ? Visibility.Visible : Visibility.Collapsed;
+        UpdateStatus();
+        if (_source) { if (numbers) SourceNumbers(); return; }
+        if (_box.ActualHeight <= 0) return;
+        var blocks = _box.Document.Blocks.ToList();
+        var lists = Lists(blocks);
+        var paras = blocks.SelectMany(Paragraphs).ToList();
+        if (numbers) GutterWidth(paras.Count);
+        var caretPara = Current;
+        double fs = Base, height = _box.ActualHeight;
+        int line = 0;
+        foreach (var p in paras)
+        {
+            line++;
+            Rect r;
+            try { r = p.ContentStart.GetCharacterRect(LogicalDirection.Forward); } catch { continue; }
+            if (r.IsEmpty || r.Bottom < -4 || r.Top > height + 4) continue;
+            if (numbers) GutterNumber(line, r, ReferenceEquals(p, caretPara));
+            if (!lists.TryGetValue(p, out var item) || item.Kind == "todo") continue;
+            bool bullet = item.Kind == "bullet";
+            var mark = new TextBlock
+            {
+                Text = bullet ? Bullets[item.Depth % Bullets.Length] : item.Label,
+                FontSize = bullet ? fs * (item.Depth % Bullets.Length == 0 ? 1.15 : 1.0) : fs * (item.Depth == 0 ? 1 : 0.94),
+                FontFamily = bullet ? Symbols : (FontFamily)Application.Current.Resources["UiFont"],
+                FontWeight = !bullet && item.Depth == 0 ? FontWeights.SemiBold : FontWeights.Normal,
+                Foreground = Res(bullet ? BulletBrushes[Math.Min(item.Depth, BulletBrushes.Length - 1)] : item.Depth == 0 ? "FgDim" : "FgFaint"),
+            };
+            mark.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            var size = mark.DesiredSize;
+            // a dot in the middle of the room before the text, a number ending just before it
+            Canvas.SetLeft(mark, bullet ? r.Left - Step / 2 - size.Width / 2 : r.Left - 6 - size.Width);
+            Canvas.SetTop(mark, r.Top + (r.Height - size.Height) / 2);
+            _marks.Children.Add(mark);
+        }
+    }
+
+    /// <summary>A note's paragraphs in order (a list made by an older version: its items' paragraphs).</summary>
+    static IEnumerable<Paragraph> Paragraphs(Block b) => b switch
+    {
+        Paragraph p => new[] { p },
+        List l => l.ListItems.SelectMany(li => li.Blocks).SelectMany(Paragraphs),
+        Section s => s.Blocks.SelectMany(Paragraphs),
+        _ => Enumerable.Empty<Paragraph>(),
+    };
+
+    void GutterWidth(int lines)
+    {
+        int digits = Math.Max(2, lines.ToString().Length);
+        _gutter.Width = Math.Ceiling(digits * Base * 0.62 + 10);
+    }
+
+    void GutterNumber(int number, Rect r, bool current)
+    {
+        var t = new TextBlock { Text = number.ToString(), FontFamily = Mono, FontSize = Base - 2, Foreground = Res(current ? "FgDim" : "FgFaint") };
+        t.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        Canvas.SetLeft(t, _gutter.Width - 6 - t.DesiredSize.Width);
+        Canvas.SetTop(t, r.Top + (r.Height - t.DesiredSize.Height) / 2);
+        _gutter.Children.Add(t);
+    }
+
+    /// <summary>The Markdown mode's line numbers: one per line of the source (a wrapped line keeps its one number).</summary>
+    void SourceNumbers()
+    {
+        var text = _src.Text;
+        GutterWidth(text.Count(c => c == '\n') + 1);
+        int first = _src.GetFirstVisibleLineIndex(), last = _src.GetLastVisibleLineIndex();
+        if (first < 0 || last < first) return;
+        int caretLine = text[..Math.Min(_src.CaretIndex, text.Length)].Count(c => c == '\n') + 1;
+        int idx0 = _src.GetCharacterIndexFromLineIndex(first);
+        int logical = text[..Math.Max(0, Math.Min(idx0, text.Length))].Count(c => c == '\n') + 1;
+        for (int vl = first; vl <= last; vl++)
+        {
+            int idx = _src.GetCharacterIndexFromLineIndex(vl);
+            if (idx < 0) break;
+            bool starts = idx == 0 || idx <= text.Length && text[idx - 1] == '\n';
+            if (vl > first && starts) logical++;
+            if (!starts) continue;
+            var r = _src.GetRectFromCharacterIndex(Math.Min(idx, text.Length));
+            if (!r.IsEmpty) GutterNumber(logical, r, logical == caretLine);
+        }
+    }
+
+    static readonly Regex Word = new(@"[\p{L}\p{N}]+", RegexOptions.Compiled);
+
+    /// <summary>"☑ 2/5 · słowa: 124" at the end of the toolbar.</summary>
+    void UpdateStatus()
+    {
+        int todos = 0, done = 0;
+        string text;
+        if (_source)
+        {
+            text = _src.Text;
+            foreach (Match m in TodoLineMulti.Matches(text)) { todos++; if (m.Groups[1].Value is "x" or "X") done++; }
+        }
+        else
+        {
+            text = new TextRange(_box.Document.ContentStart, _box.Document.ContentEnd).Text;
+            foreach (var p in _box.Document.Blocks.SelectMany(Paragraphs)) if (IsTodo(p)) { todos++; if (IsTodoChecked(p)) done++; }
+        }
+        int words = Word.Matches(text).Count;
+        _status.Text = (todos > 0 ? $"✓ {done}/{todos}   " : "") + (words > 0 ? L.F("słowa: {0}", words) : "");
+    }
+
+    static readonly Regex TodoLineMulti = new(@"^\s*[-*+]\s+\[( |x|X)\]", RegexOptions.Multiline | RegexOptions.Compiled);
+
+    // ---------- copying: list items, levels and formatting go along as Markdown ----------
+
+    /// <summary>
+    /// Copying more than one line (or a whole list item) puts the Markdown of those lines on the clipboard: pasted here it is
+    /// formatted again (list kinds, levels, boxes, bold …), pasted elsewhere it is readable text with its marks.
+    /// </summary>
+    void OnCopy(object sender, DataObjectCopyingEventArgs e)
+    {
+        if (e.IsDragDrop || _box.Selection.IsEmpty) return;
+        var paras = SelectedParagraphs();
+        if (paras.Count == 0) return;
+        bool whole(Paragraph p) => _box.Selection.Start.CompareTo(p.ContentStart) <= 0 && _box.Selection.End.CompareTo(p.ContentEnd) >= 0;
+        if (paras.Count == 1 && !(whole(paras[0]) && ListKind(paras[0]) != null)) return; // a piece of one line: as usual
+        var lists = Lists(_box.Document.Blocks);
+        int minDepth = paras.Where(lists.ContainsKey).Select(p => lists[p].Depth).DefaultIfEmpty(0).Min();
+        var sb = new StringBuilder();
+        foreach (var p in paras)
+        {
+            string body = whole(p) ? (IsTodo(p) ? Inlines(p.Inlines, skipFirst: true).TrimStart() : Inlines(p.Inlines))
+                : new TextRange(Max(p.ContentStart, _box.Selection.Start), Min(p.ContentEnd, _box.Selection.End)).Text.TrimStart(Unchecked[0], Checked[0], ' ');
+            bool startsHere = _box.Selection.Start.CompareTo(p.ContentStart) <= 0 || ReferenceEquals(p, paras[0]) && IsTodo(p) && new TextRange(p.ContentStart, _box.Selection.Start).Text.Length <= 2;
+            if (lists.TryGetValue(p, out var item) && startsHere)
+            {
+                sb.Append(new string(' ', Math.Max(0, item.Depth - minDepth) * 2));
+                sb.Append(item.Kind switch { "todo" => IsTodoChecked(p) ? "- [x] " : "- [ ] ", "number" => item.N + ". ", _ => "- " });
+            }
+            else if (p.Tag is string k && whole(p))
+                sb.Append(k switch { "h1" => "# ", "h2" => "## ", "h3" => "### ", "h4" => "#### ", "h5" => "##### ", "h6" => "###### ", "quote" => "> ", _ => "" });
+            sb.Append(body).Append('\n');
+        }
+        e.DataObject.SetData(DataFormats.UnicodeText, sb.ToString().TrimEnd('\n'));
+    }
+
+    static TextPointer Max(TextPointer a, TextPointer b) => a.CompareTo(b) >= 0 ? a : b;
+    static TextPointer Min(TextPointer a, TextPointer b) => a.CompareTo(b) <= 0 ? a : b;
+
+    // ---------- the Markdown mode's keys ----------
+
+    /// <summary>Alt+↑ / Alt+↓ in the Markdown source: the selected lines swap with the line above / below.</summary>
+    void OnSrcKey(object sender, KeyEventArgs e)
+    {
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (Keyboard.Modifiers != ModifierKeys.Alt || key is not (Key.Up or Key.Down)) return;
+        e.Handled = true;
+        var t = _src.Text.Replace("\r", "");
+        var (ls, le) = SrcLines();
+        int selStart = _src.SelectionStart, selLen = _src.SelectionLength;
+        if (key == Key.Up)
+        {
+            if (ls == 0) return;
+            int ps = t.LastIndexOf('\n', Math.Max(0, ls - 2)) + 1;
+            if (ls - 1 == 0 || t[ls - 1] != '\n') return;
+            if (ps > ls - 1) ps = 0;
+            var above = t[ps..(ls - 1)];
+            SrcReplace(ps, le, t[ls..le] + "\n" + above);
+            _src.Select(selStart - above.Length - 1, selLen);
+        }
+        else
+        {
+            if (le >= t.Length) return;
+            int ne = t.IndexOf('\n', le + 1);
+            if (ne < 0) ne = t.Length;
+            var below = t[(le + 1)..ne];
+            SrcReplace(ls, ne, below + "\n" + t[ls..le]);
+            _src.Select(selStart + below.Length + 1, selLen);
+        }
+    }
+
     // ---------- self-test hooks (no UI shown) ----------
+
+    /// <summary>The numbers the numbered items show (for the self-test): "1.,1.1,2.,2.1,3.".</summary>
+    public static string LabelsTest(string md)
+    {
+        var e = new NotesEditor();
+        e.Load(md, force: true);
+        return string.Join(",", Lists(e._box.Document.Blocks).Values.Where(i => i.Kind == "number").Select(i => i.Label));
+    }
 
     /// <summary>Round trip for the self-test.</summary>
     public static string RoundTrip(string md)
@@ -1070,6 +1484,9 @@ public sealed class NotesEditor : DockPanel
             }
             if (ch == '\u0002') { if (e.Current is { } hp) e._box.CaretPosition = hp.ContentStart; e.KeepCaretAfterCheck(); continue; } // Home
             if (ch == '\t') { if (e.Current is { } tp && IsTodo(tp)) SetCheck(tp, !IsTodoChecked(tp)); continue; }
+            if (ch == '\u0003') { e.Indent(+1); continue; } // Tab
+            if (ch == '\u0004') { e.Indent(-1); continue; } // Shift+Tab
+            if (ch == '\n') { if (!e.Enter()) { e._box.CaretPosition = e._box.CaretPosition.InsertParagraphBreak(); } continue; }
             var caret = e._box.CaretPosition;
             caret.InsertTextInRun(ch.ToString());
             e._box.CaretPosition = caret.GetPositionAtOffset(1, LogicalDirection.Forward) ?? caret;

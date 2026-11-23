@@ -865,6 +865,8 @@ public sealed class AppSettings
     public bool DayNotesLeft { get; set; }
     /// <summary>The notebook shows the Markdown source instead of the formatted text.</summary>
     public bool NotesSource { get; set; }
+    /// <summary>The notebook's line numbers in a gutter on the left (its "#" button).</summary>
+    public bool NotesLineNumbers { get; set; }
     /// <summary>No glass at all: the board, the clock and the panels on a solid background.</summary>
     public bool Opaque { get; set; }
     /// <summary>A fine pattern over the board's background: "none", "fabric", "dots" or "grid".</summary>

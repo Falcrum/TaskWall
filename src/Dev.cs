@@ -57,6 +57,9 @@ static class Dev
         else if (open == "meeting") App.Current.Dispatcher.BeginInvoke(() => AlarmWindow.Edit(App.Store, null, DateTime.Today, meeting: true, title: "Sprint planning"), DispatcherPriority.ApplicationIdle);
         else if (open == "help") App.Current.Dispatcher.BeginInvoke(HelpWindow.ShowHelp, DispatcherPriority.ApplicationIdle);
         else if (open == "day") App.Current.Dispatcher.BeginInvoke(() => App.Board?.ShowDay(), DispatcherPriority.ApplicationIdle);
+        else if (open is "notes" or "notes-numbers") App.Current.Dispatcher.BeginInvoke(() => App.Board?.DevNotes(
+            "## Lista\n1. Test\n   1. Text\n   2. Text\n2. Test2\n   1. Text\n      1. Głębiej\n3. Test3\n- [ ] Test\n  - [x] Text\n    - [ ] Głębiej\n- [ ] Test2\n\n- Test\n  - Text\n    - Głębiej\n      - Najgłębiej\n- Test2\n\nZwykły **tekst** z `kodem` i [linkiem](https://example.com).",
+            open == "notes-numbers"), DispatcherPriority.ApplicationIdle);
         else if (open == "repeat-mark") App.Current.Dispatcher.BeginInvoke(() => RepeatWindow.ForMark(App.Store, null, DateTime.Today, "HO"), DispatcherPriority.ApplicationIdle);
         else if (open == "alarm") App.Current.Dispatcher.BeginInvoke(() => AlarmWindow.Edit(App.Store, null, DateTime.Today.AddDays(1)), DispatcherPriority.ApplicationIdle);
         else if (open == "ring-soon") // a real alarm for the next full minute (goes through the timer)
@@ -580,6 +583,14 @@ static class Dev
             var (enterAfter, enterUndo) = NotesEditor.EnterUndoTest("- [ ] zrobić");
             Check("notes: Enter on a check box line gives a new box, and one Ctrl+Z takes it back whole",
                 enterAfter == "- [ ] zrobić\n- [ ] x" && enterUndo == "- [ ] zrobić", $"{enterAfter} | {enterUndo}");
+            const string nested = "1. Test\n   1. Text\n2. Test2\n   1. Text\n   2. Więcej\n3. Test3\n- [ ] Test\n  - [x] Text\n- [ ] Test2\n\n- Test\n  - Text\n    - Głębiej\n- Test2";
+            var nestedBack = NotesEditor.RoundTrip(nested);
+            Check("notes: nested numbered lists, check boxes and bullets keep their levels through a round trip", nestedBack == nested, nestedBack.Replace("\n", " | "));
+            var labels = NotesEditor.LabelsTest(nested);
+            Check("notes: a numbered item under a numbered one shows its parent's number (2.1, 2.2)", labels == "1.,1.1,2.,2.1,2.2,3.", labels);
+            var typedLists = new[] { NotesEditor.TypeTest("- a\n\u0003b\n\u0004c"), NotesEditor.TypeTest("1. a\n\u0003b\n\nc"), NotesEditor.TypeTest("[] a\n\u0003b") };
+            Check("notes: Enter continues a list at its level, Tab / Shift+Tab move an item in and out, an empty item steps out",
+                typedLists[0] == "- a\n  - b\n- c" && typedLists[1] == "1. a\n   1. b\n2. c" && typedLists[2] == "- [ ] a\n  - [ ] b", string.Join(" || ", typedLists).Replace("\n", " | "));
             Check("notes: plain-text export without marks", NotesEditor.ToPlain("# Plan\n- [x] **zrobione**\n- lista\n[a](https://b.c)") == "PLAN\n====\n☑ zrobione\n• lista\na (https://b.c)");
             var whDir = Path.Combine(Path.GetTempPath(), "taskwall-wh-" + Guid.NewGuid().ToString("N"));
             var whStore = new BoardStore("work");

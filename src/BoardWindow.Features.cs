@@ -241,6 +241,15 @@ public partial class BoardWindow
     public void ShowMonth() => SetView(ViewMode.Month);
     public void ShowDay() => SetView(ViewMode.Day);
 
+    /// <summary>Dev screenshots (--open notes): the day view with a sample note shown (not saved).</summary>
+    public void DevNotes(string md, bool lineNumbers)
+    {
+        SetView(ViewMode.Day);
+        var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        t.Tick += (_, _) => { t.Stop(); _dayView?.DevNotes(md, lineNumbers); };
+        t.Start();
+    }
+
     /// <summary>The period on screen: the day, the weeks, the month or the year.</summary>
     (DateTime From, DateTime To, string Name) VisiblePeriod() => _view switch
     {

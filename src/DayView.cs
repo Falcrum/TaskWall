@@ -41,6 +41,9 @@ public sealed class DayView : Grid
     readonly TextBlock _looseHead = new() { FontSize = 9.5, FontWeight = FontWeights.SemiBold, Foreground = Ui.Res("FgFaint") };
     readonly Border _looseBox = new() { Margin = new Thickness(56, 0, 8, 8), Padding = new Thickness(8, 5, 4, 3), CornerRadius = new CornerRadius(6) };
     readonly NotesEditor _notes = new();
+
+    /// <summary>Dev screenshots: a sample note in the notebook (shown, not saved).</summary>
+    public void DevNotes(string md, bool lineNumbers) { App.Settings.NotesLineNumbers = lineNumbers; _notes.Load(md, force: true); }
     readonly TextBlock _notesTitle = new() { FontSize = 11, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 6) };
     readonly DispatcherTimer _clock = new() { Interval = TimeSpan.FromMinutes(1) };
     DateTime _date = DateTime.Today;
