@@ -720,6 +720,18 @@ sealed class DockView : Canvas
         WindowActions.Activate(e.Windows[0].Hwnd);
     }
 
+    /// <summary>Win+n: the n-th program or stack of the dock (the magnifier not counted) – a click on it, or a new window with Shift.</summary>
+    public void ActivateNth(int n, bool newWindow)
+    {
+        var e = _entries.Where(x => x.Key != SearchKey).Skip(n - 1).FirstOrDefault();
+        if (e == null) return;
+        var fg = Native.GetForegroundWindow(); // the toggle judges by the window in front now, not by the last mouse press
+        _fgAtPress = fg == _bar.Hwnd || fg == IntPtr.Zero ? _realFront : fg;
+        if (e.Pin?.Items != null) { _preview.Dismiss(); StackIsland.Toggle(e.Pin, e.Visual, _bar, this); return; }
+        if (newWindow) { _preview.Dismiss(); Launch(e); return; }
+        Click(e);
+    }
+
     /// <summary>A program from a stack: its window up when it runs (by its file or app id), otherwise started.</summary>
     public void ActivateOrLaunch(DockPin pin)
     {

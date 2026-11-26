@@ -184,5 +184,7 @@ static partial class L
         ("Odśwież kalendarze", "Refresh calendars"),
         ("Otwórz folder danych", "Open data folder"),
         ("Zamknij TaskWall", "Quit TaskWall"),
+        ("Win+1…9 przełącza programy docka", "Win+1…9 switches the dock's programs"),
+        ("Jak na pasku zadań: Win+cyfra przywołuje albo uruchamia n-ty program, Shift+Win+cyfra otwiera nowe okno.", "Like on the taskbar: Win+digit brings up or starts the n-th program, Shift+Win+digit opens a new window."),
     };
 }

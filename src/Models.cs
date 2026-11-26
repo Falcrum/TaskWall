@@ -813,6 +813,8 @@ public sealed class AppSettings
     public bool DockThin { get; set; } = false;
     /// <summary>A red counter on a dock icon: the notifications the program has waiting (Windows' notification centre, its badge, its title).</summary>
     public bool DockBadges { get; set; } = true;
+    /// <summary>Win+1…9 (0) bring up or start the n-th dock icon, Shift+Win+n opens a new window of it – like on the Windows taskbar.</summary>
+    public bool DockWinKeys { get; set; } = true;
     /// <summary>When each program's notifications were last seen (its window brought to the front; program id → FILETIME UTC): older ones don't count.</summary>
     public Dictionary<string, long> DockSeen { get; set; } = new();
     /// <summary>The programs pinned to the dock, in order.</summary>
