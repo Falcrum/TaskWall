@@ -39,6 +39,8 @@ sealed class WindowPreview : GlassWindow
 
     /// <summary>A tile was clicked: bring that window up.</summary>
     public event Action<IntPtr>? Picked;
+    /// <summary>"Wszystkie okna": every window up, the one used last on top.</summary>
+    public event Action? PickedAll;
     /// <summary>A window's close button.</summary>
     public event Action<IntPtr>? CloseRequested;
 
@@ -66,7 +68,9 @@ sealed class WindowPreview : GlassWindow
         Clear();
         _shown = windows.Take(Math.Max(1, (int)((strip.Width / scale - 2 * Pad) / (TileW + Gap)))).ToList();
         if (_shown.Count == 0) { Hide(); return; }
-        double w = 2 * Pad + _shown.Count * TileW + (_shown.Count - 1) * Gap, h = 2 * Pad + ThumbH + TitleH;
+        const double AllW = 110;
+        bool all = _shown.Count > 1;
+        double w = 2 * Pad + _shown.Count * TileW + (_shown.Count - 1) * Gap + (all ? Gap + AllW : 0), h = 2 * Pad + ThumbH + TitleH;
         _tiles.Children.Clear();
         _tiles.Width = w;
         _tiles.Height = h;
@@ -91,6 +95,29 @@ sealed class WindowPreview : GlassWindow
             Canvas.SetLeft(tile, Pad + i * (TileW + Gap));
             Canvas.SetTop(tile, Pad);
             _tiles.Children.Add(tile);
+        }
+        if (all)
+        {
+            // every window at once: the tile after the previews
+            var allTile = new Border
+            {
+                Width = AllW, Height = ThumbH + TitleH, CornerRadius = new CornerRadius(8), Cursor = Cursors.Hand, BorderThickness = new Thickness(1),
+                BorderBrush = Ui.Brush(Th.Ink(0x22)), ToolTip = L.T("Przywróć wszystkie okna programu"),
+                Child = new StackPanel
+                {
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Children =
+                    {
+                        new TextBlock { Text = "⧉", FontSize = 28, TextAlignment = TextAlignment.Center, Foreground = Ui.Res("FgDim"), FontFamily = new FontFamily("Segoe UI Symbol") },
+                        new TextBlock { Text = L.T("Wszystkie okna"), FontSize = 12, TextAlignment = TextAlignment.Center, Foreground = Ui.Res("Fg"), Margin = new Thickness(0, 6, 0, 0), TextWrapping = TextWrapping.Wrap },
+                    },
+                },
+            };
+            Anim.HoverBackground(allTile, Colors.Transparent, Th.Ink(0x16));
+            allTile.MouseLeftButtonUp += (_, _) => PickedAll?.Invoke();
+            Canvas.SetLeft(allTile, Pad + _shown.Count * (TileW + Gap));
+            Canvas.SetTop(allTile, Pad);
+            _tiles.Children.Add(allTile);
         }
         int pw = (int)Math.Round(w * scale), ph = (int)Math.Round(h * scale), gap = (int)Math.Round(8 * scale);
         int x = (int)Math.Round(iconCentreX - pw / 2.0);

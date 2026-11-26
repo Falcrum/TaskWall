@@ -51,7 +51,7 @@ static class StackIsland
         _dock?.Refresh(); // the stack's tile shows its first programs
     }
 
-    const double Tile = 84, IconPx = 44;
+    const double Tile = 92, IconPx = 54;
 
     static FrameworkElement Build()
     {
@@ -283,9 +283,9 @@ static class StackIsland
         var dv = new DrawingVisual();
         using (var dc = dv.RenderOpen())
         {
-            dc.DrawRoundedRectangle(new LinearGradientBrush(top, c, 90), null, new Rect(6, 6, Px - 12, Px - 12), 30, 30);
+            dc.DrawRoundedRectangle(new LinearGradientBrush(top, c, 90), null, new Rect(1, 1, Px - 2, Px - 2), 30, 30);
             var glyph = ((char)Convert.ToInt32(hex, 16)).ToString();
-            var ft = new FormattedText(glyph, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface(SymbolFont, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal), 60, Brushes.White, 1.0);
+            var ft = new FormattedText(glyph, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface(SymbolFont, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal), 72, Brushes.White, 1.0);
             dc.DrawText(ft, new Point((Px - ft.Width) / 2, (Px - ft.Height) / 2));
         }
         var bmp = new RenderTargetBitmap(Px, Px, 96, 96, PixelFormats.Pbgra32);
@@ -328,9 +328,9 @@ static class StackIsland
         using (var dc = dv.RenderOpen())
         {
             var bg = new SolidColorBrush(Th.Light ? Color.FromArgb(0x50, 0x60, 0x60, 0x70) : Color.FromArgb(0x48, 0xB0, 0xB4, 0xC0));
-            dc.DrawRoundedRectangle(bg, new Pen(new SolidColorBrush(Th.Ink(0x50)), 3), new Rect(4, 4, Px - 8, Px - 8), 30, 30);
+            dc.DrawRoundedRectangle(bg, new Pen(new SolidColorBrush(Th.Ink(0x50)), 2), new Rect(1, 1, Px - 2, Px - 2), 30, 30);
             var kids = (stack.Items ?? new()).Take(4).ToList();
-            const double pad = 18, gap = 8;
+            const double pad = 10, gap = 5;
             double cell = (Px - 2 * pad - gap) / 2;
             for (int i = 0; i < 4; i++)
             {

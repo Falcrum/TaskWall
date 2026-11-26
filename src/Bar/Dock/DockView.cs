@@ -145,6 +145,15 @@ sealed class DockView : Canvas
         _hoverPreview.Tick += (_, _) => { _hoverPreview.Stop(); if (_hovered is { Windows.Count: > 0 } h && _dragging == null) ShowPreview(h); };
         _hidePreview.Tick += (_, _) => { _hidePreview.Stop(); if (!IsMouseOver && !_preview.IsMouseOver) _preview.Dismiss(); };
         _preview.Picked += h => { _preview.Dismiss(); WindowActions.Activate(h); };
+        _preview.PickedAll += () =>
+        {
+            var shown = _preview.Shown.Select(t => t.Hwnd).ToList();
+            _preview.Dismiss();
+            if (shown.Count == 0) return;
+            var top = WindowActions.Topmost(shown);
+            foreach (var w in shown.Where(w => w != top)) { if (TaskList.IsIconic(w)) Native.ShowWindow(w, 9 /* SW_RESTORE */); WindowActions.Activate(w); }
+            WindowActions.Activate(top); // the one used last ends on top
+        };
         _preview.CloseRequested += h => { WindowActions.Close(h); ScheduleRefresh(); _preview.Dismiss(); };
         _preview.MouseLeave += (_, _) => { _hidePreview.Stop(); _hidePreview.Start(); };
         MouseMove += OnMove;
@@ -152,7 +161,8 @@ sealed class DockView : Canvas
         MouseLeave += (_, _) => { _bell.Leave(Now); _hovered = null; _hoverPreview.Stop(); _hidePreview.Stop(); _hidePreview.Start(); Animate(); };
         StartHooks();
         SyncBadges();
-        Unloaded += (_, _) => Detach();
+        // no Detach on Unloaded: WPF unloads an element that only moves in the tree (and loads it again) – that closed the
+        // previews and unhooked the windows for good; the bar detaches the dock itself (switched off, the bar closed)
         Refresh();
     }
 
@@ -705,7 +715,9 @@ sealed class DockView : Canvas
             foreach (var w in e.Windows) if (!TaskList.IsIconic(w.Hwnd)) WindowActions.Minimize(w.Hwnd);
             return;
         }
-        WindowActions.Activate(WindowActions.Topmost(e.Windows.Select(w => w.Hwnd).ToList()));
+        // several windows: their live previews to pick one (or all) – no guessing which one comes up
+        if (e.Windows.Count > 1) { ShowPreview(e); return; }
+        WindowActions.Activate(e.Windows[0].Hwnd);
     }
 
     /// <summary>A program from a stack: its window up when it runs (by its file or app id), otherwise started.</summary>

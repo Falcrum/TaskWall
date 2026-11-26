@@ -821,6 +821,8 @@ public sealed class AppSettings
     public bool BarWeather { get; set; } = true;
     /// <summary>The top bar's load rings on the right, in order: cpu, gpu, ram, disk, net (empty = none).</summary>
     public string Meters { get; set; } = "cpu,gpu,ram,disk,net";
+    /// <summary>The AI usage limits on the bar: "claude", "chatgpt" (comma-separated; empty = none, the default).</summary>
+    public string AiMeters { get; set; } = "";
     /// <summary>The task state's mark: "bar" (a thin bar that fills up) or "circle" (a round icon like Linear / Jira).</summary>
     public string StateIcon { get; set; } = "bar";
     /// <summary>A lunch break on every working day ("12:00-12:30"; empty = none): a day can move or remove its own.</summary>
