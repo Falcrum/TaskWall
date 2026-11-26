@@ -44,6 +44,10 @@ public partial class App : Application
     public static ClockWindow? Clock => Instance._clock;
     /// <summary>The full-width bar (Settings → Ogólne), while it is on.</summary>
     BarWindow? _bar;
+    /// <summary>The bars on the other monitors (Settings → Pasek → Pasek na każdym monitorze), by the monitor's device name.</summary>
+    readonly System.Collections.Generic.Dictionary<string, BarWindow> _otherBars = new();
+    /// <summary>Every full-width bar on screen: the main one first.</summary>
+    System.Collections.Generic.List<BarWindow> AllBars => _bar == null ? _otherBars.Values.ToList() : _otherBars.Values.Prepend(_bar).ToList();
     /// <summary>The bar crashed TaskWall three times in ten minutes: this run goes without it (the guard's count).</summary>
     bool _barBlocked;
     bool FullBar => Settings.AppBar && !_barBlocked;
@@ -155,11 +159,11 @@ public partial class App : Application
         SystemEvents.SessionSwitch += (_, a) =>
         {
             if (a.Reason is SessionSwitchReason.SessionLock or SessionSwitchReason.SessionUnlock)
-                Dispatcher.BeginInvoke(() => _bar?.Pause("locked", a.Reason == SessionSwitchReason.SessionLock));
+                Dispatcher.BeginInvoke(() => { foreach (var b in AllBars) b.Pause("locked", a.Reason == SessionSwitchReason.SessionLock); });
         };
         SystemEvents.PowerModeChanged += (_, a) =>
         {
-            if (a.Mode is PowerModes.Suspend or PowerModes.Resume) Dispatcher.BeginInvoke(() => _bar?.Pause("asleep", a.Mode == PowerModes.Suspend));
+            if (a.Mode is PowerModes.Suspend or PowerModes.Resume) Dispatcher.BeginInvoke(() => { foreach (var b in AllBars) b.Pause("asleep", a.Mode == PowerModes.Suspend); });
         };
         SystemEvents.DisplaySettingsChanged += (_, _) => Dispatcher.BeginInvoke(ApplySettings);
         // no polling: the wallpaper is read at start-up, after settings changes, on "Odśwież tapetę"
@@ -447,7 +451,8 @@ public partial class App : Application
         foreach (var s in Stores.Values)
             try { s.SaveNow(); } catch (Exception ex) { Log.Error("save on exit", ex); }
         // the bar gives its strip of the screen back; the guard sees a clean exit and ends
-        try { _bar?.Undock(); } catch (Exception ex) { Log.Error("bar on exit", ex); }
+        foreach (var b in AllBars)
+            try { b.Undock(); } catch (Exception ex) { Log.Error("bar on exit", ex); }
         try { WindowsTaskbar.Restore(); } catch (Exception ex) { Log.Error("taskbar on exit", ex); }
         if (_bar != null || Settings.AppBar) Guard.CleanExit();
         _tray?.Dispose();
@@ -470,8 +475,11 @@ public partial class App : Application
         _clock.SetScale(Settings.UiScale);
         _clock.ApplySettings();
         GlassWindow.RefreshCorners();
-        _bar?.SetScale(Settings.UiScale);
-        _bar?.ApplySettings();
+        foreach (var b in AllBars)
+        {
+            b.SetScale(Settings.UiScale);
+            b.ApplySettings();
+        }
         LayoutWindows();
         RegisterHotkey();
         ScheduleGlass();
@@ -568,7 +576,7 @@ public partial class App : Application
         }
         // the top bar's glow is drawn in the accent: follow it (an "auto" accent is only known once the wallpaper is read)
         _clock?.ApplyGlow();
-        _bar?.ApplyGlow();
+        foreach (var b in AllBars) b.ApplyGlow();
     }
 
     // ---------- placement ----------
@@ -581,6 +589,7 @@ public partial class App : Application
         int P(double dip) => (int)Math.Round(dip * s);
         // the full-width bar first: it reserves its strip, the work area (read again below) is then the rest of the screen
         PxRect? strip = null;
+        DropOtherBars(mon.Device);
         if (FullBar)
         {
             if (_bar == null)
@@ -616,6 +625,7 @@ public partial class App : Application
             try { WindowsTaskbar.Restore(); } catch (Exception ex) { Log.Error("taskbar", ex); }
             mon = Monitors.Pick(Settings.Monitor);
         }
+        LayoutOtherBars(mon.Device, ui);
         bool clock = Settings.ShowClock && !FullBar; // the old top bar over the board: not with the full-width one
         var wa = mon.Work;
 
@@ -668,6 +678,55 @@ public partial class App : Application
             if (_clock.IsVisible) _clock.Hide();
             if (_clock.Calendar.IsVisible) _clock.Calendar.Hide();
         }
+    }
+
+    /// <summary>
+    /// A bar on every other monitor (Settings → Pasek → Pasek na każdym monitorze, with the full-width bar on): each its own app bar
+    /// on its monitor, at the same edge and of the same size as the main one, its dock showing that monitor's windows. Opened and
+    /// closed as monitors come and go and as the setting changes; the glass is the screen's width (there is no board to line up with).
+    /// </summary>
+    void LayoutOtherBars(string mainDevice, double ui)
+    {
+        var want = DropOtherBars(mainDevice);
+        foreach (var m in want)
+        {
+            if (!_otherBars.TryGetValue(m.Device, out var bar))
+            {
+                bar = new BarWindow(main: false);
+                bar.Moved += LayoutWindows;
+                bar.SetScale(ui);
+                _otherBars[m.Device] = bar;
+                Anim.Enter(bar.FrameElement, 0, Settings.AppBarTop ? -30 : 30, 520, 150);
+            }
+            int P(double dip) => (int)Math.Round(dip * m.Scale);
+            try
+            {
+                var b = m.Bounds;
+                bar.Dock(new PxRect(b.X, b.Y, b.Width, b.Height), Settings.AppBarTop, GapDip, ui, m.Scale);
+                // the month opens from its clock, as on the main bar
+                var st = bar.FrameRect;
+                int cw = P(CalendarWindow.TabWidth * ui), ch = P(CalendarWindow.CalendarHeight * ui);
+                bar.Calendar.PlacePhysical(st.Right - cw, Settings.AppBarTop ? st.Bottom + P(6) : st.Y - P(6) - ch, cw, ch, m.Scale);
+            }
+            catch (Exception ex) { Log.Error("other bar dock", ex); }
+            if (!bar.Paused && !bar.IsVisible) bar.Show();
+        }
+    }
+
+    /// <summary>
+    /// Closes the other monitors' bars that are not wanted any more (the setting off, the monitor gone, or it became the board's
+    /// monitor – before the main bar docks there, so the two never stand on one edge); returns the monitors that want one.
+    /// </summary>
+    System.Collections.Generic.List<MonitorInfo> DropOtherBars(string mainDevice)
+    {
+        var want = FullBar && Settings.BarAllMonitors ? Monitors.All().Where(m => m.Device != mainDevice && m.Bounds.Width > 0).ToList() : new();
+        foreach (var gone in _otherBars.Keys.Where(d => want.All(m => m.Device != d)).ToList())
+        {
+            var old = _otherBars[gone];
+            _otherBars.Remove(gone);
+            try { old.Undock(); old.Close(); } catch (Exception ex) { Log.Error("other bar close", ex); }
+        }
+        return want;
     }
 
     /// <summary>The second screen chosen in Settings, when it is connected and not the board's own screen.</summary>
@@ -746,7 +805,10 @@ public partial class App : Application
         {
             var r = w.PhysicalRect;
             if (!UseGlass || r.Width <= 0) { w.SetGlass(null); return; }
-            var mon = Monitors.Pick(Settings.Monitor);
+            // the wallpaper of the screen the panel is on (a bar on every monitor opens its panels there), else the board's
+            int cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2;
+            var mon = Monitors.All().FirstOrDefault(m => cx >= m.Bounds.X && cx < m.Bounds.X + m.Bounds.Width && cy >= m.Bounds.Y && cy < m.Bounds.Y + m.Bounds.Height)
+                ?? Monitors.Pick(Settings.Monitor);
             w.SetGlass(Wallpaper.RenderGlass(Wallpaper.Resolve(mon), r, Math.Clamp(Settings.BlurStrength, 0, 100) * 1.3 * mon.Scale));
         }
         catch (Exception ex) { Log.Error("panel glass", ex); }
@@ -776,6 +838,18 @@ public partial class App : Application
                 _bar.SetGlass(UseGlass && fr.Width > 0 ? Wallpaper.RenderGlass(src, fr, blurPx) : null);
                 var fk = _bar.Calendar.PhysicalRect;
                 _bar.Calendar.SetGlass(UseGlass && fk.Width > 0 ? Wallpaper.RenderGlass(src, fk, blurPx) : null);
+            }
+            // the bars on the other monitors: the wallpaper of their own screen
+            foreach (var (device, other) in _otherBars)
+            {
+                var om = Monitors.All().FirstOrDefault(m => m.Device == device);
+                if (om == null) continue;
+                var osrc = Wallpaper.Resolve(om);
+                double oblur = Math.Clamp(Settings.BlurStrength, 0, 100) * 1.3 * om.Scale;
+                var of = other.FrameRect;
+                other.SetGlass(UseGlass && of.Width > 0 ? Wallpaper.RenderGlass(osrc, new Int32Rect(of.X, of.Y, of.Width, of.Height), oblur) : null);
+                var ok = other.Calendar.PhysicalRect;
+                other.Calendar.SetGlass(UseGlass && ok.Width > 0 ? Wallpaper.RenderGlass(osrc, ok, oblur) : null);
             }
 
             if (Wallpaper.Average(src, br) is { } avg && avg != _surfaceTint)

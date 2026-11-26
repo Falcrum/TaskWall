@@ -85,7 +85,7 @@ static class DockHotkeys
                             keybd_event(VK_MASK, 0, 0, UIntPtr.Zero);
                             keybd_event(VK_MASK, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
                             var dock = _dock;
-                            _ui?.BeginInvoke(new Action(() => dock?.ActivateNth(n, shift)));
+                            _ui?.BeginInvoke(new Action(() => DockView.ForFront(dock)?.ActivateNth(n, shift)));
                             return (IntPtr)1;
                         }
                     }

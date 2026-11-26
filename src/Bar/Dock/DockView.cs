@@ -117,6 +117,21 @@ sealed class DockView : Canvas
     }
 
     readonly BarWindow _bar;
+    /// <summary>The docks on screen now – one per bar with a bar on every monitor: a change of the pins or stacks reaches all of them.</summary>
+    static readonly List<DockView> Live = new();
+
+    /// <summary>The dock of the monitor where the window in front is (a bar on every monitor), else <paramref name="fallback"/> (the main bar's).</summary>
+    public static DockView? ForFront(DockView? fallback)
+    {
+        var fg = Native.GetForegroundWindow();
+        if (fg == IntPtr.Zero || Live.Count < 2) return fallback;
+        var mon = BarWindow.MonitorOf(fg);
+        return Live.FirstOrDefault(d => d._bar.MonitorHandle == mon) ?? fallback;
+    }
+    /// <summary>Every task window, on every monitor (the row shows only its own monitor's with a bar on each): a stack's program found where it runs.</summary>
+    List<TaskList.Task> _allTasks = new();
+    /// <summary>Only the windows on the bar's monitor (Settings → Pasek → Pasek na każdym monitorze).</summary>
+    bool OwnOnly => _bar.OwnWindowsOnly;
     readonly List<Entry> _entries = new();
     /// <summary>Icons gone from the row, shrinking away before they leave the canvas.</summary>
     readonly List<Entry> _leaving = new();
@@ -191,6 +206,7 @@ sealed class DockView : Canvas
         MouseMove += OnMove;
         // the bell dies away where the pointer was last (the pointer stays where it left), not all at once
         MouseLeave += (_, _) => { _bell.Leave(Now); _hovered = null; _hoverPreview.Stop(); _hidePreview.Stop(); _hidePreview.Start(); Animate(); };
+        Live.Add(this);
         StartHooks();
         SyncBadges();
         // no Detach on Unloaded: WPF unloads an element that only moves in the tree (and loads it again) – that closed the
@@ -205,6 +221,7 @@ sealed class DockView : Canvas
     /// <summary>The dock taken off the bar (switched off, the bar closed): no hooks, no frames, no timers, the previews closed.</summary>
     public void Detach()
     {
+        Live.Remove(this);
         StopHooks();
         Unhook();
         if (_badgesOn) { _badgesOn = false; AppBadges.Changed -= UpdateBadges; AppBadges.Stop(); }
@@ -253,7 +270,8 @@ sealed class DockView : Canvas
     void WatchMoves(IntPtr front)
     {
         uint pid = 0;
-        if (front != IntPtr.Zero && S.DockThin) Native.GetWindowThreadProcessId(front, out pid);
+        // (a bar on every monitor: also a window dragged or sent – Win+Shift+arrow – to another monitor, which moves it to another dock)
+        if (front != IntPtr.Zero && (S.DockThin || OwnOnly)) Native.GetWindowThreadProcessId(front, out pid);
         if (pid == _moveHookPid && (_moveHook != IntPtr.Zero || pid == 0)) return;
         if (_moveHook != IntPtr.Zero) { Native.UnhookWinEvent(_moveHook); _moveHook = IntPtr.Zero; }
         _moveHookPid = pid;
@@ -269,15 +287,22 @@ sealed class DockView : Canvas
             Native.GetWindowThreadProcessId(hwnd, out var pid);
             if (pid == (uint)Environment.ProcessId)
             {
-                if (hwnd != _bar.Hwnd) _realFront = hwnd; // the board, a dialog: in front; the bar taking a click: not
+                if (!BarWindow.IsBar(hwnd)) _realFront = hwnd; // the board, a dialog: in front; a bar taking a click: not
                 return;
             }
             _realFront = hwnd;
             Activated(hwnd);
             WatchMoves(hwnd);
         }
+        // moved (by hand, or Win+Shift+arrow: a location change of the window in front) onto this monitor or off it: read again
+        else if (OwnOnly && (evt == 0x000B || hwnd == _front) && (BarWindow.MonitorOf(hwnd) == _bar.MonitorHandle) != Listed(hwnd)
+                 && _allTasks.Any(t => t.Hwnd == hwnd))
+            ScheduleRefresh();
         if (S.DockThin) { _thinCheck.Stop(); _thinCheck.Start(); }
     }
+
+    /// <summary>The window has its place in this dock's row.</summary>
+    bool Listed(IntPtr hwnd) => _entries.Any(e => e.Windows.Any(w => w.Hwnd == hwnd));
 
     /// <summary>A window came in front: the marks follow; the list is read again only for a window the dock doesn't know (a new one, another virtual desktop).</summary>
     void Activated(IntPtr hwnd)
@@ -292,8 +317,14 @@ sealed class DockView : Canvas
                 known = true;
                 if (S.DockBadges) seen |= AppBadges.MarkSeen(AppIdsOf(e), ExesOf(e));
             }
-        if (seen) SettingsStore.Save(S);
+        if (seen)
+        {
+            SettingsStore.Save(S);
+            foreach (var d in Live) if (d != this) d.UpdateBadges(); // the same pinned program on the other monitors' docks
+        }
         UpdateMarks();
+        // a bar on every monitor: a known window on another monitor belongs to another dock – nothing to read again here
+        if (!known && OwnOnly && _allTasks.Any(t => t.Hwnd == hwnd) && BarWindow.MonitorOf(hwnd) != _bar.MonitorHandle) known = true;
         if (!known) ScheduleRefresh();
     }
 
@@ -374,6 +405,13 @@ sealed class DockView : Canvas
         try { tasks = TaskList.Tasks(); }
         catch (Exception ex) { Log.Error("dock tasks", ex); return; }
         AppBadges.KeepPackages(tasks.Select(t => t.Pid));
+        _allTasks = tasks;
+        // a bar on every monitor: this dock shows the windows on its own monitor (like the taskbar's "where the window is open")
+        if (OwnOnly)
+        {
+            var mine = _bar.MonitorHandle;
+            tasks = tasks.Where(t => BarWindow.MonitorOf(t.Hwnd) == mine).ToList();
+        }
         var groups = new Dictionary<string, List<TaskList.Task>>(StringComparer.OrdinalIgnoreCase);
         var pinByExe = S.DockPins.Where(p => !string.IsNullOrEmpty(p.Exe)).GroupBy(p => p.Exe!, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Key, StringComparer.OrdinalIgnoreCase);
         foreach (var t in tasks)
@@ -976,9 +1014,8 @@ sealed class DockView : Canvas
             var pin = dragged.Pin ?? new DockPin { Key = dragged.Key, Exe = w0?.Exe, AppId = w0?.AppId, Name = dragged.Name };
             if (dragged.Pin != null) S.DockPins.Remove(dragged.Pin);
             if (!into.Any(x => string.Equals(x.Key, pin.Key, StringComparison.OrdinalIgnoreCase))) into.Add(pin);
-            SettingsStore.Save(S);
             _refreshAfterDrop = false;
-            Refresh();
+            PinsChanged();
             return;
         }
         var order = _entries.Where(e => e.Pin != null).Select(e => e.Pin!).ToList();
@@ -987,6 +1024,7 @@ sealed class DockView : Canvas
         {
             S.DockPins = order;
             SettingsStore.Save(S);
+            foreach (var d in Live.ToList()) if (d != this) d.Refresh(); // the new order on the other monitors' docks
         }
         Relayout();
         if (_refreshAfterDrop) { _refreshAfterDrop = false; Refresh(); }
@@ -1003,6 +1041,8 @@ sealed class DockView : Canvas
         _preview.Dismiss();
         if (e.Key == SearchKey) { _bar.OpenSearch(e.Visual); return; }
         if (e.Pin?.Items != null) { StackIsland.Toggle(e.Pin, e.Visual, _bar, this); return; }
+        // a pinned program running only on another monitor: its window comes up there (the middle button still starts a new one)
+        if (e.Windows.Count == 0 && e.Pin != null && OwnOnly) { ActivateOrLaunch(e.Pin); return; }
         if (e.Windows.Count == 0) { Launch(e); return; }
         var fg = _fgAtPress;
         if (e.Windows.Any(w => w.Hwnd == fg) && !TaskList.IsIconic(fg))
@@ -1030,7 +1070,8 @@ sealed class DockView : Canvas
     /// <summary>A program from a stack: its window up when it runs (by its file or app id), otherwise started.</summary>
     public void ActivateOrLaunch(DockPin pin)
     {
-        var windows = _entries.SelectMany(x => x.Windows).Where(w =>
+        // on any monitor (a bar on every monitor shows only its own)
+        var windows = _allTasks.Where(w =>
             !string.IsNullOrEmpty(pin.Exe) && string.Equals(w.Exe, pin.Exe, StringComparison.OrdinalIgnoreCase)
             || !string.IsNullOrEmpty(pin.AppId) && string.Equals(w.AppId, pin.AppId, StringComparison.OrdinalIgnoreCase)).Select(w => w.Hwnd).ToList();
         if (windows.Count > 0) { WindowActions.Activate(WindowActions.Topmost(windows)); return; }
@@ -1044,10 +1085,21 @@ sealed class DockView : Canvas
     static bool Holds(List<DockPin> items, DockPin pin) => items.Any(x => x == pin || x.Items != null && Holds(x.Items, pin));
 
     /// <summary>The programs running now (for "Dodaj uruchomiony" in a stack): name, key, file, app id.</summary>
-    public IEnumerable<DockPin> RunningPrograms() => _entries.Where(x => x.Windows.Count > 0 && x.Pin?.Items == null).Select(x => new DockPin
+    public IEnumerable<DockPin> RunningPrograms()
     {
-        Key = x.Key, Exe = x.Windows[0].Exe, AppId = x.Windows[0].AppId, Name = x.Name,
-    });
+        var here = _entries.Where(x => x.Windows.Count > 0 && x.Pin?.Items == null).Select(x => new DockPin
+        {
+            Key = x.Key, Exe = x.Windows[0].Exe, AppId = x.Windows[0].AppId, Name = x.Name,
+        }).ToList();
+        if (!OwnOnly) return here;
+        // a bar on every monitor: the programs on the other monitors too
+        var known = here.Select(p => p.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var elsewhere = _allTasks.Where(t => !known.Contains(t.Group) && (t.Exe == null || !here.Any(p => string.Equals(p.Exe, t.Exe, StringComparison.OrdinalIgnoreCase))))
+            .GroupBy(t => t.Group, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .Select(t => new DockPin { Key = t.Group, Exe = t.Exe, AppId = t.AppId, Name = ShellIcons.Name(t.Group, t.Exe, t.AppId, t.Title) });
+        return here.Concat(elsewhere);
+    }
 
     void Launch(Entry e)
     {
@@ -1083,8 +1135,8 @@ sealed class DockView : Canvas
         if (e.Pin?.Items is { } items)
         {
             Item(L.T("Otwórz stos"), () => StackIsland.Toggle(e.Pin, e.Visual, _bar, this));
-            Item(L.T("Zmień nazwę stosu…"), () => { if (AskWindow.Ask(L.T("Stos"), L.T("Nazwa stosu:"), e.Pin.Name) is { Length: > 0 } n) { e.Pin.Name = n.Trim(); SettingsStore.Save(S); Refresh(); } });
-            m.Items.Add(StackIsland.IconMenu(e.Pin, () => { SettingsStore.Save(S); Refresh(); }));
+            Item(L.T("Zmień nazwę stosu…"), () => { if (AskWindow.Ask(L.T("Stos"), L.T("Nazwa stosu:"), e.Pin.Name) is { Length: > 0 } n) { e.Pin.Name = n.Trim(); PinsChanged(); } });
+            m.Items.Add(StackIsland.IconMenu(e.Pin, PinsChanged));
             Item(L.F("Usuń stos z docka ({0})", items.Count), () => Unpin(e));
             m.IsOpen = true;
             return;
@@ -1104,8 +1156,7 @@ sealed class DockView : Canvas
                 {
                     var w0 = e.Windows.FirstOrDefault();
                     stack.Items!.Add(new DockPin { Key = e.Key, Exe = e.Pin?.Exe ?? w0?.Exe, AppId = e.Pin?.AppId ?? w0?.AppId, Args = e.Pin?.Args, Name = e.Name });
-                    SettingsStore.Save(S);
-                    Refresh();
+                    PinsChanged();
                 };
                 into.Items.Add(si);
             }
@@ -1134,8 +1185,14 @@ sealed class DockView : Canvas
         var first = e.Windows.FirstOrDefault();
         if (first == null) return;
         S.DockPins.Add(new DockPin { Key = e.Key, Exe = first.Exe, AppId = first.AppId, Name = e.Name });
+        PinsChanged();
+    }
+
+    /// <summary>The pins or the stacks changed: saved, and every dock (one per monitor with a bar on each) shows them.</summary>
+    public static void PinsChanged()
+    {
         SettingsStore.Save(S);
-        Refresh();
+        foreach (var d in Live.ToList()) d.Refresh();
     }
 
     /// <summary>Dev runs (--open stack): the first stack's island opened.</summary>
@@ -1168,7 +1225,6 @@ sealed class DockView : Canvas
     void Unpin(Entry e)
     {
         S.DockPins.RemoveAll(p => string.Equals(p.Key, e.Key, StringComparison.OrdinalIgnoreCase));
-        SettingsStore.Save(S);
-        Refresh();
+        PinsChanged();
     }
 }

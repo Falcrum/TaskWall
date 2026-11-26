@@ -155,8 +155,7 @@ static class StackIsland
 
     static void Changed()
     {
-        SettingsStore.Save(S);
-        _dock?.Refresh(); // the stack's tile shows its first programs
+        DockView.PinsChanged(); // the stack's tile shows its first programs (on every monitor's dock)
     }
 
     const double Tile = 92, IconPx = 54;

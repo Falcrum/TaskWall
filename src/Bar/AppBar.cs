@@ -33,6 +33,16 @@ sealed class AppBar
 
     static readonly uint Callback = RegisterWindowMessage("TaskWall.AppBar");
 
+    /// <summary>
+    /// When one of TaskWall's own bars last set or gave back its strip: Windows tells every other bar about it (ABN_POSCHANGED), and
+    /// with a bar on each monitor they would ask for their strips again and tell each other back – without end. Their own moves are
+    /// not news to them.
+    /// </summary>
+    static long _ownMoveAt;
+    /// <summary>TaskWall's bars registered now: with one alone (the usual case) every notice counts, as before.</summary>
+    static int _registeredCount;
+    static bool OwnMoveJustNow => _registeredCount > 1 && Environment.TickCount64 - _ownMoveAt < 500;
+
     readonly IntPtr _hwnd;
     bool _registered;
     PxRect? _set; // the strip asked for last (SETPOS again only when it changes)
@@ -63,7 +73,7 @@ sealed class AppBar
         {
             var reg = Data();
             reg.uCallbackMessage = Callback;
-            _registered = SHAppBarMessage(ABM_NEW, ref reg) != UIntPtr.Zero;
+            SetRegistered(SHAppBarMessage(ABM_NEW, ref reg) != UIntPtr.Zero);
             if (!_registered) Log.Error("appbar: Windows refused ABM_NEW");
         }
         var d = Data();
@@ -73,7 +83,9 @@ sealed class AppBar
         SHAppBarMessage(ABM_QUERYPOS, ref d);
         var granted = BarGeometry.AfterQuery(new PxRect(d.rc.Left, d.rc.Top, d.rc.Right - d.rc.Left, d.rc.Bottom - d.rc.Top), top, height);
         d.rc = new RECT { Left = granted.X, Top = granted.Y, Right = granted.Right, Bottom = granted.Bottom };
+        _ownMoveAt = Environment.TickCount64;
         SHAppBarMessage(ABM_SETPOS, ref d);
+        _ownMoveAt = Environment.TickCount64;
         _set = want;
         _setTop = top;
         _granted = new PxRect(d.rc.Left, d.rc.Top, d.rc.Right - d.rc.Left, d.rc.Bottom - d.rc.Top);
@@ -85,16 +97,25 @@ sealed class AppBar
     /// <summary>Explorer restarted and forgot every bar: the next <see cref="Dock"/> registers again.</summary>
     public void Forget()
     {
-        _registered = false;
+        SetRegistered(false);
         _set = _granted = null;
+    }
+
+    void SetRegistered(bool on)
+    {
+        if (on == _registered) return;
+        _registered = on;
+        _registeredCount += on ? 1 : -1;
     }
 
     /// <summary>Gives the strip back (the work area grows again).</summary>
     public void Remove()
     {
         if (!_registered) return;
+        _ownMoveAt = Environment.TickCount64;
         Remove(_hwnd);
-        _registered = false;
+        _ownMoveAt = Environment.TickCount64;
+        SetRegistered(false);
         _set = _granted = null;
     }
 
@@ -132,7 +153,7 @@ sealed class AppBar
         {
             switch (wParam.ToInt32())
             {
-                case ABN_POSCHANGED: _set = null; PositionChanged?.Invoke(); break;
+                case ABN_POSCHANGED: if (!OwnMoveJustNow) { _set = null; PositionChanged?.Invoke(); } break;
                 case ABN_FULLSCREENAPP: FullscreenChanged?.Invoke(lParam != IntPtr.Zero); break;
             }
             handled = true;

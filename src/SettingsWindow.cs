@@ -1256,7 +1256,8 @@ public sealed class SettingsWindow : DarkWindow
             Row(L.T("Wyszukiwarka"), L.T("Lupka na środku paska. TaskWall: pole tuż nad nią – programy, kalkulator, internet, pliki. Pozostałe otwiera ich skrót (paleta i PowerToys Run wymagają PowerToys)."),
                 Combo(new[] { ("TaskWall", L.T("TaskWall – pole przy lupce")), ("Win+Alt+Space", L.T("Paleta poleceń PowerToys (Win+Alt+Spacja)")), ("Alt+Space", L.T("PowerToys Run (Alt+Spacja)")), ("Win+S", L.T("Wyszukiwanie Windows (Win+S)")) }, S.SearchKeys,
                     tag => { S.SearchKeys = tag; App.Instance.ApplySettings(); }, 300)),
-            Toggle(L.T("Ukryj pasek zadań Windows"), L.T("Wraca, gdy wyłączysz ten pasek albo zamkniesz TaskWall – także po awarii."), S.HideTaskbar, v => S.HideTaskbar = v)), Full));
+            Toggle(L.T("Ukryj pasek zadań Windows"), L.T("Wraca, gdy wyłączysz ten pasek albo zamkniesz TaskWall – także po awarii."), S.HideTaskbar, v => S.HideTaskbar = v),
+            Toggle(L.T("Pasek na każdym monitorze"), L.T("Na pozostałych monitorach własny pasek z dockiem; dock każdego pokazuje okna ze swojego monitora."), S.BarAllMonitors, v => S.BarAllMonitors = v)), Full));
 
         p.Children.Add(When(SwitchGroup(L.T("Dock"), L.T("Przypięte i uruchomione programy na środku paska."), S.Dock, v => S.Dock = v, DockSettings().ToArray()), Full));
 
