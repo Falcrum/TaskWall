@@ -227,6 +227,7 @@ public sealed class BarWindow : GlassWindow
             _network.Detach();
             _volumeButton.Detach();
             _dock?.Detach();
+            DockHotkeys.Stop();
             CloseTray();
             _calendar.Close();
         };
@@ -320,6 +321,7 @@ public sealed class BarWindow : GlassWindow
             _dockHost.Child = null;
             _dock = null;
         }
+        if (_dock != null && S.DockWinKeys) DockHotkeys.Start(_dock); else DockHotkeys.Stop(); // Win+1…9 only while a dock stands
         if (_dock != null) { _dock.BarHeight = _barHeight; _dock.IconSize = BarMetrics.Icon(S.BarSize); _dock.Refresh(); }
         // with the dock the magnifier is its first icon (it grows with the others); without it, a button in the middle
         _searchButton.Visibility = _dock == null ? Visibility.Visible : Visibility.Collapsed;

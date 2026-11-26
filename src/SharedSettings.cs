@@ -33,7 +33,7 @@ static class SharedSettings
         nameof(AppSettings.BoardMax), nameof(AppSettings.Gap), nameof(AppSettings.SecondMonitor), nameof(AppSettings.SecondView), nameof(AppSettings.Meters),
         // the full-width bar replaces this computer's taskbar: each computer chooses for itself
         nameof(AppSettings.AppBar), nameof(AppSettings.AppBarTop), nameof(AppSettings.HideTaskbar), nameof(AppSettings.BarSize), nameof(AppSettings.BarWidth),
-        nameof(AppSettings.Dock), nameof(AppSettings.DockMagnify), nameof(AppSettings.DockThin), nameof(AppSettings.DockBadges), nameof(AppSettings.DockGrayIdle), nameof(AppSettings.DockSeen), nameof(AppSettings.DockPins),
+        nameof(AppSettings.Dock), nameof(AppSettings.DockMagnify), nameof(AppSettings.DockThin), nameof(AppSettings.DockBadges), nameof(AppSettings.DockGrayIdle), nameof(AppSettings.DockWinKeys), nameof(AppSettings.DockSeen), nameof(AppSettings.DockPins),
     };
 
     static string? PathFor(AppSettings s) => Dev.Arg("--data") is { } dev ? Path.Combine(dev, FileName)

@@ -815,6 +815,8 @@ public sealed class AppSettings
     public bool DockBadges { get; set; } = true;
     /// <summary>Pinned programs that aren't running drawn in greyscale (they take their colour as they start).</summary>
     public bool DockGrayIdle { get; set; } = true;
+    /// <summary>Win+1…9 (0) bring up or start the n-th dock icon, Shift+Win+n opens a new window of it – like on the Windows taskbar.</summary>
+    public bool DockWinKeys { get; set; } = true;
     /// <summary>When each program's notifications were last seen (its window brought to the front; program id → FILETIME UTC): older ones don't count.</summary>
     public Dictionary<string, long> DockSeen { get; set; } = new();
     /// <summary>The programs pinned to the dock, in order.</summary>
