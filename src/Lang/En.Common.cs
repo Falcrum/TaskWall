@@ -142,5 +142,6 @@ static partial class L
         ("Notion nie przyjął tokenu (wygasł albo jest błędny).", "Notion rejected the token (it has expired or is wrong)."),
         ("Nie widzę tej bazy. Sprawdź link i to, czy masz do niej dostęp w Notion na koncie, z którego jest token.", "Can't see this database. Check the link and that the Notion account the token comes from has access to it."),
         ("W archiwum ZIP nie ma pliku CSV.", "The ZIP archive contains no CSV file."),
+        ("Shift+klik: nowe okno · Ctrl+Shift+klik: jako administrator", "Shift+click: new window · Ctrl+Shift+click: as administrator"),
     };
 }
