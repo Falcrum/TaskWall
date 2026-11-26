@@ -274,7 +274,7 @@ static class AppBadges
     static string? Text(IntPtr st, int col) => Sqlite.sqlite3_column_text(st, col) is var p && p != IntPtr.Zero ? Marshal.PtrToStringUTF8(p) : null;
 
     /// <summary>"{6D809377-…}/ASUS/App.exe" → "C:\Program Files\ASUS\App.exe" (Windows' id of a program without an AppUserModelID).</summary>
-    static string? KnownPath(string id)
+    public static string? KnownPath(string id)
     {
         int close = id.IndexOf('}');
         if (close < 0 || !Guid.TryParse(id[..(close + 1)], out var folder)) return null;

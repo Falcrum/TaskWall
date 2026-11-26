@@ -108,6 +108,12 @@ sealed class DockView : Canvas
     /// <summary>The window in front when the icon was pressed: the click's toggle compares with it (the dock's own idea of the front
     /// misses TaskWall's windows – a click on the board left Firefox "in front" and the next click minimised it instead).</summary>
     IntPtr _fgAtPress;
+    /// <summary>The window in front before the bar itself took a click (a click on the bar activates it first).</summary>
+    IntPtr _realFront = Native.GetForegroundWindow();
+    /// <summary>The magnifier at the dock's start (the search's field opens over it); it grows with the icons.</summary>
+    public const string SearchKey = "::search";
+    /// <summary>The stack the dragged icon is over: dropped there, the program goes into it.</summary>
+    Entry? _dropTarget;
     Entry? _pressed, _dragging;
     Point _pressAt;
     readonly DispatcherTimer _refresh = new() { Interval = TimeSpan.FromMilliseconds(120) };
@@ -184,7 +190,9 @@ sealed class DockView : Canvas
         if (_hooks.Count > 0) return;
         _proc = OnWinEvent;
         // the window in front; minimised / restored; moved or resized by hand – a few events a minute, not a stream
-        foreach (var (a, b) in new[] { (0x0003u, 0x0003u), (0x0016u, 0x0017u), (0x000Bu, 0x000Bu) })
+        // the window in front: TaskWall's own too (the board counts as "in front", the bar itself doesn't – see _realFront)
+        _hooks.Add(Native.SetWinEventHook(0x0003, 0x0003, IntPtr.Zero, _proc, 0, 0, Native.WINEVENT_OUTOFCONTEXT));
+        foreach (var (a, b) in new[] { (0x0016u, 0x0017u), (0x000Bu, 0x000Bu) })
             _hooks.Add(Native.SetWinEventHook(a, b, IntPtr.Zero, _proc, 0, 0, Native.WINEVENT_OUTOFCONTEXT | 0x2 /* SKIPOWNPROCESS */));
     }
 
@@ -215,6 +223,13 @@ sealed class DockView : Canvas
         if (idObject != 0 || hwnd == IntPtr.Zero) return; // the window itself, not its caret or scroll bars
         if (evt == 0x0003)
         {
+            Native.GetWindowThreadProcessId(hwnd, out var pid);
+            if (pid == (uint)Environment.ProcessId)
+            {
+                if (hwnd != _bar.Hwnd) _realFront = hwnd; // the board, a dialog: in front; the bar taking a click: not
+                return;
+            }
+            _realFront = hwnd;
             Activated(hwnd);
             WatchMoves(hwnd);
         }
@@ -328,7 +343,7 @@ sealed class DockView : Canvas
         // the running ones keep the order they came in (a new one at the end), like the taskbar
         _runningOrder.RemoveAll(k => !groups.ContainsKey(k));
         foreach (var k in groups.Keys) if (!_runningOrder.Contains(k, StringComparer.OrdinalIgnoreCase)) _runningOrder.Add(k);
-        var pins = S.DockPins.Select(p => p.Key).ToList();
+        var pins = S.DockPins.Select(p => p.Key).Prepend(SearchKey).ToList();
         var (items, slots) = DockRow.Build(pins, _runningOrder.Select(k => (k, groups[k].Count)).ToList());
 
         var old = _entries.ToDictionary(e => e.Key, StringComparer.OrdinalIgnoreCase);
@@ -340,12 +355,34 @@ sealed class DockView : Canvas
             e.Windows = groups.GetValueOrDefault(item.Key) ?? new();
             var first = e.Windows.FirstOrDefault();
             string? exe = first?.Exe ?? e.Pin?.Exe, appId = first?.AppId ?? e.Pin?.AppId;
-            e.Name = e.Pin?.Name is { Length: > 0 } pn ? pn : ShellIcons.Name(e.Key, exe, appId, first?.Title ?? e.Key);
-            if (e.Pin?.Items != null) e.Img.Source = StackIsland.Icon(e.Pin); // the stack's first programs in its tile (redrawn: they change)
-            else e.Img.Source ??= ShellIcons.Icon(e.Key, exe, appId, first?.Hwnd ?? IntPtr.Zero);
-            // the name at once (like the Mac's dock); the live previews of a running one follow when the pointer stays
-            e.Visual.ToolTip = new ToolTip { Content = e.Name + "\n" + (e.Pin?.Items != null ? L.F("Stos: {0} – kliknij, aby otworzyć", e.Pin.Items.Count) : e.Windows.Count == 0 ? L.T("Kliknij, aby uruchomić") : L.T("Kliknij: na wierzch / zminimalizuj · środkowy przycisk: nowe okno")), Placement = _bar.AtTop ? System.Windows.Controls.Primitives.PlacementMode.Bottom : System.Windows.Controls.Primitives.PlacementMode.Top };
-            ToolTipService.SetInitialShowDelay(e.Visual, 0);
+            string hint;
+            if (e.Key == SearchKey)
+            {
+                e.Name = L.T("Szukaj");
+                e.Img.Source ??= StackIsland.SearchIcon();
+                hint = L.T("Programy, kalkulator, internet, pliki");
+            }
+            else
+            {
+                e.Name = e.Pin?.Name is { Length: > 0 } pn ? pn : ShellIcons.Name(e.Key, exe, appId, first?.Title ?? e.Key);
+                if (e.Pin?.Items != null) e.Img.Source = StackIsland.Icon(e.Pin); // the stack's first programs in its tile (redrawn: they change)
+                else e.Img.Source ??= ShellIcons.Icon(e.Key, exe, appId, first?.Hwnd ?? IntPtr.Zero);
+                hint = e.Pin?.Items != null ? L.F("Stos: {0} – kliknij, aby otworzyć", e.Pin.Items.Count)
+                    : e.Windows.Count == 0 ? L.T("Kliknij, aby uruchomić; przeciągnij na stos, aby go tam dodać")
+                    : L.T("Kliknij: na wierzch / zminimalizuj · środkowy przycisk: nowe okno · przeciągnij na stos");
+            }
+            // the name at once (like the Mac's dock); the live previews of a running one follow when the pointer stays. The same tip
+            // object stays: a new one at every refresh (a browser's title changes all the time) closed the open tip at once
+            var tipText = e.Name + "\n" + hint;
+            if (e.Visual.ToolTip is not ToolTip tt)
+            {
+                tt = new ToolTip();
+                e.Visual.ToolTip = tt;
+                ToolTipService.SetInitialShowDelay(e.Visual, 0);
+                ToolTipService.SetShowDuration(e.Visual, 60000);
+            }
+            if (!Equals(tt.Content, tipText)) tt.Content = tipText;
+            tt.Placement = _bar.AtTop ? System.Windows.Controls.Primitives.PlacementMode.Bottom : System.Windows.Controls.Primitives.PlacementMode.Top;
             _entries.Add(e);
         }
         foreach (var gone in old.Values) { Children.Remove(gone.Visual); Children.Remove(gone.Mark); Children.Remove(gone.Badge); }
@@ -369,7 +406,7 @@ sealed class DockView : Canvas
         e.Visual.Child = e.Img;
         RenderOptions.SetBitmapScalingMode(e.Img, BitmapScalingMode.HighQuality);
         e.Visual.MouseEnter += (_, _) => { _hovered = e; _hidePreview.Stop(); if (_preview.IsVisible && e.Windows.Count > 0) ShowPreview(e); else { _hoverPreview.Stop(); _hoverPreview.Start(); } };
-        e.Visual.MouseLeftButtonDown += (_, ev) => { _fgAtPress = Native.GetForegroundWindow(); _pressed = e; _pressAt = ev.GetPosition(this); e.Visual.CaptureMouse(); ev.Handled = true; };
+        e.Visual.MouseLeftButtonDown += (_, ev) => { var fg = Native.GetForegroundWindow(); _fgAtPress = fg == _bar.Hwnd || fg == IntPtr.Zero ? _realFront : fg; _pressed = e; _pressAt = ev.GetPosition(this); e.Visual.CaptureMouse(); ev.Handled = true; };
         e.Visual.MouseLeftButtonUp += (_, ev) =>
         {
             ev.Handled = true;
@@ -382,7 +419,7 @@ sealed class DockView : Canvas
         };
         // the capture taken away (a preview, a menu, another window): the press and any drag end there – no icon left sliding
         e.Visual.LostMouseCapture += (_, _) => { _pressed = null; if (_dragging != null) Drop(); };
-        e.Visual.MouseUp += (_, ev) => { if (ev.ChangedButton == MouseButton.Middle && e.Pin?.Items == null) { ev.Handled = true; Launch(e); } };
+        e.Visual.MouseUp += (_, ev) => { if (ev.ChangedButton == MouseButton.Middle && e.Pin?.Items == null && e.Key != SearchKey) { ev.Handled = true; Launch(e); } };
         e.Visual.MouseRightButtonUp += (_, ev) => { ev.Handled = true; Menu(e); };
         e.Badge.Child = e.BadgeText;
         e.Badge.SetResourceReference(Border.BackgroundProperty, "AccentBrush"); // TaskWall's accent (follows a change of it)
@@ -582,13 +619,19 @@ sealed class DockView : Canvas
         _pointer = p.X / (IconSize / Magnify.IconRest) - Reserve;
         // the button let go where the dock didn't hear it: no press, no drag any more
         if (ev.LeftButton != MouseButtonState.Pressed && (_pressed != null || _dragging != null)) { _pressed = null; if (_dragging != null) Drop(); }
-        if (_pressed != null && _dragging == null && _pressed.Pin != null && Math.Abs(p.X - _pressAt.X) > 6)
+        if (_pressed != null && _dragging == null && _pressed.Key != SearchKey && (_pressed.Pin != null || _pressed.Windows.Count > 0) && Math.Abs(p.X - _pressAt.X) > 6)
         {
             _dragging = _pressed;
             _preview.Dismiss();
             _hoverPreview.Stop();
         }
-        if (_dragging != null) DragTo(_pointer);
+        if (_dragging != null)
+        {
+            SetDropTarget(_dragging.Pin?.Items == null
+                ? _entries.FirstOrDefault(x => x != _dragging && x.Pin?.Items != null && Math.Abs(x.Shown - _pointer) < Magnify.IconRest * 0.45)
+                : null);
+            if (_dropTarget == null && _dragging.Pin != null) DragTo(_pointer); // over a stack: no reordering under it
+        }
         if (Strength != Strength.Off) _bell.Enter(Now);
         Animate();
     }
@@ -606,8 +649,33 @@ sealed class DockView : Canvas
         Relayout();
     }
 
+    /// <summary>The stack under the dragged icon lights up (it would take the program).</summary>
+    void SetDropTarget(Entry? target)
+    {
+        if (target == _dropTarget) return;
+        if (_dropTarget != null) { _dropTarget.Visual.Background = Brushes.Transparent; }
+        _dropTarget = target;
+        if (target != null) { target.Visual.CornerRadius = new CornerRadius(Th.Corner(10)); target.Visual.Background = Ui.Res("AccentSoft"); }
+    }
+
     void Drop()
     {
+        var dragged = _dragging;
+        var target = _dropTarget;
+        SetDropTarget(null);
+        if (dragged != null && target?.Pin?.Items is { } into)
+        {
+            // into the stack: a pinned program moves there from the dock, a running one is added
+            _dragging = null;
+            var w0 = dragged.Windows.FirstOrDefault();
+            var pin = dragged.Pin ?? new DockPin { Key = dragged.Key, Exe = w0?.Exe, AppId = w0?.AppId, Name = dragged.Name };
+            if (dragged.Pin != null) S.DockPins.Remove(dragged.Pin);
+            if (!into.Any(x => string.Equals(x.Key, pin.Key, StringComparison.OrdinalIgnoreCase))) into.Add(pin);
+            SettingsStore.Save(S);
+            _refreshAfterDrop = false;
+            Refresh();
+            return;
+        }
         var order = _entries.Where(e => e.Pin != null).Select(e => e.Pin!).ToList();
         _dragging = null;
         if (!order.SequenceEqual(S.DockPins))
@@ -628,6 +696,7 @@ sealed class DockView : Canvas
     void Click(Entry e)
     {
         _preview.Dismiss();
+        if (e.Key == SearchKey) { _bar.OpenSearch(e.Visual); return; }
         if (e.Pin?.Items != null) { StackIsland.Toggle(e.Pin, e.Visual, _bar, this); return; }
         if (e.Windows.Count == 0) { Launch(e); return; }
         var fg = _fgAtPress;
@@ -678,10 +747,17 @@ sealed class DockView : Canvas
         var header = new MenuItem { Header = e.Name, IsEnabled = false, FontWeight = FontWeights.SemiBold };
         m.Items.Add(header);
         m.Items.Add(new Separator());
+        if (e.Key == SearchKey)
+        {
+            Item(L.T("Ustawienia wyszukiwarki…"), () => App.Instance.ShowSettings("bar"));
+            m.IsOpen = true;
+            return;
+        }
         if (e.Pin?.Items is { } items)
         {
             Item(L.T("Otwórz stos"), () => StackIsland.Toggle(e.Pin, e.Visual, _bar, this));
             Item(L.T("Zmień nazwę stosu…"), () => { if (AskWindow.Ask(L.T("Stos"), L.T("Nazwa stosu:"), e.Pin.Name) is { Length: > 0 } n) { e.Pin.Name = n.Trim(); SettingsStore.Save(S); Refresh(); } });
+            m.Items.Add(StackIsland.IconMenu(e.Pin, () => { SettingsStore.Save(S); Refresh(); }));
             Item(L.F("Usuń stos z docka ({0})", items.Count), () => Unpin(e));
             m.IsOpen = true;
             return;
@@ -712,6 +788,16 @@ sealed class DockView : Canvas
         {
             m.Items.Add(new Separator());
             Item(e.Windows.Count == 1 ? L.T("Zamknij okno") : L.F("Zamknij wszystkie okna ({0})", e.Windows.Count), () => { foreach (var w in e.Windows) WindowActions.Close(w.Hwnd); ScheduleRefresh(); });
+            // like the Task Manager's "End task": the program's processes ended at once (no asking to save)
+            Item(L.T("Zakończ zadanie"), () =>
+            {
+                foreach (var pid in e.Windows.Select(w => w.Pid).Distinct())
+                {
+                    try { using var proc = System.Diagnostics.Process.GetProcessById((int)pid); proc.Kill(); }
+                    catch (Exception ex) { Log.Error("end task " + e.Name, ex); MessageBox.Show(L.F("Nie udało się zakończyć „{0}”: {1}", e.Name, ex.Message), "TaskWall"); }
+                }
+                ScheduleRefresh();
+            });
         }
         m.IsOpen = true;
     }

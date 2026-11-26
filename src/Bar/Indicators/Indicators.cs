@@ -36,6 +36,9 @@ sealed class BarPanel : GlassWindow
     public bool JustClosed => (DateTime.Now - _closedAt).TotalMilliseconds < 400;
 
     /// <summary>Opens with <paramref name="content"/> at <paramref name="anchor"/> (a button of <paramref name="bar"/>), inside the bar's width.</summary>
+    /// <summary>In the middle of the screen (the bar's glass) instead of at its button: the search's field.</summary>
+    public bool Centred { get; set; }
+
     public void Open(FrameworkElement content, FrameworkElement anchor, BarWindow bar)
     {
         _content.Child = content;
@@ -71,7 +74,7 @@ sealed class BarPanel : GlassWindow
         var frame = bar.FrameRect;
         var a = anchor.PointToScreen(new Point(anchor.ActualWidth / 2, 0));
         int gap = (int)Math.Round(6 * dpi.DpiScaleY);
-        int x = Math.Clamp((int)Math.Round(a.X - w / 2.0), frame.X, Math.Max(frame.X, frame.Right - w));
+        int x = Centred ? frame.X + (frame.Width - w) / 2 : Math.Clamp((int)Math.Round(a.X - w / 2.0), frame.X, Math.Max(frame.X, frame.Right - w));
         int y = bar.AtTop ? frame.Bottom + gap : frame.Y - h - gap;
         PlacePhysical(x, y, w, h, dpi.DpiScaleX);
     }

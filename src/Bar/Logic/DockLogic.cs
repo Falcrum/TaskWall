@@ -251,7 +251,8 @@ public static class TaskRules
 
     /// <summary>What Explorer groups by: the AppUserModelID, else the program's path (any case), else the process.</summary>
     public static string Group(string? appId, string? exe, uint pid) =>
-        !string.IsNullOrEmpty(appId) ? appId.ToLowerInvariant() : !string.IsNullOrEmpty(exe) ? exe.ToLowerInvariant() : "pid:" + pid;
+        // "<id>;PrivateBrowsingAUMID" (Firefox's private windows): with the program's other windows, not an icon of their own
+        !string.IsNullOrEmpty(appId) ? appId.Split(';')[0].ToLowerInvariant() : !string.IsNullOrEmpty(exe) ? exe.ToLowerInvariant() : "pid:" + pid;
 }
 
 /// <summary>The dock's row from the pinned programs and the running groups: the pinned first (in their order), a line, then the rest.</summary>

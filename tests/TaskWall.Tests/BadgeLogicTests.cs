@@ -20,3 +20,10 @@ public class BadgeLogicTests
     [InlineData("", 0)]
     public void TitleCount(string title, int expected) => Assert.Equal(expected, BadgeLogic.TitleCount(title));
 }
+
+public class GroupTests
+{
+    [Fact]
+    public void FirefoxsPrivateWindowsGroupWithItsOtherWindows() =>
+        Assert.Equal(TaskRules.Group("308046B0AF4A39CB", null, 1), TaskRules.Group("308046B0AF4A39CB;PrivateBrowsingAUMID", null, 2));
+}

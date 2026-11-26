@@ -248,6 +248,13 @@ public sealed class BarWindow : GlassWindow
     public void DevStack() => _dock?.DevStack();
     public void DevSearch(string words) { _appSearch.Toggle(_searchButton, this); _appSearch.DevType(words); }
 
+    /// <summary>The search, from the dock's magnifier (or the button when there is no dock).</summary>
+    public void OpenSearch(FrameworkElement anchor)
+    {
+        if (App.Settings.SearchKeys == "TaskWall") _appSearch.Toggle(anchor, this);
+        else OpenSearch();
+    }
+
     /// <summary>The magnifier: TaskWall's own field over it, or the search Settings → Pasek → Wyszukiwarka names, by its shortcut.</summary>
     void OpenSearch()
     {
@@ -313,9 +320,8 @@ public sealed class BarWindow : GlassWindow
             _dock = null;
         }
         if (_dock != null) { _dock.BarHeight = _barHeight; _dock.IconSize = BarMetrics.Icon(S.BarSize); _dock.Refresh(); }
-        // the magnifier next to the first icon: over the dock's room for growing icons (above it, so it still takes the click)
-        _searchButton.Margin = new Thickness(0, 0, _dock != null ? 4 - _dock.IconSize / Magnify.IconRest * DockView.Reserve : 0, 0);
-        Panel.SetZIndex(_searchButton, 1);
+        // with the dock the magnifier is its first icon (it grows with the others); without it, a button in the middle
+        _searchButton.Visibility = _dock == null ? Visibility.Visible : Visibility.Collapsed;
     }
 
     public void SetScale(double scale)

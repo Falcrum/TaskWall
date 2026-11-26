@@ -762,6 +762,9 @@ public sealed class DockPin
     public string Name { get; set; } = "";
     /// <summary>A stack (Key "stack:…"): the programs and nested stacks its island shows; null for a program.</summary>
     public List<DockPin>? Items { get; set; }
+    /// <summary>A stack's icon: null = its first programs in a grid; "item:&lt;key&gt;" = one of its programs' icons; "glyph:&lt;hex&gt;" = a symbol on <see cref="IconColor"/>.</summary>
+    public string? Icon { get; set; }
+    public string? IconColor { get; set; }
 }
 
 /// <summary>Per-computer settings (stored locally, not in the cloud folder).</summary>

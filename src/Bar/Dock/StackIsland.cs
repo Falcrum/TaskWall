@@ -73,6 +73,10 @@ static class StackIsland
             back.Margin = new Thickness(0, 0, 6, 0);
             head.Children.Add(back);
         }
+        var badge = new Image { Source = Icon(stack), Width = 22, Height = 22, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center, Cursor = Cursors.Hand, ToolTip = L.T("Ikona stosu") };
+        badge.MouseLeftButtonUp += (_, _) => { var m = new ContextMenu { PlacementTarget = badge }; m.Items.Add(IconMenu(stack, () => { Changed(); Rebuild(); })); m.IsOpen = true; };
+        DockPanel.SetDock(badge, Dock.Left);
+        head.Children.Add(badge);
         head.Children.Add(new TextBlock
         {
             Text = string.Join("  ›  ", _path.Select(p => p.Name.Length > 0 ? p.Name : L.T("Stos"))), FontSize = 13, FontWeight = FontWeights.SemiBold,
@@ -127,7 +131,11 @@ static class StackIsland
             e.Handled = true;
             var m = new ContextMenu { PlacementTarget = tile };
             void Item(string text, Action a) { var i = new MenuItem { Header = text }; i.Click += (_, _) => a(); m.Items.Add(i); }
-            if (isStack) Item(L.T("Zmień nazwę stosu…"), () => { if (AskWindow.Ask(L.T("Stos"), L.T("Nazwa stosu:"), item.Name) is { Length: > 0 } n) { item.Name = n.Trim(); Changed(); } Rebuild(); });
+            if (isStack)
+            {
+                Item(L.T("Zmień nazwę stosu…"), () => { if (AskWindow.Ask(L.T("Stos"), L.T("Nazwa stosu:"), item.Name) is { Length: > 0 } n) { item.Name = n.Trim(); Changed(); } Rebuild(); });
+                m.Items.Add(IconMenu(item, () => { Changed(); Rebuild(); }));
+            }
             int at = stack.Items!.IndexOf(item);
             if (at > 0) Item(L.T("Przesuń w lewo"), () => { stack.Items.RemoveAt(at); stack.Items.Insert(at - 1, item); Changed(); Rebuild(); });
             if (at < stack.Items.Count - 1) Item(L.T("Przesuń w prawo"), () => { stack.Items.RemoveAt(at); stack.Items.Insert(at + 1, item); Changed(); Rebuild(); });
@@ -212,9 +220,109 @@ static class StackIsland
     /// <summary>A program's icon (its path written with \ – the shell doesn't read C:/…).</summary>
     static ImageSource? ProgramIcon(DockPin p) => ShellIcons.Icon(p.Key, p.Exe?.Replace('/', '\\'), p.AppId, IntPtr.Zero);
 
-    /// <summary>A stack's tile: a rounded square with its first four programs (a nested stack drawn small inside), 128 px.</summary>
+    /// <summary>The symbols a stack can wear (Segoe Fluent Icons), with their names in the menu.</summary>
+    static readonly (string Hex, string Name)[] Glyphs =
+    {
+        ("E7FC", "Gry"), ("E821", "Praca"), ("E943", "Kod"), ("E790", "Grafika"), ("E8D6", "Muzyka"), ("E714", "Wideo"),
+        ("E722", "Zdjęcia"), ("E8BD", "Rozmowy"), ("E774", "Internet"), ("E90F", "Narzędzia"), ("E8B7", "Folder"), ("E734", "Ulubione"),
+        ("E7BE", "Nauka"), ("E80F", "Dom"), ("E8F1", "Biblioteka"), ("E945", "Szybkie"),
+    };
+    static readonly string[] Palette = { "#5B8CFF", "#8B6CFF", "#E26D9A", "#E5484D", "#F0A04B", "#4CC38A", "#3BB8C9", "#7A808C" };
+    static readonly FontFamily SymbolFont = new("Segoe Fluent Icons, Segoe MDL2 Assets");
+
+    /// <summary>"Ikona stosu ▸": its programs in a grid, one of its programs, or a symbol – and the symbol's colour.</summary>
+    public static MenuItem IconMenu(DockPin stack, Action changed)
+    {
+        var root = new MenuItem { Header = L.T("Ikona stosu") };
+        MenuItem Add(ItemsControl parent, string text, Action a, ImageSource? icon = null, bool check = false)
+        {
+            var i = new MenuItem { Header = text, IsCheckable = false, IsChecked = check };
+            if (icon != null) i.Icon = new Image { Source = icon, Width = 18, Height = 18 };
+            i.Click += (_, _) => a();
+            parent.Items.Add(i);
+            return i;
+        }
+        Add(root, L.T("Siatka programów"), () => { stack.Icon = null; changed(); }, null, stack.Icon == null);
+        if (stack.Items is { Count: > 0 } items)
+        {
+            var programs = new MenuItem { Header = L.T("Ikona programu ze stosu") };
+            foreach (var it in items)
+            {
+                var key = it.Key;
+                Add(programs, it.Name, () => { stack.Icon = "item:" + key; changed(); }, it.Items != null ? Icon(it, 2) : ProgramIcon(it), stack.Icon == "item:" + key);
+            }
+            root.Items.Add(programs);
+        }
+        var symbols = new MenuItem { Header = L.T("Symbol") };
+        foreach (var (hex, name) in Glyphs)
+        {
+            var h = hex;
+            Add(symbols, L.T(name), () => { stack.Icon = "glyph:" + h; stack.IconColor ??= Palette[0]; changed(); }, GlyphIcon(h, stack.IconColor ?? Palette[0]), stack.Icon == "glyph:" + h);
+        }
+        root.Items.Add(symbols);
+        var colours = new MenuItem { Header = L.T("Kolor symbolu") };
+        foreach (var c in Palette)
+        {
+            var col = c;
+            var sw = new System.Windows.Shapes.Rectangle { Width = 16, Height = 16, RadiusX = 4, RadiusY = 4, Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString(col)) };
+            var mi = new MenuItem { Header = col, Icon = sw, IsChecked = string.Equals(stack.IconColor, col, StringComparison.OrdinalIgnoreCase) };
+            mi.Click += (_, _) => { stack.IconColor = col; if (stack.Icon?.StartsWith("glyph:") != true) stack.Icon = "glyph:" + Glyphs[0].Hex; changed(); };
+            colours.Items.Add(mi);
+        }
+        root.Items.Add(colours);
+        return root;
+    }
+
+    /// <summary>A symbol in white on a rounded square of the colour (lighter at the top), 128 px.</summary>
+    static ImageSource GlyphIcon(string hex, string colour)
+    {
+        const int Px = 128;
+        Color c;
+        try { c = (Color)ColorConverter.ConvertFromString(colour); } catch { c = Color.FromRgb(0x5B, 0x8C, 0xFF); }
+        var top = Color.FromRgb((byte)Math.Min(255, c.R + 40), (byte)Math.Min(255, c.G + 40), (byte)Math.Min(255, c.B + 40));
+        var dv = new DrawingVisual();
+        using (var dc = dv.RenderOpen())
+        {
+            dc.DrawRoundedRectangle(new LinearGradientBrush(top, c, 90), null, new Rect(6, 6, Px - 12, Px - 12), 30, 30);
+            var glyph = ((char)Convert.ToInt32(hex, 16)).ToString();
+            var ft = new FormattedText(glyph, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface(SymbolFont, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal), 60, Brushes.White, 1.0);
+            dc.DrawText(ft, new Point((Px - ft.Width) / 2, (Px - ft.Height) / 2));
+        }
+        var bmp = new RenderTargetBitmap(Px, Px, 96, 96, PixelFormats.Pbgra32);
+        bmp.Render(dv);
+        bmp.Freeze();
+        return bmp;
+    }
+
+    static ImageSource? _search;
+
+    /// <summary>The dock's magnifier: the search symbol on a quiet round tile, like an icon among the others.</summary>
+    public static ImageSource SearchIcon()
+    {
+        if (_search != null) return _search;
+        const int Px = 128;
+        var dv = new DrawingVisual();
+        using (var dc = dv.RenderOpen())
+        {
+            dc.DrawEllipse(new SolidColorBrush(Th.Ink(0x16)), new Pen(new SolidColorBrush(Th.Ink(0x30)), 3), new Point(Px / 2, Px / 2), Px / 2 - 10, Px / 2 - 10);
+            var ft = new FormattedText("\uE721", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface(SymbolFont, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal), 52, Ui.Res("Fg"), 1.0);
+            dc.DrawText(ft, new Point((Px - ft.Width) / 2, (Px - ft.Height) / 2));
+        }
+        var bmp = new RenderTargetBitmap(Px, Px, 96, 96, PixelFormats.Pbgra32);
+        bmp.Render(dv);
+        bmp.Freeze();
+        return _search = bmp;
+    }
+
+    /// <summary>A stack's tile: its chosen icon, or a rounded square with its first four programs (a nested stack drawn small inside), 128 px.</summary>
     public static ImageSource Icon(DockPin stack, int level = 0)
     {
+        if (stack.Icon is { } chosen)
+        {
+            if (chosen.StartsWith("glyph:")) return GlyphIcon(chosen[6..], stack.IconColor ?? Palette[0]);
+            if (chosen.StartsWith("item:") && stack.Items?.FirstOrDefault(i => i.Key == chosen[5..]) is { } it
+                && (it.Items != null ? (level < 2 ? Icon(it, level + 1) : null) : ProgramIcon(it)) is { } img) return img;
+        }
         const int Px = 128;
         var dv = new DrawingVisual();
         using (var dc = dv.RenderOpen())
