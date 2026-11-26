@@ -795,6 +795,8 @@ public sealed class AppSettings
     public bool AppBarTop { get; set; } = true;
     /// <summary>With the full-width bar on: the Windows taskbar is hidden (auto-hide + hidden windows), back when the bar goes.</summary>
     public bool HideTaskbar { get; set; } = true;
+    /// <summary>With the full-width bar on: a bar of its own on every other monitor, its dock showing the windows of that monitor only.</summary>
+    public bool BarAllMonitors { get; set; }
     /// <summary>The full-width bar's height: "large", "medium" or "small" (a little taller than a load ring).</summary>
     public string BarSize { get; set; } = "medium";
     /// <summary>The full-width bar's glass: as wide as the board ("board", its edges in line with the board's) or the whole screen ("screen"). The strip reserved is the screen's width either way.</summary>

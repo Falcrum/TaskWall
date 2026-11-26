@@ -20,6 +20,8 @@ static class Guard
     {
         public int Pid { get; set; }
         public long Bar { get; set; }
+        /// <summary>Every bar window holding a strip (the bars on the other monitors too); <see cref="Bar"/> is the first of them.</summary>
+        public List<long> Bars { get; set; } = new();
         public bool Clean { get; set; }
         public List<DateTime> Crashes { get; set; } = new();
         /// <summary>The Windows taskbar is hidden by TaskWall; its auto-hide setting before.</summary>
@@ -29,7 +31,7 @@ static class Guard
 
     static readonly object Gate = new();
     static Process? _guard;
-    static IntPtr _watched;
+    static readonly List<long> _watched = new();
 
     static string File =>
         Dev.Arg("--data") is { } dev ? Path.Combine(dev, "guard.json")
@@ -57,21 +59,24 @@ static class Guard
     static bool CrashLoopCheck(IEnumerable<DateTime> crashes, DateTime now) => TaskWall.CrashLoop.TooMany(crashes, now);
 
     /// <summary>
-    /// The bar's window now holds a strip (<see cref="IntPtr.Zero"/>: none any more). The guard starts with the first
-    /// strip and keeps running until TaskWall exits.
+    /// A bar's window now holds a strip (<paramref name="holds"/>) or gave it back. Every bar is noted (one per monitor with
+    /// "Pasek na każdym monitorze"); the guard starts with the first strip and keeps running until TaskWall exits.
     /// </summary>
-    public static void Watch(IntPtr bar)
+    public static void Watch(IntPtr bar, bool holds)
     {
         lock (Gate)
         {
-            if (bar == _watched && (bar == IntPtr.Zero || _guard is { HasExited: false })) return; // nothing new (called on every layout)
-            _watched = bar;
+            long id = bar.ToInt64();
+            bool changed = id != 0 && (holds ? !_watched.Contains(id) : _watched.Remove(id));
+            if (holds && changed) _watched.Add(id);
+            if (!changed && (_watched.Count == 0 || _guard is { HasExited: false })) return; // nothing new (called on every layout)
             var s = Read();
             s.Pid = Environment.ProcessId;
-            s.Bar = bar.ToInt64();
+            s.Bars = _watched.ToList();
+            s.Bar = _watched.FirstOrDefault();
             s.Clean = false;
             Write(s);
-            if (bar == IntPtr.Zero || (_guard is { HasExited: false })) return;
+            if (_watched.Count == 0 || (_guard is { HasExited: false })) return;
             try
             {
                 var args = $"--guard {Environment.ProcessId}" + (Dev.Arg("--data") is { } dev ? $" --data \"{dev}\"" : "");
@@ -123,6 +128,7 @@ static class Guard
             if (s.Pid != Environment.ProcessId) return;
             s.Clean = true;
             s.Bar = 0;
+            s.Bars = new();
             Write(s);
         }
     }
@@ -147,14 +153,16 @@ static class Guard
             if (!s.Clean) Log.Error($"guard: TaskWall (pid {pid}) ended without closing – the Windows taskbar shown again");
         }
         if (s.Clean) { Write(s); return; }
-        if (s.Bar != 0)
+        var bars = (s.Bars ?? new()).Append(s.Bar).Where(b => b != 0).Distinct().ToList();
+        if (bars.Count > 0)
         {
-            AppBar.Remove(new IntPtr(s.Bar)); // the strip of a window that no longer exists
+            foreach (var b in bars) AppBar.Remove(new IntPtr(b)); // the strips of windows that no longer exist (one per monitor)
             var now = DateTime.Now;
             s.Crashes = TaskWall.CrashLoop.Recent(s.Crashes.Append(now), now, TimeSpan.FromHours(1));
             Log.Error($"guard: TaskWall (pid {pid}) ended without closing – the bar's strip given back" + (CrashLoopCheck(s.Crashes, now) ? "; three crashes in 10 minutes – the next start goes without the full-width bar" : ""));
         }
         s.Bar = 0;
+        s.Bars = new();
         s.Clean = true;
         Write(s);
     }

@@ -423,5 +423,7 @@ static partial class L
         ("Tylko zadania przypisane do mnie", "Only tasks assigned to me"),
         ("Wczytuje zadania z baz Notion do backlogu konta (tylko odczyt).", "Loads tasks from Notion databases into the account's backlog (read-only)."),
         ("Zalecane: wczytywane jest to, co pokazuje widok w Notion.", "Recommended: what the view shows in Notion is loaded."),
+        ("Pasek na każdym monitorze", "A bar on every monitor"),
+        ("Na pozostałych monitorach własny pasek z dockiem; dock każdego pokazuje okna ze swojego monitora.", "The other monitors get a bar with a dock of their own; each dock shows the windows on its own monitor."),
     };
 }

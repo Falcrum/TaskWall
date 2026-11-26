@@ -101,7 +101,8 @@ public sealed class BarWindow : GlassWindow
 
     readonly WeatherBadge _weather = new();
     readonly ClockFace _clock = new(dateFirst: true); // "ŚRODA 18 LISTOPAD 22:07"
-    readonly LoadMeters _meters = new();
+    /// <summary>The load rings: the main bar's only (a bar on another monitor would read the same numbers twice).</summary>
+    readonly LoadMeters? _meters;
     readonly CalendarWindow _calendar = new();
     readonly Border _glow = new();
     /// <summary>The middle: the search's magnifier, then the dock.</summary>
@@ -111,12 +112,35 @@ public sealed class BarWindow : GlassWindow
     readonly AppSearch _appSearch = new();
     readonly SectorPanel _sectors = new() { Margin = new Thickness(10, 0, 12, 0) };
     readonly Button _tray;
-    readonly NetworkButton _network;
-    readonly VolumeButton _volumeButton;
+    readonly NetworkButton? _network;
+    readonly VolumeButton? _volumeButton;
     DockView? _dock;
     AppBar? _appBar;
     bool _top = true, _shellHooked;
     double _barHeight = HeightNow;
+
+    [StructLayout(LayoutKind.Sequential)] struct PT { public int X, Y; }
+    [DllImport("user32.dll")] static extern IntPtr MonitorFromPoint(PT pt, uint flags);
+    [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+    const uint MONITOR_DEFAULTTONEAREST = 2;
+
+    /// <summary>The window handles of the bars open now: a click on any of them is not "a window in front" for a dock.</summary>
+    static readonly HashSet<IntPtr> Open = new();
+    public static bool IsBar(IntPtr hwnd) => hwnd != IntPtr.Zero && Open.Contains(hwnd);
+
+    /// <summary>The monitor a window is on (the nearest one when it is off every screen).</summary>
+    public static IntPtr MonitorOf(IntPtr hwnd) => MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+
+    /// <summary>
+    /// The bar on the board's monitor, with everything; false: a bar on another monitor (Settings → Pasek → Pasek na każdym
+    /// monitorze) – Start, the dock and the clock only: the load, the connection, the speakers and the tray's hidden icons are the
+    /// computer's, not the monitor's, and are shown once.
+    /// </summary>
+    public bool IsMain { get; }
+    /// <summary>The monitor the bar stands on (set when it docks; zero before).</summary>
+    public IntPtr MonitorHandle { get; private set; }
+    /// <summary>The dock shows only the windows on this bar's monitor (a bar on every monitor).</summary>
+    public bool OwnWindowsOnly => S.BarAllMonitors && MonitorHandle != IntPtr.Zero;
 
     public CalendarWindow Calendar => _calendar;
     /// <summary>Hidden while a program runs full screen (or the screen is locked, the computer asleep).</summary>
@@ -132,8 +156,9 @@ public sealed class BarWindow : GlassWindow
     /// <summary>Windows moved the other bars (the taskbar resized, a monitor changed): lay the windows out again.</summary>
     public event Action? Moved;
 
-    public BarWindow()
+    public BarWindow(bool main = true)
     {
+        IsMain = main;
         Radius = 0;
         FontFamily = Ui.Font("UiFont");
         Foreground = Ui.Res("Fg");
@@ -147,8 +172,11 @@ public sealed class BarWindow : GlassWindow
         var start = IconButton(Icons.Start(), L.T("Start"), (_, _) => ToggleStart());
         WatchStart();
         left.Children.Add(start);
-        left.Children.Add(Separator());
-        left.Children.Add(_weather);
+        if (main)
+        {
+            left.Children.Add(Separator());
+            left.Children.Add(_weather);
+        }
 
         // ----- middle: the search's magnifier (its field opens right over it), the dock (Settings → Pasek → Dock) -----
         _searchButton = IconButton(Icons.Search(18), L.T("Szukaj"), (_, _) => OpenSearch());
@@ -159,18 +187,23 @@ public sealed class BarWindow : GlassWindow
 
         // ----- right: the load, the tray's hidden icons, the clock -----
         var right = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        right.Children.Add(_meters);
-        // a line between the load and the connection / speakers, as between the other groups
-        right.Children.Add(Separator());
-        // the connection and the speakers
-        _network = new NetworkButton(this);
-        right.Children.Add(_network);
-        _volumeButton = new VolumeButton(this);
-        right.Children.Add(_volumeButton);
         _tray = IconButton(Icons.Caret(true), L.T("Ukryte ikony zasobnika"), (_, _) => ToggleTray());
         _tray.Margin = new Thickness(2, 0, 2, 0);
-        right.Children.Add(_tray);
-        right.Children.Add(Separator());
+        if (main)
+        {
+            _meters = new LoadMeters();
+            right.Children.Add(_meters);
+            // a line between the load and the connection / speakers, as between the other groups
+            right.Children.Add(Separator());
+            // the connection and the speakers
+            _network = new NetworkButton(this);
+            right.Children.Add(_network);
+            _volumeButton = new VolumeButton(this);
+            right.Children.Add(_volumeButton);
+            // the tray's hidden icons: one Windows window, opened at one chevron
+            right.Children.Add(_tray);
+            right.Children.Add(Separator());
+        }
         // a click on the clock while the calendar is open: pressing the mouse already closed it (it lost the focus) – don't open it again
         _clock.TimeOnly = true; // only the time: the date in its tip, the calendar on a click (room for the dock)
         _clock.Clicked += () => { if (!_calendar.JustClosed) _calendar.Toggle(); };
@@ -189,7 +222,7 @@ public sealed class BarWindow : GlassWindow
             _weather.Compact = level >= 2;
             _weather.Update();
             bool narrowMeters = level >= 3;
-            if (_meters.Narrow != narrowMeters) { _meters.Narrow = narrowMeters; _meters.Build(true, IsVisible && !Paused); }
+            if (_meters != null && _meters.Narrow != narrowMeters) { _meters.Narrow = narrowMeters; _meters.Build(true, IsVisible && !Paused); }
         };
         WeatherService.Changed += _sectors.Forget;
         // the sectors lie over the glass, not in it: the dock's grown icons reach past the glass into the window's transparent room
@@ -214,18 +247,20 @@ public sealed class BarWindow : GlassWindow
         Overlay.Children.Add(_sectors);
         Body = _glow; // the glass: the glow only
 
-        IsVisibleChanged += (_, _) => _meters.Build(false, IsVisible && !Paused);
+        IsVisibleChanged += (_, _) => _meters?.Build(false, IsVisible && !Paused);
         Closed += (_, _) =>
         {
+            Open.Remove(Hwnd);
             _appBar?.Remove();
+            Guard.Watch(Hwnd, false);
             if (_shellHooked) DeregisterShellHookWindow(Hwnd);
             // off every static event: a closed bar must not stay alive through them (and go on working for nothing)
             WeatherService.Changed -= _sectors.Forget;
             _weather.Detach();
             _clock.Detach();
-            _meters.Detach();
-            _network.Detach();
-            _volumeButton.Detach();
+            _meters?.Detach();
+            _network?.Detach();
+            _volumeButton?.Detach();
             _dock?.Detach();
             CloseTray();
             _calendar.Close();
@@ -289,7 +324,7 @@ public sealed class BarWindow : GlassWindow
     public void ApplySettings()
     {
         ApplyGlow();
-        _meters.Build(false, IsVisible && !Paused);
+        _meters?.Build(false, IsVisible && !Paused);
         _weather.Update();
         _clock.Refresh();
         ApplyDock();
@@ -305,8 +340,8 @@ public sealed class BarWindow : GlassWindow
         double font = BarMetrics.Font(S.BarSize);
         _weather.TextSize = font;
         _clock.TextSize = font;
-        _meters.TextSize = font;
-        _meters.Build(false, IsVisible && !Paused);
+        if (_meters != null) _meters.TextSize = font;
+        _meters?.Build(false, IsVisible && !Paused);
         _weather.Update();
         _sectors.Forget();
         if (want && _dock == null)
@@ -330,7 +365,7 @@ public sealed class BarWindow : GlassWindow
         ApplyScale(scale);
         _calendar.SetScale(scale);
         _weather.Update();
-        _meters.Build(true, IsVisible && !Paused);
+        _meters?.Build(true, IsVisible && !Paused);
     }
 
     /// <summary>
@@ -344,7 +379,7 @@ public sealed class BarWindow : GlassWindow
     /// <summary>Dev check: clicks the network and the volume buttons and logs their panels (no screenshot).</summary>
     public void DevPanels()
     {
-        foreach (var b in new Button[] { _network, _volumeButton })
+        foreach (var b in new Button?[] { _network, _volumeButton }.OfType<Button>())
         {
             b.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
             var open = Application.Current.Windows.OfType<BarPanel>().FirstOrDefault(p => p.IsVisible);
@@ -368,7 +403,7 @@ public sealed class BarWindow : GlassWindow
             {
                 // Explorer restarted ("TaskbarCreated"): it forgot this bar, and a new taskbar is on screen – all again
                 if (msg == (int)TaskbarCreated)
-                    Dispatcher.BeginInvoke(() => { _appBar?.Forget(); WindowsTaskbar.Rehide(); _shellHooked = RegisterShellHookWindow(Hwnd); Moved?.Invoke(); }, DispatcherPriority.Background);
+                    Dispatcher.BeginInvoke(() => { _appBar?.Forget(); if (IsMain) WindowsTaskbar.Rehide(); /* once, not per monitor */ _shellHooked = RegisterShellHookWindow(Hwnd); Moved?.Invoke(); }, DispatcherPriority.Background);
                 // windows created, gone, activated, flashing: the dock follows (no polling)
                 else if (msg == (int)ShellHook && _dock != null)
                     _dock.OnShell(w.ToInt32() & 0xFFFF, l);
@@ -393,7 +428,15 @@ public sealed class BarWindow : GlassWindow
         Frame.Margin = top ? new Thickness(sideL, gap, sideR, 0) : new Thickness(sideL, 0, sideR, gap);
         _sectors.Margin = new Thickness(sideL / ui + 10, top ? gap / ui : 0, sideR / ui + 12, top ? 0 : gap / ui);
         PlacePhysical(r.X, top ? r.Y : r.Y - head, r.Width, r.Height + head, scale);
-        Guard.Watch(Hwnd);
+        Open.Add(Hwnd);
+        Guard.Watch(Hwnd, true);
+        // the monitor it stands on: a bar on every monitor shows that monitor's windows (read again when it moved to another one)
+        var mon = MonitorFromPoint(new PT { X = monitor.X + monitor.Width / 2, Y = monitor.Y + monitor.Height / 2 }, MONITOR_DEFAULTTONEAREST);
+        if (mon != MonitorHandle)
+        {
+            MonitorHandle = mon;
+            _dock?.Refresh();
+        }
         return r;
     }
 
@@ -401,7 +444,7 @@ public sealed class BarWindow : GlassWindow
     public void Undock()
     {
         _appBar?.Remove();
-        Guard.Watch(IntPtr.Zero);
+        Guard.Watch(Hwnd, false);
     }
 
     readonly HashSet<string> _pauses = new();
@@ -420,18 +463,18 @@ public sealed class BarWindow : GlassWindow
         Paused = paused;
         _clock.Pause(paused);
         _dock?.Pause(paused);
-        _network.Pause(paused);
+        _network?.Pause(paused);
         if (paused)
         {
             if (_calendar.IsOpen) _calendar.Toggle(false);
-            _meters.Build(false, false);
+            _meters?.Build(false, false);
             Hide();
         }
         else
         {
             Show();
             _weather.Update();
-            _meters.Build(false, true);
+            _meters?.Build(false, true);
         }
     }
 
