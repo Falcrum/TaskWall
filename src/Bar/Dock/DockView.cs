@@ -622,6 +622,9 @@ sealed class DockView : Canvas
         RenderOptions.SetBitmapScalingMode(e.Gray, BitmapScalingMode.HighQuality);
         foreach (var d in e.Dots) { d.CornerRadius = new CornerRadius(2); e.Mark.Children.Add(d); }
         e.Visual.MouseEnter += (_, _) => { _hovered = e; _hidePreview.Stop(); if (_preview.IsVisible && e.Windows.Count > 0) ShowPreview(e); else { _hoverPreview.Stop(); _hoverPreview.Start(); } };
+        // a stack opens its island when the pointer rests on it (Ustawienia → Dock), and closes when the pointer leaves it and the island
+        e.Visual.MouseEnter += (_, _) => { if (e.Pin?.Items != null) StackIsland.HoverEnter(e.Pin, e.Visual, _bar, this); };
+        e.Visual.MouseLeave += (_, _) => StackIsland.HoverLeave();
         e.Visual.MouseLeftButtonDown += (_, ev) => { var fg = Native.GetForegroundWindow(); _fgAtPress = fg == _bar.Hwnd || fg == IntPtr.Zero ? _realFront : fg; _pressed = e; _pressAt = ev.GetPosition(this); e.Visual.CaptureMouse(); ev.Handled = true; };
         e.Visual.MouseLeftButtonUp += (_, ev) =>
         {
