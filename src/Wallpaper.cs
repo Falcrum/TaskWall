@@ -158,7 +158,17 @@ static class Wallpaper
             catch (Exception ex) { Log.Error("wallpaper describe", ex); }
             finally { Marshal.ReleaseComObject(dw); }
         }
-        if (path == null)
+        // a solid colour (Settings → Personalisation → Background → Solid colour): no picture at all – the transcoded copy of
+        // the picture used before stays on the disk and must not come back (the colour is GetBackgroundColor's)
+        bool solid = false;
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Control Panel\Desktop");
+            solid = key?.GetValue("WallPaper") is string wp && wp.Trim().Length == 0;
+        }
+        catch { }
+        if (solid) path = null;
+        if (path == null && !solid)
         {
             // slideshow / Spotlight / images Windows keeps only as transcoded copies
             foreach (var cand in new[] { index >= 0 ? $"Transcoded_{index:000}" : null, "TranscodedWallpaper" })

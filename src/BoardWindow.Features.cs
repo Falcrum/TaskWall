@@ -655,7 +655,8 @@ public partial class BoardWindow
             BacklogPanel.HorizontalAlignment = HorizontalAlignment.Right;
             BacklogPanel.Width = DrawerWidth();
             Panel.SetZIndex(BacklogPanel, 10);
-            BacklogSurface.Background = B(Th.Panel(0xA8));
+            // the board's own tint over the frosted strip (opaque when Wygląd → Tło is solid, like the board): no wallpaper through it
+            BacklogSurface.SetResourceReference(Border.BackgroundProperty, "GlassTint");
             BacklogSurface.BorderBrush = B(Th.Ink(0x30));
             if (!_drawerOpen && !DrawerShift.HasAnimatedProperties) DrawerShift.X = DrawerWidth() + 30;
             BacklogPanel.Visibility = _drawerOpen || DrawerShift.HasAnimatedProperties ? Visibility.Visible : Visibility.Collapsed;
@@ -672,6 +673,7 @@ public partial class BoardWindow
             DrawerShift.BeginAnimation(TranslateTransform.XProperty, null);
             DrawerShift.X = 0;
             DrawerGlass.Background = null;
+            BacklogSurface.ClearValue(Border.BackgroundProperty);
             BacklogSurface.Background = B(Th.Ink(0x08));
             BacklogSurface.BorderBrush = Res("Line");
             BacklogPanel.Visibility = _pinnedVisible ? Visibility.Visible : Visibility.Collapsed;
@@ -681,7 +683,8 @@ public partial class BoardWindow
     /// <summary>The drawer shows the same frosted wallpaper as the window behind it (right-hand strip).</summary>
     public void UpdateDrawerGlass()
     {
-        if (S.BacklogMode != "drawer" || GlassBrush?.ImageSource is not { } img || ActualWidth <= 0) { DrawerGlass.Background = null; return; }
+        // solid background (no transparency): the drawer is solid too – no wallpaper under it
+        if (S.BacklogMode != "drawer" || S.Opaque || GlassBrush?.ImageSource is not { } img || ActualWidth <= 0) { DrawerGlass.Background = null; return; }
         double frac = Math.Min(1, DrawerWidth() * S.UiScale / ActualWidth);
         DrawerGlass.Background = new ImageBrush(img)
         {

@@ -174,7 +174,8 @@ static class StackIsland
     {
         var stack = _path[^1];
         stack.Items ??= new();
-        var root = new StackPanel { Width = Math.Clamp(stack.Items.Count, 3, 5) * (Tile + 4) + 4 };
+        // as wide as its tiles, up to eight a row; more go on in rows under them
+        var root = new StackPanel { Width = Math.Clamp(stack.Items.Count, 3, 8) * (Tile + 4) + 4 };
         _root = root;
         _upTargets.Clear();
         _backText = null;
@@ -209,24 +210,9 @@ static class StackIsland
         head.Children.Add(_pathText);
         root.Children.Add(head);
 
-        // the search: typing filters the tiles, programs in the stacks inside too
-        var box = _searchBox = new TextBox { Style = (Style)Application.Current.Resources["FieldBox"], FontSize = 12, Text = _query, Padding = new Thickness(6, 3, 6, 3) };
-        System.Windows.Automation.AutomationProperties.SetName(box, L.T("Szukaj w stosie"));
-        var hint = new TextBlock { Text = L.T("Szukaj w stosie"), FontSize = 12, Foreground = Ui.Res("FgFaint"), Margin = new Thickness(9, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false, Visibility = _query.Length > 0 ? Visibility.Collapsed : Visibility.Visible };
-        box.TextChanged += (_, _) =>
-        {
-            _query = box.Text.Trim();
-            hint.Visibility = box.Text.Length > 0 ? Visibility.Collapsed : Visibility.Visible;
-            Fill();
-            _panel?.Reflow();
-        };
-        box.PreviewKeyDown += (_, e) =>
-        {
-            if (e.Key == Key.Enter && _found.Count > 0) { e.Handled = true; Run(_found[0]); }
-            else if (e.Key == Key.Down && _tiles.Count > 0) { e.Handled = true; _tiles[0].Tile.Focus(); }
-        };
-        var search = new Grid { Margin = new Thickness(2, 0, 2, 10), Children = { box, hint } };
-        root.Children.Add(search);
+        // no search: a stack is short enough to see at a glance (sorted by name)
+        _searchBox = null;
+        _query = "";
 
         _grid = new WrapPanel();
         _overlay = new Canvas { IsHitTestVisible = false };
@@ -254,7 +240,8 @@ static class StackIsland
         _found.Clear();
         if (_query.Length == 0)
         {
-            foreach (var item in stack.Items!.ToList()) _grid.Children.Add(TileFor(stack, item, null));
+            // by name, as in a folder (the order the items were added in doesn't matter to find one)
+            foreach (var item in stack.Items!.OrderBy(Name, StringComparer.CurrentCultureIgnoreCase).ToList()) _grid.Children.Add(TileFor(stack, item, null));
             if (stack.Items!.Count == 0)
                 _grid.Children.Add(new TextBlock { Text = L.T("Pusty stos – dodaj program przyciskiem +."), Foreground = Ui.Res("FgFaint"), FontSize = 12, Margin = new Thickness(4, 6, 4, 10), TextWrapping = TextWrapping.Wrap, Width = 3 * Tile });
             return;

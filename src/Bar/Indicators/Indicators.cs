@@ -81,18 +81,27 @@ sealed class BarPanel : GlassWindow
     {
         _closeSoon.Stop();
         bool moving = IsVisible && !_fading;
-        _content.Child = content;
         _anchor = anchor;
         _bar = bar;
         FrameElement.RenderTransformOrigin = new Point(0.5, bar.AtTop ? 0 : 1);
         if (moving)
         {
-            // already open (another stack, a stack inside): glide to the new place and size, the new content fading in
-            Glide();
-            Anim.Enter(content, 0, 0, 180);
+            // already open (another stack, a stack inside): the old content fades out quickly, the panel stands at its new place
+            // and size at once, the new content fades in – resizing a transparent window frame by frame tore and cut the content
+            if (!Anim.On) { _content.Child = content; Place(); App.Instance.PaintGlass(this); if (activate) Activate(); return; }
+            var outFade = new System.Windows.Media.Animation.DoubleAnimation(FrameElement.Opacity, 0, TimeSpan.FromMilliseconds(70));
+            outFade.Completed += (_, _) =>
+            {
+                _content.Child = content; // swapped while nothing shows
+                Place();
+                App.Instance.PaintGlass(this);
+                FrameElement.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(130)));
+            };
+            FrameElement.BeginAnimation(OpacityProperty, outFade);
             if (activate) Activate();
             return;
         }
+        _content.Child = content;
         _fading = false;
         FrameElement.BeginAnimation(OpacityProperty, null);
         Place();
