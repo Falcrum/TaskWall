@@ -810,7 +810,7 @@ public sealed class AppSettings
     /// <summary>The dock's magnification under the pointer: "off", "subtle" (1.25×) or "full" (1.55×).</summary>
     public string DockMagnify { get; set; } = "full";
     /// <summary>Smaller dock icons while a window is maximised on the screen, full again when the pointer comes to the bar.</summary>
-    public bool DockThin { get; set; } = true;
+    public bool DockThin { get; set; } = false;
     /// <summary>A red counter on a dock icon: the notifications the program has waiting (Windows' notification centre, its badge, its title).</summary>
     public bool DockBadges { get; set; } = true;
     /// <summary>When each program's notifications were last seen (its window brought to the front; program id → FILETIME UTC): older ones don't count.</summary>

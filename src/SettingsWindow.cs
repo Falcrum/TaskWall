@@ -1302,7 +1302,6 @@ public sealed class SettingsWindow : DarkWindow
         yield return Row(L.T("Powiększanie ikon"), L.T("Ikona pod kursorem rośnie, sąsiednie trochę mniej – jak w docku macOS."),
             Combo(new[] { ("off", L.T("Wyłączone")), ("subtle", L.T("Subtelne (1,25×)")), ("full", L.T("Pełne (1,55×)")) }, S.DockMagnify, tag => { S.DockMagnify = tag; App.Instance.ApplySettings(); }));
         yield return Toggle(L.T("Liczniki powiadomień"), L.T("Kółko w kolorze akcentu z liczbą powiadomień czekających w programie (Centrum powiadomień Windows, licznik programu, tytuł okna)."), S.DockBadges, v => S.DockBadges = v);
-        yield return Toggle(L.T("Cienki dock przy zmaksymalizowanym oknie"), L.T("Mniejsze ikony, gdy okno zajmuje ekran; pełne, gdy kursor zbliży się do paska."), S.DockThin, v => S.DockThin = v);
         var pins = new StackPanel();
         void FillPins()
         {
