@@ -8,10 +8,8 @@ using System.Windows.Media;
 namespace TaskWall;
 
 /// <summary>
-/// The computer's load for a bar: the rings chosen in Settings (CPU, GPU, RAM, disk, network), each with its name and number
-/// (only the name when <see cref="Narrow"/>), and – optional – ChatGPT's usage limits as two rings in one (the
-/// 5-hour window outside, the week inside, <see cref="AiLimits"/>). Reading runs only while a bar shows them (<see cref="Build"/>
-/// with <c>active</c>).
+/// The computer's load for a bar: the rings chosen in Settings (CPU, GPU, RAM, disk, network), each with its name inside and its
+/// number in the tip. Reading runs only while a bar shows them (<see cref="Build"/> with <c>active</c>).
 /// </summary>
 public sealed class LoadMeters : StackPanel
 {
@@ -24,18 +22,15 @@ public sealed class LoadMeters : StackPanel
         VerticalAlignment = VerticalAlignment.Center;
         HorizontalAlignment = HorizontalAlignment.Right;
         SysMeters.Updated += OnReading;
-        AiLimits.Changed += OnAi;
     }
 
     void OnReading(Dictionary<string, MeterValue> r) => Dispatcher.BeginInvoke(() => Show(r));
-    void OnAi() => Dispatcher.BeginInvoke(() => { foreach (var (k, ring) in _rings) if (AiLimits.Now.TryGetValue(k, out var u)) ring.SetAi(u); });
-    bool _aiOn;
+
 
     /// <summary>The bar closed: off the readings (and the reading stops when no bar shows rings).</summary>
     public void Detach()
     {
         SysMeters.Updated -= OnReading;
-        AiLimits.Changed -= OnAi;
         Build(false, false);
     }
 
@@ -49,25 +44,20 @@ public sealed class LoadMeters : StackPanel
     public void Build(bool force, bool active)
     {
         var kinds = App.Settings.Meters.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(SysMeters.Kinds.Contains).Distinct().ToList();
-        var ai = App.Settings.AiMeters.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(k => k is "chatgpt").Distinct().ToList();
-        var set = string.Join(",", kinds.Concat(ai)) + Narrow + TextSize + App.Settings.MeterColors;
+        var set = string.Join(",", kinds) + TextSize + App.Settings.MeterColors;
         if (force || set != _set)
         {
             _set = set;
             Children.Clear();
             _rings.Clear();
-            foreach (var k in kinds.Concat(ai))
+            foreach (var k in kinds)
             {
-                // the name inside the ring: a little bigger than a bare ring so three letters fit
-                var m = TextSize > 0 ? new Meter(k, !Narrow, Math.Round(BarType.Ring(TextSize) * 1.3), BarType.Secondary(TextSize)) : new Meter(k, !Narrow, 28, 10.5);
+                // the name inside the ring (a little bigger than a bare ring so three letters fit); the number only in the tip
+                var m = new Meter(k, TextSize > 0 ? Math.Round(BarType.Ring(TextSize) * 1.3) : 28);
                 _rings[k] = m;
                 Children.Add(m.Root);
-                if (AiLimits.Now.TryGetValue(k, out var known)) m.SetAi(known);
             }
         }
-        // the AI limits are read while a bar shows their rings (every 3 minutes)
-        bool aiOn = active && ai.Count > 0;
-        if (aiOn != _aiOn) { _aiOn = aiOn; if (aiOn) AiLimits.Start(); else AiLimits.Stop(); }
         // the reading runs while any bar on screen shows rings (the old top bar and the new one may both exist)
         if (active && kinds.Count > 0) Showing.Add(this); else Showing.Remove(this);
         if (Showing.Count > 0) SysMeters.Start(); else SysMeters.Stop();
@@ -82,8 +72,8 @@ public sealed class LoadMeters : StackPanel
     }
 
     /// <summary>
-    /// A ring that fills with the load, its name in letters inside ("CPU" – the small symbols were hard to tell apart from afar)
-    /// and the number after it; for the AI limit a second, thinner ring inside: the week.
+    /// A ring that fills with the load, its name in letters inside ("CPU" – the small symbols were hard to tell apart from afar);
+    /// the number in the tip.
     /// </summary>
     sealed class Meter
     {
@@ -94,79 +84,44 @@ public sealed class LoadMeters : StackPanel
             ["ram"] = (Color.FromRgb(0xF2, 0xD1, 0x3D), "RAM", "RAM"),
             ["disk"] = (Color.FromRgb(0x5B, 0x9B, 0xFF), "SSD", L.T("Dysk")),
             ["net"] = (Color.FromRgb(0xB3, 0x82, 0xFF), "NET", L.T("Sieć")),
-            ["chatgpt"] = (Color.FromRgb(0x2E, 0xC4, 0x9C), "GPT", "ChatGPT"),
         };
         readonly double Size, Thick;
         readonly Color _color;
         readonly string _name;
 
         public readonly FrameworkElement Root;
-        readonly System.Windows.Shapes.Path _arc, _inner;
-        readonly TextBlock _text;
+        readonly System.Windows.Shapes.Path _arc;
         double _shown = -1;
 
-        public Meter(string kind, bool number, double size, double font)
+        public Meter(string kind, double size)
         {
             var (color, shortName, name) = Kinds[kind];
-            _name = name;
             Size = size;
             Thick = Math.Round(size * 0.105, 1);
             _color = color;
-            bool ai = kind is "chatgpt";
-            var ring = new Grid { Width = Size, Height = Size, VerticalAlignment = VerticalAlignment.Center };
+            var ring = new Grid { Width = Size, Height = Size, VerticalAlignment = VerticalAlignment.Center, Background = Brushes.Transparent, ToolTip = name, Margin = new Thickness(8, 0, 0, 0) };
             ring.Children.Add(new System.Windows.Shapes.Ellipse { Stroke = Ui.Brush(Th.Ink(0x2A)), StrokeThickness = Thick });
             _arc = new System.Windows.Shapes.Path { Stroke = Ui.Brush(Calm(0)), StrokeThickness = Thick, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round };
             ring.Children.Add(_arc);
-            // the week: a thinner ring inside the 5-hour one
-            _inner = new System.Windows.Shapes.Path { Stroke = Ui.Brush(Calm(0)), StrokeThickness = Math.Max(1.2, Thick * 0.7), StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round };
-            if (ai)
+            // the name inside ("CPU"): one size for all of them, laid out as a whole (not snapped letter by letter, which made "SSD" look smaller)
+            ring.Children.Add(new TextBlock
             {
-                double gap = Thick * 1.5;
-                ring.Children.Add(new System.Windows.Shapes.Ellipse { Stroke = Ui.Brush(Th.Ink(0x1E)), StrokeThickness = _inner.StrokeThickness, Margin = new Thickness(gap) });
-                ring.Children.Add(_inner);
-            }
-            // the name inside the ring ("CPU"), the number after it
-            var label = new TextBlock
-            {
-                Text = shortName, FontSize = Math.Round(Size * (ai ? 0.22 : 0.27), 1), FontWeight = FontWeights.Bold, Foreground = Ui.Res("FgDim"),
-                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, Size * 0.02),
-            };
-            TextOptions.SetTextFormattingMode(label, TextFormattingMode.Display);
-            ring.Children.Add(label);
-            _text = new TextBlock { Text = "–", FontSize = font, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0), MinWidth = font * 2.5, Foreground = Ui.Res("FgDim") };
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(10, 0, 0, 0), Background = Brushes.Transparent, ToolTip = name };
-            row.Children.Add(ring);
-            if (number) row.Children.Add(_text);
-            else row.Margin = new Thickness(6, 0, 0, 0);
-            ToolTipService.SetShowDuration(row, 60000);
-            Root = row;
+                Text = shortName, FontSize = Math.Round(Size * 0.25, 1), FontWeight = FontWeights.Bold, Foreground = Ui.Res("FgDim"),
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+            });
+            ToolTipService.SetShowDuration(ring, 60000);
+            Root = ring;
         }
 
         public void Set(MeterValue v)
         {
+            // the number and the details in the tip ("CPU 9 %", the disk's free room …)
             Root.ToolTip = v.Detail;
             double p = Math.Clamp(v.Percent, 0, 100);
-            _text.Text = $"{Math.Round(p):0}%";
             if (Math.Abs(p - _shown) < 0.5) return;
             _shown = p;
             _arc.Stroke = Ui.Brush(Calm(p));
             _arc.Data = Arc(p, Size, Thick);
-        }
-
-        /// <summary>An AI limit: the 5-hour window on the ring (and its number), the week on the inner ring; the details in the tip.</summary>
-        public void SetAi(AiLimits.Usage u)
-        {
-            Root.ToolTip = AiLimits.Describe(_name, u);
-            double five = Math.Clamp(u.FiveHour ?? 0, 0, 100), week = Math.Clamp(u.Week ?? 0, 0, 100);
-            _text.Text = u.FiveHour is { } f ? $"{Math.Round(f):0}%" : "–";
-            _arc.Stroke = Ui.Brush(Calm(five));
-            _arc.Data = Arc(five, Size, Thick);
-            double gap = Thick * 1.5, inner = Size - 2 * gap;
-            _inner.Stroke = Ui.Brush(Calm(week));
-            var g = Arc(week, inner, _inner.StrokeThickness);
-            if (!g.IsEmpty() && g is not EllipseGeometry) { g = g.Clone(); g.Transform = new TranslateTransform(gap, gap); }
-            else if (g is EllipseGeometry e) g = new EllipseGeometry(new Point(Size / 2, Size / 2), e.RadiusX, e.RadiusY);
-            _inner.Data = g;
         }
 
         /// <summary>

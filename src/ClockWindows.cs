@@ -284,7 +284,7 @@ public sealed class CalendarWindow : GlassWindow
             grid.Children.Insert(0, frame); // behind the numbers
         }
 
-        var footer = new Button { Style = (Style)Application.Current.Resources["LinkButton"], Content = L.T("DZIŚ"), HorizontalAlignment = HorizontalAlignment.Center, FontSize = 11, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 4, 0, 0) };
+        var footer = new Button { Style = (Style)Application.Current.Resources["LinkButton"], Content = L.T("DZIŚ"), HorizontalAlignment = HorizontalAlignment.Center, FontSize = 11, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 4, 0, 0), Padding = new Thickness(10, 2, 10, 2), MinHeight = 0, Height = double.NaN };
         footer.Click += (_, _) => Pick(DateTime.Today);
 
         var dock = new DockPanel();
@@ -295,7 +295,7 @@ public sealed class CalendarWindow : GlassWindow
         dock.Children.Add(grid);
         _calendar.Children.Add(dock);
         _calendar.Measure(new Size(TabWidth, double.PositiveInfinity));
-        var h = _calendar.DesiredSize.Height + _calendar.Margin.Top + _calendar.Margin.Bottom;
+        var h = _calendar.DesiredSize.Height; // the margins are in it already (adding them again left an empty band under "DZIŚ")
         if (h > 0 && Math.Abs(h - _calHeight) > 0.5)
         {
             _calHeight = h;

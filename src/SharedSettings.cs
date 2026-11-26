@@ -30,7 +30,7 @@ static class SharedSettings
         // view state that changes by itself (zoom, filters, the last weekly summary): never a reason to overwrite another PC's settings
         nameof(AppSettings.Timeline), nameof(AppSettings.LastWeekSummary), nameof(AppSettings.NotesSource), nameof(AppSettings.DayNotesLeft),
         // screens and hardware differ per computer
-        nameof(AppSettings.BoardMax), nameof(AppSettings.Gap), nameof(AppSettings.SecondMonitor), nameof(AppSettings.SecondView), nameof(AppSettings.Meters), nameof(AppSettings.AiMeters),
+        nameof(AppSettings.BoardMax), nameof(AppSettings.Gap), nameof(AppSettings.SecondMonitor), nameof(AppSettings.SecondView), nameof(AppSettings.Meters),
         // the full-width bar replaces this computer's taskbar: each computer chooses for itself
         nameof(AppSettings.AppBar), nameof(AppSettings.AppBarTop), nameof(AppSettings.HideTaskbar), nameof(AppSettings.BarSize), nameof(AppSettings.BarWidth),
         nameof(AppSettings.Dock), nameof(AppSettings.DockMagnify), nameof(AppSettings.DockThin), nameof(AppSettings.DockBadges), nameof(AppSettings.DockSeen), nameof(AppSettings.DockPins),

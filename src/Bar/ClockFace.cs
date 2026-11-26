@@ -66,6 +66,8 @@ public sealed class ClockFace : Border
         set
         {
             _date.Visibility = _chevron.Visibility = value ? Visibility.Collapsed : Visibility.Visible;
+            _time.Margin = value ? new Thickness(0) : _dateFirst ? new Thickness(10, 0, 0, 0) : new Thickness(0);
+            Padding = value ? new Thickness(10, 0, 10, 0) : new Thickness(12, 0, 10, 0);
             _timeOnly = value;
             Refresh();
         }
