@@ -754,5 +754,8 @@ static partial class L
         ("Szukaj ({0})", "Search ({0})"),
         ("Tylko przy dużym obciążeniu: kółka są spokojnie szare i dostają swój kolor (CPU pomarańczowy, GPU zielony …) od 80%. Zawsze: każde w swoim kolorze.", "Only under heavy load: the rings are a quiet grey and take their colour (CPU orange, GPU green …) from 80 %. Always: each in its own colour."),
         ("Pasek na całą szerokość trzy razy zakończył się awarią w ciągu 10 minut – tym razem TaskWall startuje bez niego (ze zwykłym paskiem nad tablicą). Szczegóły w error.log.", "The full-width bar crashed three times in 10 minutes – this time TaskWall starts without it (with the usual bar over the board). Details in error.log."),
+        ("Nieuruchomione programy w skali szarości", "Programs not running in greyscale"),
+        ("Przypięte programy, które nie działają, są szare; przy uruchamianiu nabierają koloru.", "Pinned programs that aren't running are grey; they take on their colour as they start."),
+        ("Nie odpowiada – prawy przycisk: Zakończ zadanie", "Not responding – right button: End task"),
     };
 }

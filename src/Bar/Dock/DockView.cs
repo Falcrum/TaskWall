@@ -7,6 +7,8 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
+using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 
@@ -67,7 +69,9 @@ static class WindowActions
 /// Rustyfiles – and frames are drawn only while something moves (CompositionTarget.Rendering is hooked for that time only).
 /// A click brings a program's window up (again: down; several windows: their live previews), the middle button starts a new one,
 /// the right button pins, starts, closes; a pinned icon is dragged to another place. With a maximised window on the screen the icons
-/// are thin (30 px, the centres stay) and grow back when the pointer comes to the bar.
+/// are thin (30 px, the centres stay) and grow back when the pointer comes to the bar. A pinned program that isn't running is grey
+/// (a setting); started from the dock it hops and its colour breathes in until its first window comes. Under a running one a dot
+/// for each window (up to three); a new running icon grows in, a closed one shrinks away; one that doesn't respond gets a red ring.
 /// </summary>
 sealed class DockView : Canvas
 {
@@ -81,7 +85,26 @@ sealed class DockView : Canvas
         public List<TaskList.Task> Windows = new();
         public readonly Border Visual = new() { Background = Brushes.Transparent, Cursor = Cursors.Hand };
         public readonly Image Img = new() { Stretch = Stretch.Uniform };
-        public readonly Border Mark = new() { IsHitTestVisible = false, CornerRadius = new CornerRadius(1.5) };
+        /// <summary>The icon's greyscale copy under the colour one (pinned programs not running, with the setting on).</summary>
+        public readonly Image Gray = new() { Stretch = Stretch.Uniform, Visibility = Visibility.Collapsed };
+        /// <summary>The colour icon's opacity over the grey one: 0 grey, 1 colour; it breathes while the program starts.</summary>
+        public double Tint = 1;
+        /// <summary>The marks under a running icon: a dot for each window (up to three), one longer line for the one in front.</summary>
+        public readonly StackPanel Mark = new() { IsHitTestVisible = false, Orientation = Orientation.Horizontal };
+        public readonly Border[] Dots = { new(), new(), new() };
+        /// <summary>Started from the dock: the hops began (0: not starting); the hop under way lands at LaunchStop once a window came.</summary>
+        public long LaunchStart, LaunchStop;
+        /// <summary>The windows when it was started (its own, and all the program's by file / app id): one more ends the hops.</summary>
+        public int LaunchOwn, LaunchMatch;
+        public string? LaunchExe, LaunchAppId;
+        /// <summary>A new running icon growing in / a gone one shrinking away (0: neither).</summary>
+        public long AppearStart, LeaveStart;
+        /// <summary>Where the icon was drawn last (canvas): its centre, the line it stands on, its size – where it shrinks away.</summary>
+        public double DrawX, DrawEdge, DrawSize;
+        /// <summary>A window of it doesn't respond (IsHungAppWindow): a red ring pulses around the icon.</summary>
+        public bool Hung;
+        public readonly Border HungRing = new() { IsHitTestVisible = false, Visibility = Visibility.Collapsed, BorderBrush = HungBrush };
+        public string Hint = "";
         public double Shown = double.NaN;   // the centre drawn last (rest coordinates), for the slide after a change of the row
         public double SlideFrom;            // offset from the new rest centre when the slide began
         public long SlideStart;
@@ -95,6 +118,11 @@ sealed class DockView : Canvas
 
     readonly BarWindow _bar;
     readonly List<Entry> _entries = new();
+    /// <summary>Icons gone from the row, shrinking away before they leave the canvas.</summary>
+    readonly List<Entry> _leaving = new();
+    /// <summary>The first reading is done: icons that come later grow in (the first ones are simply there).</summary>
+    bool _built;
+    long _lastDraw;
     readonly List<Rectangle> _lines = new();
     readonly Rectangle _catcher = new() { IsHitTestVisible = true };
     List<Slot> _slots = new();
@@ -120,6 +148,8 @@ sealed class DockView : Canvas
     readonly DispatcherTimer _thinCheck = new() { Interval = TimeSpan.FromMilliseconds(200) };
     readonly DispatcherTimer _hoverPreview = new() { Interval = TimeSpan.FromMilliseconds(700) }; // the name shows at once, the previews when the pointer stays
     readonly DispatcherTimer _hidePreview = new() { Interval = TimeSpan.FromMilliseconds(320) };
+    /// <summary>Every 2 s: does any of the windows not respond (only while the dock shows; stopped when paused or detached).</summary>
+    readonly DispatcherTimer _hungCheck = new() { Interval = TimeSpan.FromSeconds(2) };
     Entry? _hovered;
     readonly WindowPreview _preview = new();
     static readonly Spring Slide = Spring.Smooth(240);
@@ -142,6 +172,8 @@ sealed class DockView : Canvas
         Children.Add(_catcher);
         _refresh.Tick += (_, _) => { _refresh.Stop(); Refresh(); };
         _thinCheck.Tick += (_, _) => { _thinCheck.Stop(); CheckThin(); };
+        _hungCheck.Tick += (_, _) => CheckHung();
+        _hungCheck.Start();
         _hoverPreview.Tick += (_, _) => { _hoverPreview.Stop(); if (_hovered is { Windows.Count: > 0 } h && _dragging == null) ShowPreview(h); };
         _hidePreview.Tick += (_, _) => { _hidePreview.Stop(); if (!IsMouseOver && !_preview.IsMouseOver) _preview.Dismiss(); };
         _preview.Picked += h => { _preview.Dismiss(); WindowActions.Activate(h); };
@@ -176,7 +208,8 @@ sealed class DockView : Canvas
         StopHooks();
         Unhook();
         if (_badgesOn) { _badgesOn = false; AppBadges.Changed -= UpdateBadges; AppBadges.Stop(); }
-        foreach (var t in new[] { _refresh, _thinCheck, _hoverPreview, _hidePreview }) t.Stop();
+        foreach (var t in new[] { _refresh, _thinCheck, _hoverPreview, _hidePreview, _hungCheck }) t.Stop();
+        FlushLeaving();
         _preview.Dismiss();
         _preview.Close();
     }
@@ -293,8 +326,8 @@ sealed class DockView : Canvas
     public void Pause(bool paused)
     {
         _paused = paused;
-        if (paused) { _preview.Dismiss(); Unhook(); }
-        else { Refresh(); CheckThin(); }
+        if (paused) { _preview.Dismiss(); Unhook(); _hungCheck.Stop(); FlushLeaving(); }
+        else { Refresh(); CheckThin(); _hungCheck.Start(); }
     }
 
     /// <summary>
@@ -360,9 +393,16 @@ sealed class DockView : Canvas
         _entries.Clear();
         foreach (var item in items)
         {
-            if (!old.Remove(item.Key, out var e)) e = NewEntry(item.Key);
-            e.Pin = item.Pinned ? S.DockPins.FirstOrDefault(p => string.Equals(p.Key, item.Key, StringComparison.OrdinalIgnoreCase)) : null;
+            bool fresh = !old.Remove(item.Key, out var e);
+            if (fresh)
+            {
+                e = NewEntry(item.Key);
+                // a program started later (not pinned): its icon grows in while the others slide aside
+                if (_built && !item.Pinned && Anim.On) e!.AppearStart = Now;
+            }
+            e!.Pin = item.Pinned ? S.DockPins.FirstOrDefault(p => string.Equals(p.Key, item.Key, StringComparison.OrdinalIgnoreCase)) : null;
             e.Windows = groups.GetValueOrDefault(item.Key) ?? new();
+            if (fresh) e.Tint = e.Windows.Count > 0 ? 1 : 0; // grey or colour from the start, no fade
             var first = e.Windows.FirstOrDefault();
             string? exe = first?.Exe ?? e.Pin?.Exe, appId = first?.AppId ?? e.Pin?.AppId;
             string hint;
@@ -381,21 +421,30 @@ sealed class DockView : Canvas
                     : e.Windows.Count == 0 ? L.T("Kliknij, aby uruchomić; przeciągnij na stos, aby go tam dodać")
                     : L.T("Kliknij: na wierzch / zminimalizuj · środkowy przycisk: nowe okno · przeciągnij na stos");
             }
-            // the name at once (like the Mac's dock); the live previews of a running one follow when the pointer stays. The same tip
-            // object stays: a new one at every refresh (a browser's title changes all the time) closed the open tip at once
-            var tipText = e.Name + "\n" + hint;
-            if (e.Visual.ToolTip is not ToolTip tt)
-            {
-                tt = new ToolTip();
-                e.Visual.ToolTip = tt;
-                ToolTipService.SetInitialShowDelay(e.Visual, 0);
-                ToolTipService.SetShowDuration(e.Visual, 60000);
-            }
-            if (!Equals(tt.Content, tipText)) tt.Content = tipText;
-            tt.Placement = _bar.AtTop ? System.Windows.Controls.Primitives.PlacementMode.Bottom : System.Windows.Controls.Primitives.PlacementMode.Top;
+            e.Hint = hint;
+            SetTip(e);
+            UpdateGray(e);
             _entries.Add(e);
         }
-        foreach (var gone in old.Values) { Children.Remove(gone.Visual); Children.Remove(gone.Mark); Children.Remove(gone.Badge); }
+        // started from the dock and a window came: the hop under way lands, the colour settles
+        foreach (var e in _entries)
+            if (e.LaunchStart != 0 && (e.Windows.Count > e.LaunchOwn || Matching(e.LaunchExe, e.LaunchAppId) > e.LaunchMatch)) EndLaunch(e, Now);
+        foreach (var gone in old.Values)
+        {
+            Children.Remove(gone.Mark);
+            Children.Remove(gone.Badge);
+            if (gone.Visual.ToolTip is ToolTip gt) gt.IsOpen = false;
+            if (_hovered == gone) _hovered = null;
+            // the last window closed: the icon shrinks and fades away where it stood (the others slide together meanwhile)
+            if (_built && Anim.On && gone.DrawSize > 0)
+            {
+                gone.LeaveStart = Now;
+                gone.AppearStart = 0;
+                gone.Visual.IsHitTestVisible = false;
+                _leaving.Add(gone);
+            }
+            else Children.Remove(gone.Visual);
+        }
         foreach (var line in _lines) Children.Remove(line);
         _lines.Clear();
         _slots = slots;
@@ -405,16 +454,172 @@ sealed class DockView : Canvas
             _lines.Add(line);
             Children.Add(line);
         }
+        _built = true;
         Relayout();
         UpdateMarks();
         if (_preview.IsVisible && _hovered != null) ShowPreview(_hovered);
     }
 
+    /// <summary>The name at once (like the Mac's dock), what a click does, and when it hangs, that it doesn't respond.</summary>
+    void SetTip(Entry e)
+    {
+        // the live previews of a running one follow when the pointer stays. The same tip object stays: a new one at every
+        // refresh (a browser's title changes all the time) closed the open tip at once
+        var tipText = e.Name + "\n" + e.Hint + (e.Hung ? "\n" + L.T("Nie odpowiada – prawy przycisk: Zakończ zadanie") : "");
+        if (e.Visual.ToolTip is not ToolTip tt)
+        {
+            tt = new ToolTip();
+            e.Visual.ToolTip = tt;
+            ToolTipService.SetInitialShowDelay(e.Visual, 0);
+            ToolTipService.SetShowDuration(e.Visual, 60000);
+        }
+        if (!Equals(tt.Content, tipText)) tt.Content = tipText;
+        tt.Placement = _bar.AtTop ? System.Windows.Controls.Primitives.PlacementMode.Bottom : System.Windows.Controls.Primitives.PlacementMode.Top;
+    }
+
+    // ---------- grey, starting, not responding ----------
+
+    /// <summary>The greyscale copies, by the icon they were made from (the shell's icons are cached by key, so the same object comes again).</summary>
+    static readonly Dictionary<string, (ImageSource From, ImageSource? Gray)> Grays = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>A pinned program (not a stack, not the magnifier) gets its grey copy while the setting is on; it shows while the program isn't running.</summary>
+    void UpdateGray(Entry e)
+    {
+        ImageSource? gray = null;
+        if (S.DockGrayIdle && e.Pin != null && e.Pin.Items == null && e.Key != SearchKey && e.Img.Source is { } src)
+        {
+            if (Grays.TryGetValue(e.Key, out var known) && ReferenceEquals(known.From, src)) gray = known.Gray;
+            else
+            {
+                try { gray = Grayscale(src); }
+                catch (Exception ex) { Log.Error("dock gray " + e.Name, ex); }
+                Grays[e.Key] = (src, gray);
+            }
+        }
+        e.Gray.Source = gray;
+        if (gray == null) { e.Tint = 1; e.Img.Opacity = 1; e.Gray.Visibility = Visibility.Collapsed; }
+    }
+
+    /// <summary>The icon's luminance in each pixel, its transparency kept (null for an icon that isn't a bitmap).</summary>
+    static ImageSource? Grayscale(ImageSource src)
+    {
+        if (src is not BitmapSource b) return null;
+        var c = new FormatConvertedBitmap(b, PixelFormats.Bgra32, null, 0);
+        int w = c.PixelWidth, h = c.PixelHeight, stride = w * 4;
+        if (w == 0 || h == 0) return null;
+        var px = new byte[stride * h];
+        c.CopyPixels(px, stride, 0);
+        for (int i = 0; i < px.Length; i += 4)
+        {
+            // Rec. 709 luminance (Bgra32 is not premultiplied: the alpha stays as it is)
+            var y = (byte)Math.Round(0.0722 * px[i] + 0.7152 * px[i + 1] + 0.2126 * px[i + 2]);
+            px[i] = px[i + 1] = px[i + 2] = y;
+        }
+        var g = BitmapSource.Create(w, h, b.DpiX > 0 ? b.DpiX : 96, b.DpiY > 0 ? b.DpiY : 96, PixelFormats.Bgra32, null, px, stride);
+        g.Freeze();
+        return g;
+    }
+
+    /// <summary>The windows of all icons that belong to this program (by its file or app id).</summary>
+    int Matching(string? exe, string? appId) => _entries.SelectMany(x => x.Windows).Count(w =>
+        !string.IsNullOrEmpty(exe) && string.Equals(w.Exe, exe, StringComparison.OrdinalIgnoreCase)
+        || !string.IsNullOrEmpty(appId) && string.Equals(w.AppId, appId, StringComparison.OrdinalIgnoreCase));
+
+    const double HopMs = 620, LaunchMaxMs = 8000, AppearMs = 240, LeaveMs = 200;
+
+    /// <summary>Started from the dock: the icon hops (away from the screen's edge) and its colour breathes in until one more of its windows comes (or 8 s).</summary>
+    void StartLaunch(Entry e, string? exe, string? appId)
+    {
+        if (e.Key == SearchKey) return;
+        e.LaunchExe = exe;
+        e.LaunchAppId = appId;
+        e.LaunchOwn = e.Windows.Count;
+        e.LaunchMatch = Matching(exe, appId);
+        if (!Anim.On) return; // no hops: the colour simply comes with the window
+        if (e.LaunchStart == 0 || e.LaunchStop != 0) e.LaunchStart = Now;
+        e.LaunchStop = 0;
+        Animate();
+    }
+
+    /// <summary>The start is over: the hop under way lands first, then the icon rests.</summary>
+    static void EndLaunch(Entry e, long now)
+    {
+        if (e.LaunchStart == 0 || e.LaunchStop != 0) return;
+        double t = now - e.LaunchStart;
+        e.LaunchStop = e.LaunchStart + (long)(Math.Max(1, Math.Ceiling(t / HopMs)) * HopMs);
+    }
+
+    /// <summary>The hop's height now (in 44 px icons): a ball's arc, touching the line between hops.</summary>
+    static double Hop(Entry e, long now, ref bool still)
+    {
+        if (e.LaunchStart == 0) return 0;
+        if (!Anim.On) { e.LaunchStart = e.LaunchStop = 0; return 0; } // switched off meanwhile: at rest at once
+        double t = now - e.LaunchStart;
+        if (t > LaunchMaxMs) EndLaunch(e, now);
+        if (e.LaunchStop != 0 && now >= e.LaunchStop) { e.LaunchStart = e.LaunchStop = 0; return 0; }
+        still = false;
+        return Math.Sin(Math.PI * (t % HopMs / HopMs));
+    }
+
+    /// <summary>The colour copy's opacity: while starting it comes in and breathes (half to full), otherwise it fades to grey or colour.</summary>
+    static void Shade(Entry e, long now, double dt, ref bool still)
+    {
+        if (e.Gray.Source == null) return;
+        double target = e.Windows.Count > 0 ? 1 : 0, c;
+        if (e.LaunchStart != 0 && e.LaunchStop == 0)
+        {
+            double t = now - e.LaunchStart;
+            c = t < 400 ? Math.Max(e.Tint, t / 400) : 0.75 + 0.25 * Math.Cos(2 * Math.PI * (t - 400) / 900);
+            still = false;
+        }
+        else if (!Anim.On || Math.Abs(target - e.Tint) <= dt / 450) c = target;
+        else { c = e.Tint + Math.Sign(target - e.Tint) * dt / 450; still = false; }
+        e.Tint = c;
+        e.Img.Opacity = c;
+        // fully in colour: the grey copy away (its half-transparent edges would show under the colour ones)
+        e.Gray.Visibility = c >= 0.999 ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    [DllImport("user32.dll")] static extern bool IsHungAppWindow(IntPtr h);
+
+    /// <summary>A program whose window doesn't respond: a red ring pulses around its icon, the tip says how to end it. Gone when it responds again.</summary>
+    void CheckHung()
+    {
+        if (_paused) return;
+        bool changed = false;
+        foreach (var e in _entries)
+        {
+            bool hung = e.Windows.Any(w => IsHungAppWindow(w.Hwnd));
+            if (hung == e.Hung) continue;
+            changed = true;
+            e.Hung = hung;
+            e.HungRing.Visibility = hung ? Visibility.Visible : Visibility.Collapsed;
+            if (hung && Anim.On)
+                e.HungRing.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0.3, TimeSpan.FromMilliseconds(700)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever });
+            else e.HungRing.BeginAnimation(OpacityProperty, null);
+            SetTip(e);
+        }
+        if (changed) Animate(force: true);
+    }
+
+    /// <summary>The shrinking icons taken away at once (paused, detached).</summary>
+    void FlushLeaving()
+    {
+        foreach (var e in _leaving) Children.Remove(e.Visual);
+        _leaving.Clear();
+    }
+
+    static readonly SolidColorBrush HungBrush = Frozen(Color.FromRgb(0xE5, 0x48, 0x48));
+
     Entry NewEntry(string key)
     {
         var e = new Entry { Key = key };
-        e.Visual.Child = e.Img;
+        // the grey copy under the colour icon, the ring of a program that doesn't respond over both
+        e.HungRing.Effect = new DropShadowEffect { Color = HungBrush.Color, BlurRadius = 10, ShadowDepth = 0, Opacity = 0.9 };
+        e.Visual.Child = new Grid { Children = { e.Gray, e.Img, e.HungRing } };
         RenderOptions.SetBitmapScalingMode(e.Img, BitmapScalingMode.HighQuality);
+        RenderOptions.SetBitmapScalingMode(e.Gray, BitmapScalingMode.HighQuality);
+        foreach (var d in e.Dots) { d.CornerRadius = new CornerRadius(2); e.Mark.Children.Add(d); }
         e.Visual.MouseEnter += (_, _) => { _hovered = e; _hidePreview.Stop(); if (_preview.IsVisible && e.Windows.Count > 0) ShowPreview(e); else { _hoverPreview.Stop(); _hoverPreview.Start(); } };
         e.Visual.MouseLeftButtonDown += (_, ev) => { var fg = Native.GetForegroundWindow(); _fgAtPress = fg == _bar.Hwnd || fg == IntPtr.Zero ? _realFront : fg; _pressed = e; _pressAt = ev.GetPosition(this); e.Visual.CaptureMouse(); ev.Handled = true; };
         e.Visual.MouseLeftButtonUp += (_, ev) =>
@@ -505,6 +710,11 @@ sealed class DockView : Canvas
         double mid = BarHeight / 2;
         double k = IconSize / Magnify.IconRest; // the arithmetic is in 44 px icons (as in Rustyfiles); drawn at the bar's size
         double X(double v) => k * (Reserve + v);
+        double dt = Math.Clamp(now - _lastDraw, 0, 50); // the time since the last frame, for the colour's fade (a long pause counts as one frame)
+        _lastDraw = now;
+        // a hop rises half an icon at most, but stays in the room the window has away from the screen's edge (no headroom without magnification)
+        double hopRoom = Math.Max(4, _bar.Headroom + (BarHeight - IconSize) / 2 - 2);
+        double hopHeight = Math.Min(12 * k, hopRoom);
         int icon = 0, line = 0;
         for (int i = 0; i < _slots.Count && i < f.Spans.Count; i++)
         {
@@ -533,17 +743,49 @@ sealed class DockView : Canvas
             double baseSize = IconSize * thinScale, size = k * w * thinScale;
             // the icons stand on a line half an icon from the bar's middle and grow away from the screen's edge (into the board's side)
             double edge = top ? mid - baseSize / 2 : mid + baseSize / 2;
-            e.Visual.Width = e.Visual.Height = size;
-            SetLeft(e.Visual, X(centre) - size / 2);
-            SetTop(e.Visual, top ? edge : edge - size);
+            // a new running icon grows in from the line it stands on and fades in
+            double appear = 1;
+            if (e.AppearStart != 0)
+            {
+                double at = (now - e.AppearStart) / AppearMs;
+                if (at >= 1 || !Anim.On) e.AppearStart = 0;
+                else { appear = 1 - (1 - at) * (1 - at) * (1 - at); still = false; }
+            }
+            // starting: hops away from the screen's edge
+            double lift = Hop(e, now, ref still) * hopHeight;
+            if (top) lift = -lift;
+            double drawn = size * appear;
+            e.Visual.Width = e.Visual.Height = drawn;
+            e.Visual.Opacity = appear;
+            SetLeft(e.Visual, X(centre) - drawn / 2);
+            SetTop(e.Visual, (top ? edge : edge - drawn) - lift);
+            e.DrawX = X(centre);
+            e.DrawEdge = edge;
+            e.DrawSize = size;
+            Shade(e, now, dt, ref still);
+            if (e.Hung)
+            {
+                e.HungRing.CornerRadius = new CornerRadius(drawn * 0.24);
+                e.HungRing.BorderThickness = new Thickness(Math.Max(1.5, drawn * 0.05));
+                e.HungRing.Margin = new Thickness(-drawn * 0.06);
+            }
             bool front = e.Windows.Any(t => t.Hwnd == _front);
-            // the mark: in the middle of the room between the icon and the glass's edge (the screen's side) – a dot, a line for the one in front
+            // the marks: in the middle of the room between the icon and the glass's edge (the screen's side) – a dot for each window
+            // (three for three and more), one longer line for the one in front
             double room = Math.Max(4, (BarHeight - IconSize) / 2);
-            e.Mark.Width = e.Windows.Count == 0 ? 0 : front ? 14 : 4;
-            e.Mark.Height = e.Windows.Count == 0 ? 0 : front ? 3 : 4;
-            e.Mark.CornerRadius = new CornerRadius(2);
-            SetLeft(e.Mark, X(centre) - e.Mark.Width / 2);
-            SetTop(e.Mark, top ? room / 2 - e.Mark.Height / 2 : BarHeight - room / 2 - e.Mark.Height / 2);
+            int dots = e.Windows.Count == 0 ? 0 : front ? 1 : Math.Min(3, e.Windows.Count);
+            double dotW = front ? 14 : 4, dotH = front ? 3 : 4, gap = 2.5;
+            for (int d = 0; d < e.Dots.Length; d++)
+            {
+                var dot = e.Dots[d];
+                dot.Visibility = d < dots ? Visibility.Visible : Visibility.Collapsed;
+                dot.Width = dotW;
+                dot.Height = dotH;
+                dot.Margin = new Thickness(d == 0 ? 0 : gap, 0, 0, 0);
+            }
+            double markW = dots == 0 ? 0 : dots * dotW + (dots - 1) * gap;
+            SetLeft(e.Mark, X(centre) - markW / 2);
+            SetTop(e.Mark, top ? room / 2 - dotH / 2 : BarHeight - room / 2 - dotH / 2);
             // the counter: on the icon's upper corner (away from the screen's edge), growing with the icon
             if (e.Count.Any)
             {
@@ -556,11 +798,24 @@ sealed class DockView : Canvas
                 e.Badge.BorderThickness = new Thickness(Math.Max(1, h / 14));
                 e.BadgeText.FontSize = h * 0.68;
                 e.BadgeText.Margin = new Thickness(0, -h * 0.06, 0, 0);
-                double iconTop = top ? edge + size : edge - size; // the far side from the screen's edge
+                double iconTop = (top ? edge + size : edge - size) - lift; // the far side from the screen's edge (hopping with the icon)
                 double inset = size * 0.08;
                 SetLeft(e.Badge, X(centre) + size / 2 - inset - bw / 2);
                 SetTop(e.Badge, top ? iconTop - inset - h / 2 : iconTop + inset - h / 2);
             }
+        }
+        // the gone icons shrink to the line they stood on and fade, then leave the canvas
+        for (int i = _leaving.Count - 1; i >= 0; i--)
+        {
+            var e = _leaving[i];
+            double lt = (now - e.LeaveStart) / LeaveMs;
+            if (lt >= 1 || !Anim.On) { Children.Remove(e.Visual); _leaving.RemoveAt(i); continue; }
+            double a = 1 - lt * lt * (3 - 2 * lt), s = e.DrawSize * a;
+            e.Visual.Width = e.Visual.Height = s;
+            e.Visual.Opacity = a;
+            SetLeft(e.Visual, e.DrawX - s / 2);
+            SetTop(e.Visual, top ? e.DrawEdge : e.DrawEdge - s);
+            still = false;
         }
         // while the icons are grown, the room above them catches the pointer (otherwise it passes through to the window under it)
         double head = _bar.Headroom;
@@ -577,7 +832,8 @@ sealed class DockView : Canvas
         foreach (var e in _entries)
         {
             bool front = e.Windows.Any(t => t.Hwnd == _front);
-            e.Mark.Background = e.Attention ? Ui.Res("AccentBrush") : front ? Ui.Res("AccentBrush") : Ui.Brush(Th.Ink(0x90));
+            var ink = e.Attention ? Ui.Res("AccentBrush") : front ? Ui.Res("AccentBrush") : Ui.Brush(Th.Ink(0x90));
+            foreach (var d in e.Dots) d.Background = ink;
             if (e.Attention && Anim.On)
                 e.Mark.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0.25, TimeSpan.FromMilliseconds(600)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever });
             else e.Mark.BeginAnimation(OpacityProperty, null);
@@ -726,9 +982,15 @@ sealed class DockView : Canvas
         var windows = _entries.SelectMany(x => x.Windows).Where(w =>
             !string.IsNullOrEmpty(pin.Exe) && string.Equals(w.Exe, pin.Exe, StringComparison.OrdinalIgnoreCase)
             || !string.IsNullOrEmpty(pin.AppId) && string.Equals(w.AppId, pin.AppId, StringComparison.OrdinalIgnoreCase)).Select(w => w.Hwnd).ToList();
-        if (windows.Count > 0) WindowActions.Activate(WindowActions.Topmost(windows));
-        else ShellIcons.Launch(pin.Exe, pin.Args, pin.AppId);
+        if (windows.Count > 0) { WindowActions.Activate(WindowActions.Topmost(windows)); return; }
+        ShellIcons.Launch(pin.Exe, pin.Args, pin.AppId);
+        // its own icon hops when the dock has one (pinned there too), otherwise the stack's that holds it
+        var at = _entries.FirstOrDefault(x => x.Pin?.Items == null && string.Equals(x.Key, pin.Key, StringComparison.OrdinalIgnoreCase))
+            ?? _entries.FirstOrDefault(x => x.Pin?.Items is { } items && Holds(items, pin));
+        if (at != null) StartLaunch(at, pin.Exe, pin.AppId);
     }
+
+    static bool Holds(List<DockPin> items, DockPin pin) => items.Any(x => x == pin || x.Items != null && Holds(x.Items, pin));
 
     /// <summary>The programs running now (for "Dodaj uruchomiony" in a stack): name, key, file, app id.</summary>
     public IEnumerable<DockPin> RunningPrograms() => _entries.Where(x => x.Windows.Count > 0 && x.Pin?.Items == null).Select(x => new DockPin
@@ -739,7 +1001,9 @@ sealed class DockView : Canvas
     void Launch(Entry e)
     {
         var first = e.Windows.FirstOrDefault();
-        ShellIcons.Launch(e.Pin?.Exe ?? first?.Exe, e.Pin?.Args, e.Pin?.AppId ?? first?.AppId);
+        string? exe = e.Pin?.Exe ?? first?.Exe, appId = e.Pin?.AppId ?? first?.AppId;
+        ShellIcons.Launch(exe, e.Pin?.Args, appId);
+        StartLaunch(e, exe, appId);
     }
 
     void ShowPreview(Entry e)
