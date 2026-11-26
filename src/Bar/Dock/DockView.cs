@@ -18,13 +18,40 @@ static class WindowActions
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
     [DllImport("user32.dll")] static extern void SwitchToThisWindow(IntPtr h, bool altTab);
     [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+    [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
+    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool attach);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+    [DllImport("user32.dll")] static extern IntPtr GetTopWindow(IntPtr parent);
+    [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd);
     const int SW_MINIMIZE = 6, SW_RESTORE = 9;
 
-    /// <summary>Up and in front (restored when minimised).</summary>
+    /// <summary>
+    /// Up and in front (restored when minimised). Windows refuses the foreground to a program that didn't get the last input
+    /// (the focus lock) – the click on the bar usually counts, but not always: then a released Alt (which lifts the lock, the
+    /// trick Alt+Tab itself relies on), and at last the input of the window in front borrowed for a moment.
+    /// </summary>
     public static void Activate(IntPtr h)
     {
         if (TaskList.IsIconic(h)) Native.ShowWindow(h, SW_RESTORE);
-        if (!SetForegroundWindow(h) || Native.GetForegroundWindow() != h) SwitchToThisWindow(h, true); // an elevated window, a focus lock
+        if (SetForegroundWindow(h) && Native.GetForegroundWindow() == h) return;
+        keybd_event(0x12 /* VK_MENU */, 0, 0x2 /* KEYUP */, UIntPtr.Zero);
+        if (SetForegroundWindow(h) && Native.GetForegroundWindow() == h) return;
+        var fg = Native.GetForegroundWindow();
+        uint fgThread = Native.GetWindowThreadProcessId(fg, out _), me = GetCurrentThreadId();
+        bool attached = fgThread != 0 && fgThread != me && AttachThreadInput(me, fgThread, true);
+        try { BringWindowToTop(h); SetForegroundWindow(h); }
+        finally { if (attached) AttachThreadInput(me, fgThread, false); }
+        if (Native.GetForegroundWindow() != h) SwitchToThisWindow(h, true); // an elevated window
+    }
+
+    /// <summary>Of these windows, the one highest in the Z order (the one used last).</summary>
+    public static IntPtr Topmost(IReadOnlyCollection<IntPtr> windows)
+    {
+        var set = windows.ToHashSet();
+        for (var w = GetTopWindow(IntPtr.Zero); w != IntPtr.Zero; w = GetWindow(w, 2 /* GW_HWNDNEXT */))
+            if (set.Contains(w)) return w;
+        return windows.First();
     }
 
     public static void Minimize(IntPtr h) => Native.ShowWindow(h, SW_MINIMIZE);
@@ -78,6 +105,9 @@ sealed class DockView : Canvas
     double _pointer = -1e6;
     bool _hooked, _thin, _near, _paused;
     IntPtr _front;
+    /// <summary>The window in front when the icon was pressed: the click's toggle compares with it (the dock's own idea of the front
+    /// misses TaskWall's windows – a click on the board left Firefox "in front" and the next click minimised it instead).</summary>
+    IntPtr _fgAtPress;
     Entry? _pressed, _dragging;
     Point _pressAt;
     readonly DispatcherTimer _refresh = new() { Interval = TimeSpan.FromMilliseconds(120) };
@@ -311,9 +341,10 @@ sealed class DockView : Canvas
             var first = e.Windows.FirstOrDefault();
             string? exe = first?.Exe ?? e.Pin?.Exe, appId = first?.AppId ?? e.Pin?.AppId;
             e.Name = e.Pin?.Name is { Length: > 0 } pn ? pn : ShellIcons.Name(e.Key, exe, appId, first?.Title ?? e.Key);
-            e.Img.Source ??= ShellIcons.Icon(e.Key, exe, appId, first?.Hwnd ?? IntPtr.Zero);
+            if (e.Pin?.Items != null) e.Img.Source = StackIsland.Icon(e.Pin); // the stack's first programs in its tile (redrawn: they change)
+            else e.Img.Source ??= ShellIcons.Icon(e.Key, exe, appId, first?.Hwnd ?? IntPtr.Zero);
             // the name at once (like the Mac's dock); the live previews of a running one follow when the pointer stays
-            e.Visual.ToolTip = new ToolTip { Content = e.Name + "\n" + (e.Windows.Count == 0 ? L.T("Kliknij, aby uruchomić") : L.T("Środkowy przycisk: nowe okno")), Placement = _bar.AtTop ? System.Windows.Controls.Primitives.PlacementMode.Bottom : System.Windows.Controls.Primitives.PlacementMode.Top };
+            e.Visual.ToolTip = new ToolTip { Content = e.Name + "\n" + (e.Pin?.Items != null ? L.F("Stos: {0} – kliknij, aby otworzyć", e.Pin.Items.Count) : e.Windows.Count == 0 ? L.T("Kliknij, aby uruchomić") : L.T("Kliknij: na wierzch / zminimalizuj · środkowy przycisk: nowe okno")), Placement = _bar.AtTop ? System.Windows.Controls.Primitives.PlacementMode.Bottom : System.Windows.Controls.Primitives.PlacementMode.Top };
             ToolTipService.SetInitialShowDelay(e.Visual, 0);
             _entries.Add(e);
         }
@@ -338,9 +369,20 @@ sealed class DockView : Canvas
         e.Visual.Child = e.Img;
         RenderOptions.SetBitmapScalingMode(e.Img, BitmapScalingMode.HighQuality);
         e.Visual.MouseEnter += (_, _) => { _hovered = e; _hidePreview.Stop(); if (_preview.IsVisible && e.Windows.Count > 0) ShowPreview(e); else { _hoverPreview.Stop(); _hoverPreview.Start(); } };
-        e.Visual.MouseLeftButtonDown += (_, ev) => { _pressed = e; _pressAt = ev.GetPosition(this); e.Visual.CaptureMouse(); ev.Handled = true; };
-        e.Visual.MouseLeftButtonUp += (_, ev) => { ev.Handled = true; e.Visual.ReleaseMouseCapture(); if (_dragging != null) Drop(); else if (_pressed == e) Click(e); _pressed = null; };
-        e.Visual.MouseUp += (_, ev) => { if (ev.ChangedButton == MouseButton.Middle) { ev.Handled = true; Launch(e); } };
+        e.Visual.MouseLeftButtonDown += (_, ev) => { _fgAtPress = Native.GetForegroundWindow(); _pressed = e; _pressAt = ev.GetPosition(this); e.Visual.CaptureMouse(); ev.Handled = true; };
+        e.Visual.MouseLeftButtonUp += (_, ev) =>
+        {
+            ev.Handled = true;
+            var pressed = _pressed;
+            _pressed = null;
+            bool dragged = _dragging != null;
+            if (dragged) Drop();
+            e.Visual.ReleaseMouseCapture();
+            if (!dragged && pressed == e) Click(e);
+        };
+        // the capture taken away (a preview, a menu, another window): the press and any drag end there – no icon left sliding
+        e.Visual.LostMouseCapture += (_, _) => { _pressed = null; if (_dragging != null) Drop(); };
+        e.Visual.MouseUp += (_, ev) => { if (ev.ChangedButton == MouseButton.Middle && e.Pin?.Items == null) { ev.Handled = true; Launch(e); } };
         e.Visual.MouseRightButtonUp += (_, ev) => { ev.Handled = true; Menu(e); };
         e.Badge.Child = e.BadgeText;
         e.Badge.SetResourceReference(Border.BackgroundProperty, "AccentBrush"); // TaskWall's accent (follows a change of it)
@@ -538,6 +580,8 @@ sealed class DockView : Canvas
     {
         var p = ev.GetPosition(this);
         _pointer = p.X / (IconSize / Magnify.IconRest) - Reserve;
+        // the button let go where the dock didn't hear it: no press, no drag any more
+        if (ev.LeftButton != MouseButtonState.Pressed && (_pressed != null || _dragging != null)) { _pressed = null; if (_dragging != null) Drop(); }
         if (_pressed != null && _dragging == null && _pressed.Pin != null && Math.Abs(p.X - _pressAt.X) > 6)
         {
             _dragging = _pressed;
@@ -577,20 +621,39 @@ sealed class DockView : Canvas
 
     // ---------- clicks ----------
 
+    /// <summary>
+    /// A click is a toggle: the program up (its window used last), and when it already is in front, down (all its windows
+    /// minimised). Not running: it starts. A stack: its island opens. The previews of several windows come on hover.
+    /// </summary>
     void Click(Entry e)
     {
-        switch (e.Windows.Count)
+        _preview.Dismiss();
+        if (e.Pin?.Items != null) { StackIsland.Toggle(e.Pin, e.Visual, _bar, this); return; }
+        if (e.Windows.Count == 0) { Launch(e); return; }
+        var fg = _fgAtPress;
+        if (e.Windows.Any(w => w.Hwnd == fg) && !TaskList.IsIconic(fg))
         {
-            case 0: Launch(e); break;
-            case 1:
-                var w = e.Windows[0].Hwnd;
-                // the one in front again: down (the taskbar's toggle); otherwise up
-                if (w == _front && !TaskList.IsIconic(w)) WindowActions.Minimize(w); else WindowActions.Activate(w);
-                _preview.Dismiss();
-                break;
-            default: ShowPreview(e); break;
+            foreach (var w in e.Windows) if (!TaskList.IsIconic(w.Hwnd)) WindowActions.Minimize(w.Hwnd);
+            return;
         }
+        WindowActions.Activate(WindowActions.Topmost(e.Windows.Select(w => w.Hwnd).ToList()));
     }
+
+    /// <summary>A program from a stack: its window up when it runs (by its file or app id), otherwise started.</summary>
+    public void ActivateOrLaunch(DockPin pin)
+    {
+        var windows = _entries.SelectMany(x => x.Windows).Where(w =>
+            !string.IsNullOrEmpty(pin.Exe) && string.Equals(w.Exe, pin.Exe, StringComparison.OrdinalIgnoreCase)
+            || !string.IsNullOrEmpty(pin.AppId) && string.Equals(w.AppId, pin.AppId, StringComparison.OrdinalIgnoreCase)).Select(w => w.Hwnd).ToList();
+        if (windows.Count > 0) WindowActions.Activate(WindowActions.Topmost(windows));
+        else ShellIcons.Launch(pin.Exe, pin.Args, pin.AppId);
+    }
+
+    /// <summary>The programs running now (for "Dodaj uruchomiony" in a stack): name, key, file, app id.</summary>
+    public IEnumerable<DockPin> RunningPrograms() => _entries.Where(x => x.Windows.Count > 0 && x.Pin?.Items == null).Select(x => new DockPin
+    {
+        Key = x.Key, Exe = x.Windows[0].Exe, AppId = x.Windows[0].AppId, Name = x.Name,
+    });
 
     void Launch(Entry e)
     {
@@ -615,9 +678,36 @@ sealed class DockView : Canvas
         var header = new MenuItem { Header = e.Name, IsEnabled = false, FontWeight = FontWeights.SemiBold };
         m.Items.Add(header);
         m.Items.Add(new Separator());
+        if (e.Pin?.Items is { } items)
+        {
+            Item(L.T("Otwórz stos"), () => StackIsland.Toggle(e.Pin, e.Visual, _bar, this));
+            Item(L.T("Zmień nazwę stosu…"), () => { if (AskWindow.Ask(L.T("Stos"), L.T("Nazwa stosu:"), e.Pin.Name) is { Length: > 0 } n) { e.Pin.Name = n.Trim(); SettingsStore.Save(S); Refresh(); } });
+            Item(L.F("Usuń stos z docka ({0})", items.Count), () => Unpin(e));
+            m.IsOpen = true;
+            return;
+        }
         Item(L.T("Nowe okno"), () => Launch(e));
         if (e.Pin != null) Item(L.T("Odepnij od docka"), () => Unpin(e));
         else Item(L.T("Przypnij do docka"), () => Pin(e));
+        // into a stack (any, nested ones by their path)
+        var stacks = StackIsland.AllStacks(S.DockPins).ToList();
+        if (stacks.Count > 0 && (e.Windows.FirstOrDefault() is { } fw || e.Pin != null))
+        {
+            var into = new MenuItem { Header = L.T("Dodaj do stosu") };
+            foreach (var (stack, path) in stacks)
+            {
+                var si = new MenuItem { Header = path };
+                si.Click += (_, _) =>
+                {
+                    var w0 = e.Windows.FirstOrDefault();
+                    stack.Items!.Add(new DockPin { Key = e.Key, Exe = e.Pin?.Exe ?? w0?.Exe, AppId = e.Pin?.AppId ?? w0?.AppId, Args = e.Pin?.Args, Name = e.Name });
+                    SettingsStore.Save(S);
+                    Refresh();
+                };
+                into.Items.Add(si);
+            }
+            m.Items.Add(into);
+        }
         if (e.Windows.Count > 0)
         {
             m.Items.Add(new Separator());
@@ -633,6 +723,12 @@ sealed class DockView : Canvas
         S.DockPins.Add(new DockPin { Key = e.Key, Exe = first.Exe, AppId = first.AppId, Name = e.Name });
         SettingsStore.Save(S);
         Refresh();
+    }
+
+    /// <summary>Dev runs (--open stack): the first stack's island opened.</summary>
+    public void DevStack()
+    {
+        if (_entries.FirstOrDefault(x => x.Pin?.Items != null) is { } st) StackIsland.Toggle(st.Pin!, st.Visual, _bar, this);
     }
 
     /// <summary>Dev runs (--open dock-hover): the pointer as if over the third icon, for a screenshot of the magnification.</summary>

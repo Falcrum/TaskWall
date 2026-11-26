@@ -39,6 +39,30 @@ sealed class BarPanel : GlassWindow
     public void Open(FrameworkElement content, FrameworkElement anchor, BarWindow bar)
     {
         _content.Child = content;
+        _anchor = anchor;
+        _bar = bar;
+        Place();
+        App.Instance.PaintGlass(this);
+        Show();
+        Activate();
+        Anim.Enter(FrameElement, 0, bar.AtTop ? -8 : 8, 220);
+    }
+
+    FrameworkElement? _anchor;
+    BarWindow? _bar;
+
+    /// <summary>The content changed its size (the search's results, another stack): placed again at its button, no animation.</summary>
+    public void Reflow()
+    {
+        if (_anchor == null || _bar == null || !IsVisible) return;
+        Place();
+        App.Instance.PaintGlass(this);
+    }
+
+    void Place()
+    {
+        var anchor = _anchor!;
+        var bar = _bar!;
         var dpi = VisualTreeHelper.GetDpi(bar);
         double ui = App.Settings.UiScale;
         ApplyScale(ui);
@@ -50,10 +74,6 @@ sealed class BarPanel : GlassWindow
         int x = Math.Clamp((int)Math.Round(a.X - w / 2.0), frame.X, Math.Max(frame.X, frame.Right - w));
         int y = bar.AtTop ? frame.Bottom + gap : frame.Y - h - gap;
         PlacePhysical(x, y, w, h, dpi.DpiScaleX);
-        App.Instance.PaintGlass(this);
-        Show();
-        Activate();
-        Anim.Enter(FrameElement, 0, bar.AtTop ? -8 : 8, 220);
     }
 
     public static TextBlock Text(string text, double size = 12, string brush = "Fg", FontWeight? weight = null) =>

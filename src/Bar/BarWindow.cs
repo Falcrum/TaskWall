@@ -104,9 +104,11 @@ public sealed class BarWindow : GlassWindow
     readonly LoadMeters _meters = new();
     readonly CalendarWindow _calendar = new();
     readonly Border _glow = new();
-    readonly Border _middle = new();
-    readonly Border _search;
-    readonly TextBlock _searchText = new() { Text = L.T("Szukaj"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+    /// <summary>The middle: the search's magnifier, then the dock.</summary>
+    readonly StackPanel _middle = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+    readonly Border _dockHost = new();
+    readonly Button _searchButton;
+    readonly AppSearch _appSearch = new();
     readonly SectorPanel _sectors = new() { Margin = new Thickness(10, 0, 12, 0) };
     readonly Button _tray;
     readonly NetworkButton _network;
@@ -143,14 +145,17 @@ public sealed class BarWindow : GlassWindow
         // ----- left: Start, the weather -----
         var left = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         var start = IconButton(Icons.Start(), L.T("Start"), (_, _) => ToggleStart());
-        _search = SearchField();
         WatchStart();
         left.Children.Add(start);
-        left.Children.Add(_search);
         left.Children.Add(Separator());
         left.Children.Add(_weather);
 
-        // ----- middle: the dock (Settings → Pasek → Dock) -----
+        // ----- middle: the search's magnifier (its field opens right over it), the dock (Settings → Pasek → Dock) -----
+        _searchButton = IconButton(Icons.Search(18), L.T("Szukaj"), (_, _) => OpenSearch());
+        _searchButton.Margin = new Thickness(0, 0, 6, 0);
+        _middle.Children.Add(_searchButton);
+        _middle.Children.Add(_dockHost);
+        AppSearch.Warm();
 
         // ----- right: the load, the tray's hidden icons, the clock -----
         var right = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -180,7 +185,6 @@ public sealed class BarWindow : GlassWindow
         _sectors.ApplyLevel = level =>
         {
             _weather.Compact = level >= 2;
-            _searchText.Visibility = level >= 2 ? Visibility.Collapsed : Visibility.Visible; // a magnifier only when the dock needs the room
             _weather.Compact = level >= 2;
             _weather.Update();
             bool narrowMeters = level >= 3;
@@ -240,37 +244,16 @@ public sealed class BarWindow : GlassWindow
         return b;
     }
 
-    /// <summary>
-    /// A search field next to Start, like the taskbar's: a click opens the search Settings → Pasek → Wyszukiwarka names by its
-    /// shortcut (PowerToys Command Palette – Win+Alt+Space – by default), which then takes the typing.
-    /// </summary>
-    Border SearchField()
-    {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        var icon = Icons.Search(14);
-        row.Children.Add(icon);
-        _searchText.SetResourceReference(TextBlock.ForegroundProperty, "FgFaint");
-        row.Children.Add(_searchText);
-        var field = new Border
-        {
-            Child = row, Padding = new Thickness(10, 0, 14, 0), Margin = new Thickness(4, 0, 0, 0), MinHeight = 28, MinWidth = 32, CornerRadius = new CornerRadius(14),
-            VerticalAlignment = VerticalAlignment.Center, Cursor = Cursors.Hand, ToolTip = L.F("Szukaj ({0})", App.Settings.SearchKeys),
-            BorderThickness = new Thickness(1),
-        };
-        field.SetResourceReference(Border.BorderBrushProperty, "FieldBorder");
-        field.Background = Ui.Brush(Th.Ink(0x0C));
-        field.MouseEnter += (_, _) => field.Background = Ui.Brush(Th.Ink(0x18));
-        field.MouseLeave += (_, _) => field.Background = Ui.Brush(Th.Ink(0x0C));
-        field.MouseLeftButtonUp += (_, e) => { e.Handled = true; OpenSearch(); };
-        System.Windows.Automation.AutomationProperties.SetName(field, L.T("Szukaj"));
-        return field;
-    }
+    /// <summary>Dev runs (--open stack / search): the first stack's island, the search with some words typed.</summary>
+    public void DevStack() => _dock?.DevStack();
+    public void DevSearch(string words) { _appSearch.Toggle(_searchButton, this); _appSearch.DevType(words); }
 
-    /// <summary>The search of the settings, by its shortcut.</summary>
-    static void OpenSearch()
+    /// <summary>The magnifier: TaskWall's own field over it, or the search Settings → Pasek → Wyszukiwarka names, by its shortcut.</summary>
+    void OpenSearch()
     {
         switch (App.Settings.SearchKeys)
         {
+            case "TaskWall": _appSearch.Toggle(_searchButton, this); break;
             case "Alt+Space": Keys.Press(Keys.Alt, Keys.Space); break;
             case "Win+S": Keys.Press(Keys.LWin, Keys.S); break;
             default: Keys.Press(Keys.LWin, Keys.Alt, Keys.Space); break;
@@ -321,15 +304,18 @@ public sealed class BarWindow : GlassWindow
         if (want && _dock == null)
         {
             _dock = new DockView(this);
-            _middle.Child = _dock;
+            _dockHost.Child = _dock;
         }
         else if (!want && _dock != null)
         {
             _dock.Detach();
-            _middle.Child = null;
+            _dockHost.Child = null;
             _dock = null;
         }
         if (_dock != null) { _dock.BarHeight = _barHeight; _dock.IconSize = BarMetrics.Icon(S.BarSize); _dock.Refresh(); }
+        // the magnifier next to the first icon: over the dock's room for growing icons (above it, so it still takes the click)
+        _searchButton.Margin = new Thickness(0, 0, _dock != null ? 4 - _dock.IconSize / Magnify.IconRest * DockView.Reserve : 0, 0);
+        Panel.SetZIndex(_searchButton, 1);
     }
 
     public void SetScale(double scale)

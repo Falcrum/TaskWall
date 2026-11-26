@@ -1253,8 +1253,8 @@ public sealed class SettingsWindow : DarkWindow
                 tag => { S.BarSize = tag; App.Instance.ApplySettings(); })),
             Row(L.T("Szerokość"), L.T("Szkło paska równo z krawędziami tablicy albo od brzegu do brzegu ekranu."), Combo(new[] { ("board", L.T("Jak tablica")), ("screen", L.T("Cały ekran")) }, S.BarWidth,
                 tag => { S.BarWidth = tag; App.Instance.ApplySettings(); })),
-            Row(L.T("Wyszukiwarka"), L.T("Pole „Szukaj” obok Startu otwiera ją jej skrótem. Paleta i PowerToys Run wymagają PowerToys."),
-                Combo(new[] { ("Win+Alt+Space", L.T("Paleta poleceń PowerToys (Win+Alt+Spacja)")), ("Alt+Space", L.T("PowerToys Run (Alt+Spacja)")), ("Win+S", L.T("Wyszukiwanie Windows (Win+S)")) }, S.SearchKeys,
+            Row(L.T("Wyszukiwarka"), L.T("Lupka na środku paska. TaskWall: pole tuż nad nią – programy, kalkulator, internet, pliki. Pozostałe otwiera ich skrót (paleta i PowerToys Run wymagają PowerToys)."),
+                Combo(new[] { ("TaskWall", L.T("TaskWall – pole przy lupce")), ("Win+Alt+Space", L.T("Paleta poleceń PowerToys (Win+Alt+Spacja)")), ("Alt+Space", L.T("PowerToys Run (Alt+Spacja)")), ("Win+S", L.T("Wyszukiwanie Windows (Win+S)")) }, S.SearchKeys,
                     tag => { S.SearchKeys = tag; App.Instance.ApplySettings(); }, 300)),
             Toggle(L.T("Ukryj pasek zadań Windows"), L.T("Wraca, gdy wyłączysz ten pasek albo zamkniesz TaskWall – także po awarii."), S.HideTaskbar, v => S.HideTaskbar = v)), Full));
 
@@ -1313,48 +1313,35 @@ public sealed class SettingsWindow : DarkWindow
                 var remove = Btn(L.T("Odepnij"), "LinkButton", (_, _) => { S.DockPins.Remove(pin); App.Instance.ApplySettings(); FillPins(); });
                 DockPanel.SetDock(remove, Dock.Right);
                 row.Children.Add(remove);
-                row.Children.Add(new TextBlock { Text = pin.Name.Length > 0 ? pin.Name : pin.Key, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = pin.Exe ?? pin.AppId, Foreground = Ui.Res("Fg") });
+                row.Children.Add(new TextBlock { Text = (pin.Name.Length > 0 ? pin.Name : pin.Key) + (pin.Items != null ? "  ·  " + L.F("stos: {0}", pin.Items.Count) : ""), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = pin.Exe ?? pin.AppId, Foreground = Ui.Res("Fg") });
                 pins.Children.Add(row);
             }
             if (S.DockPins.Count == 0) pins.Children.Add(Label(L.T("Nic nie jest przypięte."), 11.5, "FgFaint"));
             var add = Btn(L.T("Dodaj program…"), "SecondaryButton", (_, _) => { if (AddPin()) FillPins(); });
-            add.HorizontalAlignment = HorizontalAlignment.Left;
-            add.Margin = new Thickness(0, 6, 0, 0);
-            pins.Children.Add(add);
+            add.Margin = new Thickness(0, 0, 8, 0);
+            // a stack: a tile on the dock that opens an island of programs and nested stacks over the bar
+            var addStack = Btn(L.T("Dodaj stos…"), "SecondaryButton", (_, _) =>
+            {
+                if (AskWindow.Ask(L.T("Nowy stos"), L.T("Nazwa stosu:"), L.T("Stos")) is not { Length: > 0 } n) return;
+                S.DockPins.Add(StackIsland.NewStack(n.Trim()));
+                App.Instance.ApplySettings();
+                FillPins();
+            });
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+            buttons.Children.Add(add);
+            buttons.Children.Add(addStack);
+            pins.Children.Add(buttons);
         }
         FillPins();
-        yield return Stacked(L.T("Przypięte programy"), L.T("Kliknięcie ikony przywołuje okno, środkowy przycisk otwiera nowe, prawy przypina i zamyka. Kolejność zmieniasz przeciągając ikony."), pins);
+        yield return Stacked(L.T("Przypięte programy"), L.T("Kliknięcie ikony przywołuje program, ponowne go minimalizuje; środkowy przycisk otwiera nowe okno, prawy przypina i zamyka. Stos to kafelek z wyspą programów i zagnieżdżonych stosów – programy dodasz jego „+” albo prawym przyciskiem na ikonie w docku. Kolejność zmieniasz przeciągając ikony."), pins);
     }
 
     /// <summary>A program file or a shortcut chosen by hand → pinned to the dock (a shortcut by the program it points to, so its windows group under it).</summary>
     bool AddPin()
     {
-        var dlg = new Microsoft.Win32.OpenFileDialog
-        {
-            Title = L.T("Przypnij program do docka"),
-            Filter = L.T("Programy i skróty") + " (*.exe;*.lnk)|*.exe;*.lnk",
-            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu) is { Length: > 0 } sm ? System.IO.Path.Combine(sm, "Programs") : "",
-            DereferenceLinks = false,
-        };
-        if (dlg.ShowDialog(this) != true) return false;
-        string exe = dlg.FileName, args = "";
-        if (exe.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
-        {
-            try
-            {
-                var shell = Type.GetTypeFromProgID("WScript.Shell");
-                dynamic ws = Activator.CreateInstance(shell!)!;
-                dynamic lnk = ws.CreateShortcut(exe);
-                if (((string)lnk.TargetPath) is { Length: > 0 } target) { exe = target; args = (string)lnk.Arguments ?? ""; }
-            }
-            catch (Exception ex) { Log.Error("dock pin shortcut", ex); }
-        }
-        var key = exe.ToLowerInvariant();
-        if (S.DockPins.Any(p => string.Equals(p.Key, key, StringComparison.OrdinalIgnoreCase))) return false;
-        string name;
-        try { name = System.Diagnostics.FileVersionInfo.GetVersionInfo(exe).FileDescription ?? ""; } catch { name = ""; }
-        if (string.IsNullOrWhiteSpace(name)) name = System.IO.Path.GetFileNameWithoutExtension(dlg.FileName);
-        S.DockPins.Add(new DockPin { Key = key, Exe = exe, Args = args.Length > 0 ? args : null, Name = name.Trim() });
+        if (StackIsland.PickProgram(this) is not { } pin) return false;
+        if (S.DockPins.Any(p => string.Equals(p.Key, pin.Key, StringComparison.OrdinalIgnoreCase))) return false;
+        S.DockPins.Add(pin);
         App.Instance.ApplySettings();
         return true;
     }

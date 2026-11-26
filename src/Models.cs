@@ -760,6 +760,8 @@ public sealed class DockPin
     public string? Args { get; set; }
     public string? AppId { get; set; }
     public string Name { get; set; } = "";
+    /// <summary>A stack (Key "stack:…"): the programs and nested stacks its island shows; null for a program.</summary>
+    public List<DockPin>? Items { get; set; }
 }
 
 /// <summary>Per-computer settings (stored locally, not in the cloud folder).</summary>
@@ -799,7 +801,7 @@ public sealed class AppSettings
     /// <summary>The load rings in their own colours "always", or only "high" (80 % and more; quiet grey below).</summary>
     public string MeterColors { get; set; } = "high";
     /// <summary>What the bar's search field opens, by its shortcut: "Win+Alt+Space" (PowerToys Command Palette), "Alt+Space" (PowerToys Run), "Win+S" (Windows search).</summary>
-    public string SearchKeys { get; set; } = "Win+Alt+Space";
+    public string SearchKeys { get; set; } = "TaskWall";
     /// <summary>The dock in the full-width bar's middle: pinned and running programs (off by default).</summary>
     public bool Dock { get; set; }
     /// <summary>The dock's magnification under the pointer: "off", "subtle" (1.25×) or "full" (1.55×).</summary>

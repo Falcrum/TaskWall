@@ -43,7 +43,7 @@ static class SettingsStore
     static string FilePath => Dev.Arg("--data") is { } dev
         ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dev.TrimEnd(Path.DirectorySeparatorChar))) ?? Dir, "settings.dev.json")
         : Path.Combine(Dir, "settings.json");
-    const int CurrentVersion = 8;
+    const int CurrentVersion = 9;
 
     /// <summary>The app used to be called DeskWall: its settings folder (settings, Notion token, calendar cache) moves over once.</summary>
     public static void MigrateFromDeskWall()
@@ -113,6 +113,7 @@ static class SettingsStore
             s.Calendars.Add(new CalendarFeed { Name = "Święta w Polsce", Url = CalendarFeed.PolishHolidaysUrl, Kind = "holidays" });
         if (s.SettingsVersion < 6) s.View = s.ShowNextWeek ? "week2" : "week1";
         if (string.IsNullOrWhiteSpace(s.PrivateFolder)) s.PrivateFolder = DefaultPrivateFolder(s.DataFolder);
+        if (s.SettingsVersion < 9) s.SearchKeys = "TaskWall"; // v9: the bar's own search by the magnifier in its middle
         if (s.SettingsVersion < 8) s.TaskReminder = -1; // v8: a task's hours (the day view) are for planning – no reminder unless turned on again
         if (s.SettingsVersion < 7 && s.Accounts.Count == 0)
         {
