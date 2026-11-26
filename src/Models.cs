@@ -815,6 +815,8 @@ public sealed class AppSettings
     public bool DockBadges { get; set; } = true;
     /// <summary>When each program's notifications were last seen (its window brought to the front; program id → FILETIME UTC): older ones don't count.</summary>
     public Dictionary<string, long> DockSeen { get; set; } = new();
+    /// <summary>A stack's island opens when the pointer rests on its tile (0.4 s) and closes when it leaves the tile and the island.</summary>
+    public bool StackHover { get; set; } = true;
     /// <summary>The programs pinned to the dock, in order.</summary>
     public List<DockPin> DockPins { get; set; } = new();
     /// <summary>The weather now on the left of the top bar (needs a place in Settings → Pogoda).</summary>

@@ -113,5 +113,21 @@ static partial class L
         ("Tydzień roku", "Week of the year"),
         ("Okres widoczny na tablicy", "Period shown on the board"),
         ("DZIŚ", "TODAY"),
+
+        // dock stacks: hover, search, export / import
+        ("Otwieraj stos najechaniem", "Open a stack on hover"),
+        ("Po chwili (0,4 s) bez klikania; zamyka się, gdy kursor odejdzie od stosu i wyspy.", "After a moment (0.4 s) without clicking; it closes when the pointer leaves the stack and the island."),
+        ("Szukaj w stosie", "Search the stack"),
+        ("Nic w tym stosie nie pasuje do „{0}”.", "Nothing in this stack matches “{0}”."),
+        ("Eksportuj stosy…", "Export stacks…"),
+        ("Importuj stosy…", "Import stacks…"),
+        ("Eksportuj stosy", "Export stacks"),
+        ("Importuj stosy", "Import stacks"),
+        ("Stosy TaskWall", "TaskWall stacks"),
+        ("W docku nie ma stosów do wyeksportowania.", "The dock has no stacks to export."),
+        ("Nie udało się zapisać pliku: {0}", "Couldn't save the file: {0}"),
+        ("Nie udało się odczytać pliku: {0}", "Couldn't read the file: {0}"),
+        ("W pliku nie ma stosów TaskWall.", "The file has no TaskWall stacks."),
+        ("Stos „{0}” już jest w docku.\n\nTak – zastąp go importowanym\nNie – dodaj importowany obok\nAnuluj – pomiń go", "The stack “{0}” is already in the dock.\n\nYes – replace it with the imported one\nNo – add the imported one beside it\nCancel – skip it"),
     };
 }

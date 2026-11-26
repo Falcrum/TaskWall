@@ -33,9 +33,12 @@ sealed class BarPanel : GlassWindow
         Body = _content;
         Deactivated += (_, _) => { if (IsVisible) { _closedAt = DateTime.Now; _closeSoon.Stop(); _closeSoon.Start(); } };
         _closeSoon.Tick += (_, _) => { _closeSoon.Stop(); FadeOut(); };
-        PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) FadeOut(); };
+        PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape && Escaping?.Invoke() != true) FadeOut(); };
         FrameElement.RenderTransformOrigin = new Point(0.5, 1);
     }
+
+    /// <summary>Esc pressed: true when the content used it itself (a search cleared) and the panel stays open.</summary>
+    public Func<bool>? Escaping { get; set; }
 
     /// <summary>About to close (the focus went elsewhere a moment ago).</summary>
     public bool ClosingSoon => _closeSoon.IsEnabled;
@@ -73,7 +76,8 @@ sealed class BarPanel : GlassWindow
     /// <summary>In the middle of the screen (the bar's glass) instead of at its button: the search's field.</summary>
     public bool Centred { get; set; }
 
-    public void Open(FrameworkElement content, FrameworkElement anchor, BarWindow bar)
+    /// <param name="activate">false: shown without taking the focus from the window in front (a stack opened by hovering its tile)</param>
+    public void Open(FrameworkElement content, FrameworkElement anchor, BarWindow bar, bool activate = true)
     {
         _closeSoon.Stop();
         bool moving = IsVisible && !_fading;
@@ -86,15 +90,17 @@ sealed class BarPanel : GlassWindow
             // already open (another stack, a stack inside): glide to the new place and size, the new content fading in
             Glide();
             Anim.Enter(content, 0, 0, 180);
-            Activate();
+            if (activate) Activate();
             return;
         }
         _fading = false;
         FrameElement.BeginAnimation(OpacityProperty, null);
         Place();
         App.Instance.PaintGlass(this);
+        ShowActivated = activate;
         Show();
-        Activate();
+        ShowActivated = true;
+        if (activate) Activate();
         if (!Anim.On) return;
         // opening: growing a little out of the bar and fading in
         var scale = new ScaleTransform(0.94, 0.94);

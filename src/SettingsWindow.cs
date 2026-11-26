@@ -1302,6 +1302,7 @@ public sealed class SettingsWindow : DarkWindow
         yield return Row(L.T("Powiększanie ikon"), L.T("Ikona pod kursorem rośnie, sąsiednie trochę mniej – jak w docku macOS."),
             Combo(new[] { ("off", L.T("Wyłączone")), ("subtle", L.T("Subtelne (1,25×)")), ("full", L.T("Pełne (1,55×)")) }, S.DockMagnify, tag => { S.DockMagnify = tag; App.Instance.ApplySettings(); }));
         yield return Toggle(L.T("Liczniki powiadomień"), L.T("Kółko w kolorze akcentu z liczbą powiadomień czekających w programie (Centrum powiadomień Windows, licznik programu, tytuł okna)."), S.DockBadges, v => S.DockBadges = v);
+        yield return Toggle(L.T("Otwieraj stos najechaniem"), L.T("Po chwili (0,4 s) bez klikania; zamyka się, gdy kursor odejdzie od stosu i wyspy."), S.StackHover, v => S.StackHover = v);
         var pins = new StackPanel();
         void FillPins()
         {
@@ -1317,7 +1318,6 @@ public sealed class SettingsWindow : DarkWindow
             }
             if (S.DockPins.Count == 0) pins.Children.Add(Label(L.T("Nic nie jest przypięte."), 11.5, "FgFaint"));
             var add = Btn(L.T("Dodaj program…"), "SecondaryButton", (_, _) => { if (AddPin()) FillPins(); });
-            add.Margin = new Thickness(0, 0, 8, 0);
             // a stack: a tile on the dock that opens an island of programs and nested stacks over the bar
             var addStack = Btn(L.T("Dodaj stos…"), "SecondaryButton", (_, _) =>
             {
@@ -1326,9 +1326,12 @@ public sealed class SettingsWindow : DarkWindow
                 App.Instance.ApplySettings();
                 FillPins();
             });
-            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
-            buttons.Children.Add(add);
-            buttons.Children.Add(addStack);
+            // the stacks to a file and back (another computer, a backup): the import replaces or adds, asking about a stack it already has
+            var export = Btn(L.T("Eksportuj stosy…"), "LinkButton", (_, _) => StackIsland.ExportStacks(this));
+            export.IsEnabled = S.DockPins.Any(p => p.Items != null);
+            var import = Btn(L.T("Importuj stosy…"), "LinkButton", (_, _) => { if (StackIsland.ImportStacks(this)) { App.Instance.ApplySettings(); FillPins(); } });
+            var buttons = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+            foreach (var b in new FrameworkElement[] { add, addStack, export, import }) { b.Margin = new Thickness(0, 0, 8, 4); b.VerticalAlignment = VerticalAlignment.Center; buttons.Children.Add(b); }
             pins.Children.Add(buttons);
         }
         FillPins();
