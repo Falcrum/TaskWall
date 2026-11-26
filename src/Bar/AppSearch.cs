@@ -64,7 +64,7 @@ sealed class AppSearch
     /// <summary>Opens over the magnifier (empty, the caret in it) – or closes when open.</summary>
     public void Toggle(FrameworkElement anchor, BarWindow bar)
     {
-        if (_panel.IsVisible) { _panel.Hide(); return; }
+        if (_panel.IsVisible) { _panel.FadeOut(); return; }
         if (_panel.JustClosed) return;
         if (DateTime.Now - _read > TimeSpan.FromMinutes(5)) ReadApps();
         Arrange(!bar.AtTop);
@@ -262,7 +262,7 @@ sealed class AppSearch
             case Key.Down: Select(_upward ? _sel - 1 : _sel + 1); e.Handled = true; break;
             case Key.Up: Select(_upward ? _sel + 1 : _sel - 1); e.Handled = true; break;
             case Key.Enter: RunAt(_sel); e.Handled = true; break;
-            case Key.Escape: _panel.Hide(); e.Handled = true; break;
+            case Key.Escape: _panel.FadeOut(); e.Handled = true; break;
         }
     }
 

@@ -172,6 +172,7 @@ public sealed class BarWindow : GlassWindow
         right.Children.Add(_tray);
         right.Children.Add(Separator());
         // a click on the clock while the calendar is open: pressing the mouse already closed it (it lost the focus) – don't open it again
+        _clock.TimeOnly = true; // only the time: the date in its tip, the calendar on a click (room for the dock)
         _clock.Clicked += () => { if (!_calendar.JustClosed) _calendar.Toggle(); };
         _clock.TenMinutes += _weather.Update;
         right.Children.Add(_clock);

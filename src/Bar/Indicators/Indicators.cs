@@ -18,6 +18,9 @@ sealed class BarPanel : GlassWindow
 {
     readonly Border _content = new() { Padding = new Thickness(16, 12, 16, 14) };
     DateTime _closedAt;
+    /// <summary>Lost the focus a moment ago: it closes in a quarter of a second unless the click was meant for it (another stack: the panel moves there instead).</summary>
+    readonly System.Windows.Threading.DispatcherTimer _closeSoon = new() { Interval = TimeSpan.FromMilliseconds(260) };
+    bool _fading;
 
     public BarPanel()
     {
@@ -28,8 +31,39 @@ sealed class BarPanel : GlassWindow
         Foreground = Ui.Res("Fg");
         // the same frosted glass as the bar (painted when placed), not a flat panel
         Body = _content;
-        Deactivated += (_, _) => { if (IsVisible) { Hide(); _closedAt = DateTime.Now; } };
-        PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) Hide(); };
+        Deactivated += (_, _) => { if (IsVisible) { _closedAt = DateTime.Now; _closeSoon.Stop(); _closeSoon.Start(); } };
+        _closeSoon.Tick += (_, _) => { _closeSoon.Stop(); FadeOut(); };
+        PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) FadeOut(); };
+        FrameElement.RenderTransformOrigin = new Point(0.5, 1);
+    }
+
+    /// <summary>About to close (the focus went elsewhere a moment ago).</summary>
+    public bool ClosingSoon => _closeSoon.IsEnabled;
+
+    /// <summary>Stays open after all (the click that took the focus was for this panel: another stack in it).</summary>
+    public void KeepOpen() => _closeSoon.Stop();
+
+    /// <summary>Closed softly: fading and sinking a little towards the bar.</summary>
+    public void FadeOut()
+    {
+        _closeSoon.Stop();
+        if (!IsVisible || _fading) return;
+        if (!Anim.On) { Hide(); return; }
+        _fading = true;
+        var fade = new System.Windows.Media.Animation.DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(140)) { EasingFunction = new System.Windows.Media.Animation.QuadraticEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseIn } };
+        fade.Completed += (_, _) =>
+        {
+            _fading = false;
+            Hide();
+            FrameElement.BeginAnimation(OpacityProperty, null);
+            FrameElement.Opacity = 1;
+        };
+        FrameElement.BeginAnimation(OpacityProperty, fade);
+        var scale = new ScaleTransform(1, 1);
+        FrameElement.RenderTransform = scale;
+        var shrink = new System.Windows.Media.Animation.DoubleAnimation(1, 0.96, TimeSpan.FromMilliseconds(140));
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, shrink);
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, shrink);
     }
 
     /// <summary>Just closed by the click that would open it again.</summary>
@@ -41,14 +75,54 @@ sealed class BarPanel : GlassWindow
 
     public void Open(FrameworkElement content, FrameworkElement anchor, BarWindow bar)
     {
+        _closeSoon.Stop();
+        bool moving = IsVisible && !_fading;
         _content.Child = content;
         _anchor = anchor;
         _bar = bar;
+        FrameElement.RenderTransformOrigin = new Point(0.5, bar.AtTop ? 0 : 1);
+        if (moving)
+        {
+            // already open (another stack, a stack inside): glide to the new place and size, the new content fading in
+            Glide();
+            Anim.Enter(content, 0, 0, 180);
+            Activate();
+            return;
+        }
+        _fading = false;
+        FrameElement.BeginAnimation(OpacityProperty, null);
         Place();
         App.Instance.PaintGlass(this);
         Show();
         Activate();
-        Anim.Enter(FrameElement, 0, bar.AtTop ? -8 : 8, 220);
+        if (!Anim.On) return;
+        // opening: growing a little out of the bar and fading in
+        var scale = new ScaleTransform(0.94, 0.94);
+        FrameElement.RenderTransform = scale;
+        var ease = new System.Windows.Media.Animation.CubicEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut };
+        var grow = new System.Windows.Media.Animation.DoubleAnimation(0.94, 1, TimeSpan.FromMilliseconds(200)) { EasingFunction = ease };
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty, grow);
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty, grow);
+        FrameElement.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(160)));
+    }
+
+    /// <summary>From where it is to where its new content wants it, over a few frames (eased), the glass painted again at the end.</summary>
+    void Glide()
+    {
+        var from = PhysicalRect;
+        var to = Target();
+        if (!Anim.On || from.Width <= 0) { PlacePhysical(to.X, to.Y, to.Width, to.Height, to.Scale); App.Instance.PaintGlass(this); return; }
+        var start = DateTime.Now;
+        EventHandler? step = null;
+        step = (_, _) =>
+        {
+            double t = Math.Min(1, (DateTime.Now - start).TotalMilliseconds / 180);
+            double k = 1 - Math.Pow(1 - t, 3);
+            int L(int a, int b) => (int)Math.Round(a + (b - a) * k);
+            PlacePhysical(L(from.X, to.X), L(from.Y, to.Y), L(from.Width, to.Width), L(from.Height, to.Height), to.Scale);
+            if (t >= 1) { CompositionTarget.Rendering -= step; App.Instance.PaintGlass(this); }
+        };
+        CompositionTarget.Rendering += step;
     }
 
     FrameworkElement? _anchor;
@@ -64,6 +138,13 @@ sealed class BarPanel : GlassWindow
 
     void Place()
     {
+        var t = Target();
+        PlacePhysical(t.X, t.Y, t.Width, t.Height, t.Scale);
+    }
+
+    /// <summary>Where the panel goes for its content: at its button (or the screen's middle), next to the bar's glass.</summary>
+    (int X, int Y, int Width, int Height, double Scale) Target()
+    {
         var anchor = _anchor!;
         var bar = _bar!;
         var dpi = VisualTreeHelper.GetDpi(bar);
@@ -76,7 +157,7 @@ sealed class BarPanel : GlassWindow
         int gap = (int)Math.Round(6 * dpi.DpiScaleY);
         int x = Centred ? frame.X + (frame.Width - w) / 2 : Math.Clamp((int)Math.Round(a.X - w / 2.0), frame.X, Math.Max(frame.X, frame.Right - w));
         int y = bar.AtTop ? frame.Bottom + gap : frame.Y - h - gap;
-        PlacePhysical(x, y, w, h, dpi.DpiScaleX);
+        return (x, y, w, h, dpi.DpiScaleX);
     }
 
     public static TextBlock Text(string text, double size = 12, string brush = "Fg", FontWeight? weight = null) =>

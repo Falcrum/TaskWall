@@ -1282,7 +1282,7 @@ public sealed class SettingsWindow : DarkWindow
             Row(L.T("Obciążenie"), L.T("Kręgi jak w Menedżerze zadań, odczyt co 2 s, tylko gdy pasek jest widoczny."), meters),
             When(Child(Row(L.T("Kolory kółek"), L.T("Stopniowo: od spokojnej szarości do swojego koloru wraz z obciążeniem. Zawsze: każde w swoim kolorze."),
                 Combo(new[] { ("high", L.T("Stopniowo z obciążeniem")), ("always", L.T("Zawsze")) }, S.MeterColors, tag => { S.MeterColors = tag; App.Instance.ApplySettings(); }))), () => S.Meters.Length > 0),
-            Row(L.T("Limity AI"), L.T("Ile z limitu 5-godzinnego (zewnętrzny krąg) i tygodniowego (wewnętrzny) zużyto. Z logowania Claude Code / Codex CLI na tym komputerze; nieoficjalne źródło – może przestać działać."), AiChips()),
+            Row(L.T("Limity AI"), L.T("Ile z limitu 5-godzinnego (zewnętrzny krąg) i tygodniowego (wewnętrzny) ChatGPT zużyto – z logowania aplikacji Codex na tym komputerze; nieoficjalne źródło, może przestać działać."), AiChips()),
             Toggle(L.T("Zegar 24-godzinny"), null, S.Use24h, v => S.Use24h = v)), AnyBar));
         return p;
     }
@@ -1291,14 +1291,14 @@ public sealed class SettingsWindow : DarkWindow
     FrameworkElement AiChips()
     {
         var wrap = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right };
-        foreach (var (k, name) in new[] { ("claude", "Claude"), ("chatgpt", "ChatGPT") })
+        foreach (var (k, name) in new[] { ("chatgpt", "ChatGPT") })
         {
             var chip = new System.Windows.Controls.Primitives.ToggleButton { Content = name, Style = (Style)Application.Current.Resources["Chip"], IsChecked = S.AiMeters.Split(',').Contains(k), Margin = new Thickness(6, 0, 0, 0) };
             chip.Click += (_, _) =>
             {
                 var set = S.AiMeters.Split(',', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
                 if (chip.IsChecked == true) set.Add(k); else set.Remove(k);
-                S.AiMeters = string.Join(",", new[] { "claude", "chatgpt" }.Where(set.Contains));
+                S.AiMeters = string.Join(",", new[] { "chatgpt" }.Where(set.Contains));
                 App.Instance.ApplySettings();
             };
             wrap.Children.Add(chip);

@@ -176,6 +176,9 @@ sealed class DockView : Canvas
         StopHooks();
         Unhook();
         if (_badgesOn) { _badgesOn = false; AppBadges.Changed -= UpdateBadges; AppBadges.Stop(); }
+        foreach (var t in new[] { _refresh, _thinCheck, _hoverPreview, _hidePreview }) t.Stop();
+        _preview.Dismiss();
+        _preview.Close();
     }
 
     /// <summary>The counters' reading on or off with the setting (off: the notification database is not opened or watched at all).</summary>
@@ -185,9 +188,6 @@ sealed class DockView : Canvas
         _badgesOn = S.DockBadges;
         if (_badgesOn) { AppBadges.Changed += UpdateBadges; AppBadges.Start(); }
         else { AppBadges.Changed -= UpdateBadges; AppBadges.Stop(); }
-        foreach (var t in new[] { _refresh, _thinCheck, _hoverPreview, _hidePreview }) t.Stop();
-        _preview.Dismiss();
-        _preview.Close();
     }
 
     Native.WinEventProc? _proc;
@@ -842,8 +842,9 @@ sealed class DockView : Canvas
     /// <summary>Dev check (no screenshot – it would show the windows' content): the preview of the first running icon, and how many live pictures it got.</summary>
     public void DevPreview()
     {
-        var e = _entries.FirstOrDefault(x => x.Windows.Count > 0);
+        var e = _entries.OrderByDescending(x => x.Windows.Count).FirstOrDefault(x => x.Windows.Count > 0);
         if (e == null) { Log.Error("dev dock preview: nothing runs"); return; }
+        Log.Error($"dev dock preview: {e.Name} – " + string.Join(" | ", e.Windows.Select(w => $"{w.Hwnd} min={w.Minimized}")));
         ShowPreview(e);
         Log.Error($"dev dock preview: windows {e.Windows.Count}, live pictures {_preview.ThumbCount}, shown {_preview.IsVisible}, at {_preview.PhysicalRect.X},{_preview.PhysicalRect.Y} {_preview.PhysicalRect.Width}x{_preview.PhysicalRect.Height}");
         _preview.Dismiss();

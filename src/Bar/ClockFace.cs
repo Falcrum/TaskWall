@@ -60,6 +60,18 @@ public sealed class ClockFace : Border
         Update();
     }
 
+    /// <summary>Only the time: no date, no chevron (the full-width bar – the date in the tip, the calendar on a click).</summary>
+    public bool TimeOnly
+    {
+        set
+        {
+            _date.Visibility = _chevron.Visibility = value ? Visibility.Collapsed : Visibility.Visible;
+            _timeOnly = value;
+            Refresh();
+        }
+    }
+    bool _timeOnly;
+
     /// <summary>The chevron points up when the calendar opens above (a bar at the bottom of the screen).</summary>
     public bool OpensUp { set => _chevron.Text = value ? "▴" : "▾"; }
 
@@ -99,6 +111,7 @@ public sealed class ClockFace : Border
         var tt = now.ToString("tt", CultureInfo.InvariantCulture);
         _time.Text = _dateFirst && !App.Settings.Use24h ? $"{time} {tt}" : time;
         _date.Text = App.Settings.Use24h || _dateFirst ? date : $"{date} · {tt}";
+        ToolTip = _timeOnly ? L.LongDay(now) + "  ·  " + now.ToString("yyyy") : null; // the date, when only the time shows
         if (newMinute && now.Minute % 10 == 0) TenMinutes?.Invoke();
     }
 }

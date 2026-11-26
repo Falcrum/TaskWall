@@ -28,8 +28,14 @@ static class StackIsland
     public static void Toggle(DockPin stack, FrameworkElement anchor, BarWindow bar, DockView dock)
     {
         _panel ??= new BarPanel();
-        if (_panel.IsVisible) { _panel.Hide(); return; }
-        if (_panel.JustClosed && _path.FirstOrDefault() == stack) return;
+        bool same = _path.FirstOrDefault() == stack;
+        if (_panel.IsVisible)
+        {
+            // the click on the dock took the focus: the same stack closes it, another one takes the open island over (it glides there)
+            if (same || !_panel.ClosingSoon) { _panel.FadeOut(); return; }
+            _panel.KeepOpen();
+        }
+        else if (_panel.JustClosed && same) return;
         _path.Clear();
         _path.Add(stack);
         _anchor = anchor;
@@ -121,7 +127,7 @@ static class StackIsland
         void Run()
         {
             if (isStack) { _path.Add(item); Rebuild(); return; }
-            _panel?.Hide();
+            _panel?.FadeOut();
             _dock?.ActivateOrLaunch(item);
         }
         tile.MouseLeftButtonUp += (_, _) => Run();

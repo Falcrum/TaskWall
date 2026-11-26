@@ -326,6 +326,7 @@ static partial class L
         ("Codex CLI nie jest zalogowany kontem ChatGPT.", "The Codex CLI isn't signed in with a ChatGPT account."),
         ("Ile z limitu 5-godzinnego (zewnętrzny krąg) i tygodniowego (wewnętrzny) zużyto. Z logowania Claude Code / Codex CLI na tym komputerze; nieoficjalne źródło – może przestać działać.", "How much of the 5-hour (outer ring) and weekly (inner) limit is used. From the Claude Code / Codex CLI sign-in on this computer; an unofficial source – it may stop working."),
         ("Limity AI", "AI limits"),
+        ("Ile z limitu 5-godzinnego (zewnętrzny krąg) i tygodniowego (wewnętrzny) ChatGPT zużyto – z logowania aplikacji Codex na tym komputerze; nieoficjalne źródło, może przestać działać.", "How much of ChatGPT's 5-hour (outer ring) and weekly (inner) limit is used – from the Codex app's sign-in on this computer; an unofficial source, it may stop working."),
         ("Logowanie Claude Code wygasło – uruchom Claude Code, aby je odświeżyć.", "The Claude Code sign-in expired – start Claude Code to refresh it."),
         ("Przywróć wszystkie okna programu", "Restore all the program's windows"),
         ("Stopniowo z obciążeniem", "Gradually with the load"),
