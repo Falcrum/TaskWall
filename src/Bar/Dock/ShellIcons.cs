@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
@@ -146,15 +147,32 @@ static class ShellIcons
     }
 
     /// <summary>Starts the program (a new window): the file with its arguments, or a Store app by its id.</summary>
-    public static void Launch(string? exe, string? args, string? appId)
+    public static void Launch(string? exe, string? args, string? appId, bool admin = false)
     {
         try
         {
-            if (!string.IsNullOrEmpty(exe) && File.Exists(exe) && !exe.EndsWith("ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase))
-                Process.Start(new ProcessStartInfo(exe, args ?? "") { UseShellExecute = true, WorkingDirectory = Path.GetDirectoryName(exe) ?? "" });
+            if (HasExe(exe))
+                Process.Start(new ProcessStartInfo(exe!, args ?? "") { UseShellExecute = true, WorkingDirectory = Path.GetDirectoryName(exe) ?? "", Verb = admin ? "runas" : "" });
             else if (!string.IsNullOrEmpty(appId))
-                Process.Start(new ProcessStartInfo("explorer.exe", @"shell:AppsFolder\" + appId) { UseShellExecute = true });
+                Process.Start(new ProcessStartInfo("explorer.exe", @"shell:AppsFolder\" + appId) { UseShellExecute = true }); // a Store app can't be elevated: started normally
         }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223) { } // the UAC prompt cancelled: not an error
         catch (Exception ex) { Log.Error("dock launch " + (exe ?? appId), ex); }
+    }
+
+    static bool HasExe(string? exe) =>
+        !string.IsNullOrEmpty(exe) && File.Exists(exe) && !exe.EndsWith("ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Opens the dropped files with the program: its file gets them as quoted arguments, a Store app has each opened by the shell's default handler.</summary>
+    public static void OpenFiles(string? exe, string? appId, string[] files)
+    {
+        try
+        {
+            if (HasExe(exe))
+                Process.Start(new ProcessStartInfo(exe!, string.Join(" ", files.Select(f => "\"" + f + "\""))) { UseShellExecute = true, WorkingDirectory = Path.GetDirectoryName(exe) ?? "" });
+            else
+                foreach (var f in files) Process.Start(new ProcessStartInfo(f) { UseShellExecute = true });
+        }
+        catch (Exception ex) { Log.Error("dock open files " + (exe ?? appId), ex); }
     }
 }

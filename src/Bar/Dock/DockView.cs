@@ -421,6 +421,7 @@ sealed class DockView : Canvas
                     : e.Windows.Count == 0 ? L.T("Kliknij, aby uruchomić; przeciągnij na stos, aby go tam dodać")
                     : L.T("Kliknij: na wierzch / zminimalizuj · środkowy przycisk: nowe okno · przeciągnij na stos");
             }
+            if (e.Key != SearchKey && e.Pin?.Items == null) hint += "\n" + L.T("Shift+klik: nowe okno · Ctrl+Shift+klik: jako administrator");
             e.Hint = hint;
             SetTip(e);
             UpdateGray(e);
@@ -630,12 +631,47 @@ sealed class DockView : Canvas
             bool dragged = _dragging != null;
             if (dragged) Drop();
             e.Visual.ReleaseMouseCapture();
-            if (!dragged && pressed == e) Click(e);
+            if (dragged || pressed != e) return;
+            // Shift: a new window; Ctrl+Shift: as administrator (programs only – not a stack or the search)
+            var mods = Keyboard.Modifiers;
+            if ((mods & ModifierKeys.Shift) != 0 && e.Pin?.Items == null && e.Key != SearchKey)
+            {
+                _preview.Dismiss();
+                var w0 = e.Windows.FirstOrDefault();
+                if ((mods & ModifierKeys.Control) != 0) ShellIcons.Launch(e.Pin?.Exe ?? w0?.Exe, e.Pin?.Args, e.Pin?.AppId ?? w0?.AppId, admin: true);
+                else Launch(e);
+                return;
+            }
+            Click(e);
         };
         // the capture taken away (a preview, a menu, another window): the press and any drag end there – no icon left sliding
         e.Visual.LostMouseCapture += (_, _) => { _pressed = null; if (_dragging != null) Drop(); };
         e.Visual.MouseUp += (_, ev) => { if (ev.ChangedButton == MouseButton.Middle && e.Pin?.Items == null && e.Key != SearchKey) { ev.Handled = true; Launch(e); } };
         e.Visual.MouseRightButtonUp += (_, ev) => { ev.Handled = true; Menu(e); };
+        // files dragged in from Explorer (the dock's own reordering uses the mouse capture, not OLE drag): a program opens them
+        bool CanTake(DragEventArgs ev) => e.Key != SearchKey && e.Pin?.Items == null && ev.Data.GetDataPresent(DataFormats.FileDrop);
+        void Light(bool on)
+        {
+            e.Visual.CornerRadius = new CornerRadius(Th.Corner(10));
+            e.Visual.Background = on ? Ui.Res("AccentSoft") : Brushes.Transparent;
+        }
+        e.Visual.AllowDrop = e.Key != SearchKey;
+        e.Visual.DragEnter += (_, ev) => { if (CanTake(ev)) Light(true); };
+        e.Visual.DragOver += (_, ev) =>
+        {
+            ev.Effects = CanTake(ev) ? DragDropEffects.Copy : DragDropEffects.None;
+            if (CanTake(ev)) Light(true);
+            ev.Handled = true;
+        };
+        e.Visual.DragLeave += (_, _) => Light(false);
+        e.Visual.Drop += (_, ev) =>
+        {
+            Light(false);
+            ev.Handled = true;
+            if (!CanTake(ev) || ev.Data.GetData(DataFormats.FileDrop) is not string[] files || files.Length == 0) return;
+            var first = e.Windows.FirstOrDefault();
+            ShellIcons.OpenFiles(e.Pin?.Exe ?? first?.Exe, e.Pin?.AppId ?? first?.AppId, files);
+        };
         e.Badge.Child = e.BadgeText;
         e.Badge.SetResourceReference(Border.BackgroundProperty, "AccentBrush"); // TaskWall's accent (follows a change of it)
         e.Badge.BorderBrush = new SolidColorBrush(Color.FromArgb(0x70, 0, 0, 0));
